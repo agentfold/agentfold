@@ -21,8 +21,13 @@ Toolchains e tarefas são gerenciadas pelo [mise](https://mise.jdx.dev):
 ```bash
 mise install
 mise run web:install
+mise run db:up        # Postgres de desenvolvimento (docker compose)
 mise run check        # lint + testes com gate de 100% de cobertura
 ```
+
+Os testes do store sobem um Postgres efêmero com testcontainers, então precisam de Docker.
+Após mudar `backend/migrations` ou `backend/internal/store/queries`, rode `mise run generate`
+(o lint falha se o código do sqlc estiver desatualizado).
 
 Outras tarefas: `mise tasks`.
 

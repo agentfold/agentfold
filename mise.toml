@@ -4,8 +4,14 @@ golangci-lint = "2.15.0"
 node = "24.22.1"
 pnpm = "12.15.0"
 shellcheck = "0.11.0"
+sqlc = "1.31.1"
 
 # --- backend -------------------------------------------------------------
+
+[tasks."backend:generate"]
+description = "Regenerate sqlc code"
+dir = "{{config_root}}/backend"
+run = "sqlc generate"
 
 [tasks."backend:build"]
 description = "Build the orquestrator binary into backend/bin"
@@ -20,7 +26,7 @@ run = "go test -race ./..."
 [tasks."backend:lint"]
 description = "Lint Go code and scripts"
 dir = "{{config_root}}/backend"
-run = ["golangci-lint run ./...", "shellcheck scripts/*.sh"]
+run = ["sqlc diff", "golangci-lint run ./...", "shellcheck scripts/*.sh"]
 
 [tasks."backend:cover"]
 description = "Run Go tests and fail below 100% coverage"
@@ -59,7 +65,21 @@ description = "Run web tests and fail below 100% coverage"
 dir = "{{config_root}}/web"
 run = "pnpm cover"
 
+# --- dev database --------------------------------------------------------
+
+[tasks."db:up"]
+description = "Start the development Postgres (docker compose)"
+run = "docker compose up -d --wait postgres"
+
+[tasks."db:down"]
+description = "Stop the development Postgres, keeping its data"
+run = "docker compose down"
+
 # --- aggregates ----------------------------------------------------------
+
+[tasks.generate]
+description = "Regenerate code from SQL (and, later, the API contract)"
+depends = ["backend:generate"]
 
 [tasks.build]
 description = "Build backend and web"

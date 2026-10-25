@@ -69,7 +69,7 @@ orquestrator/
 - **Pronto quando:** board funcional contra a API real, 100% de cobertura.
 
 ### F4 — Fluxos
-- Migrations `flows`, `flow_versions`; endpoints de fluxo; validação do grafo no backend
+- Migrations `flows`, `flow_versions` e `lanes.scope`/`lanes.flow_id` (baias do fluxo); endpoints de fluxo; validação do grafo no backend
   (um Trigger, arestas válidas por tipo de saída, nós alcançáveis).
 - Editor ReactFlow: paleta (Trigger, Agent, Review, MoveCard, End), painel de configuração por nó
   (filtro por tipo no Trigger; MCPs externos e schema de saída no Agent), salvar rascunho,
