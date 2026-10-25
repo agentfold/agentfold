@@ -1,21 +1,22 @@
-import { useDroppable } from '@dnd-kit/core'
+import { useDndContext, useDroppable } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 
-import type { Card, CardType, Lane, Project } from '../api/client'
+import type { CSSProperties } from 'react'
+
+import type { Card, Lane } from '../api/client'
 import { useDeleteLane, useMoveLane } from '../api/queries'
 import { Button } from '../components/Button'
 import { ErrorMessage } from '../components/ErrorMessage'
+import type { BoardLookup } from './CardContent'
 import { CardTile } from './CardTile'
-import { laneDropId } from './drop'
+import { isLaneTarget, laneDropId } from './drop'
 
 interface Props {
   lane: Lane
   isFirst: boolean
   isLast: boolean
   cards: Card[]
-  cardsById: Map<string, Card>
-  cardTypes: Map<string, CardType>
-  projects: Map<string, Project>
+  lookup: BoardLookup
   onEdit: () => void
   onAddCard: () => void
   onOpenCard: (card: Card) => void
@@ -26,27 +27,26 @@ export function LaneColumn({
   isFirst,
   isLast,
   cards,
-  cardsById,
-  cardTypes,
-  projects,
+  lookup,
   onEdit,
   onAddCard,
   onOpenCard,
 }: Props) {
-  const { setNodeRef, isOver } = useDroppable({ id: laneDropId(lane.id) })
+  const { setNodeRef } = useDroppable({ id: laneDropId(lane.id) })
+  const { over } = useDndContext()
   const move = useMoveLane()
   const remove = useDeleteLane()
 
   return (
     <section
       aria-label={lane.name}
-      className="group flex w-72 shrink-0 flex-col rounded-xl bg-slate-200/60 data-[over=true]:ring-2 data-[over=true]:ring-indigo-400"
-      data-over={isOver}
+      // Highlighted (lane color on top, darker background) under the mouse
+      // and while a card is dragged over it; faint gray otherwise.
+      className="group flex w-72 shrink-0 flex-col rounded-xl bg-slate-200/60 transition-colors hover:bg-slate-200 data-[target=true]:bg-slate-200"
+      data-target={isLaneTarget(over, lane.id, cards)}
+      style={{ '--lane-color': lane.color || '#64748b' } as CSSProperties}
     >
-      <header
-        className="flex items-center gap-1 rounded-t-xl border-t-4 px-3 pt-2 pb-1"
-        style={{ borderTopColor: lane.color || 'transparent' }}
-      >
+      <header className="flex items-center gap-1 rounded-t-xl border-t-4 border-t-slate-300 px-3 pt-2 pb-1 transition-colors group-hover:border-t-(--lane-color) group-data-[target=true]:border-t-(--lane-color)">
         <h3 className="flex-1 truncate text-sm font-semibold">{lane.name}</h3>
         <span className="text-xs text-slate-500">{cards.length}</span>
         {/* Lane actions show on hover or keyboard focus, leaving room for the name. */}
@@ -110,15 +110,7 @@ export function LaneColumn({
             <CardTile
               key={card.id}
               card={card}
-              cardType={cardTypes.get(card.card_type_id)}
-              project={
-                card.project_id ? projects.get(card.project_id) : undefined
-              }
-              parent={
-                card.parent_card_id
-                  ? cardsById.get(card.parent_card_id)
-                  : undefined
-              }
+              lookup={lookup}
               onOpen={() => {
                 onOpenCard(card)
               }}

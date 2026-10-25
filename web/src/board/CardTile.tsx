@@ -1,18 +1,16 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
-import type { Card, CardType, Project } from '../api/client'
-import { ColorDot } from '../cardTypes/ColorDot'
+import type { Card } from '../api/client'
+import { CardContent, type BoardLookup } from './CardContent'
 
 interface Props {
   card: Card
-  cardType?: CardType
-  project?: Project
-  parent?: Card
+  lookup: BoardLookup
   onOpen: () => void
 }
 
-export function CardTile({ card, cardType, project, parent, onOpen }: Props) {
+export function CardTile({ card, lookup, onOpen }: Props) {
   const {
     attributes,
     listeners,
@@ -25,6 +23,8 @@ export function CardTile({ card, cardType, project, parent, onOpen }: Props) {
 
   // Pointer drags work anywhere on the card; keyboard drags only start from
   // the handle (the activator), so Enter/Space on the card still open it.
+  // While dragged, the card stays faded in place and a CardPreview follows
+  // the pointer (see Board).
   return (
     <li
       ref={setNodeRef}
@@ -38,25 +38,7 @@ export function CardTile({ card, cardType, project, parent, onOpen }: Props) {
         className="min-w-0 flex-1 cursor-pointer text-left"
         onClick={onOpen}
       >
-        <span className="block text-sm font-medium text-slate-900">
-          {card.title}
-        </span>
-        {parent && (
-          <span className="mt-1 block truncate text-xs text-slate-500">
-            ↳ {parent.title}
-          </span>
-        )}
-        <span className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
-          {cardType && (
-            <span className="inline-flex items-center gap-1.5">
-              <ColorDot color={cardType.color} />
-              {cardType.name}
-            </span>
-          )}
-          {project && (
-            <span className="font-mono text-slate-500">{project.name}</span>
-          )}
-        </span>
+        <CardContent card={card} lookup={lookup} />
       </button>
       <button
         type="button"

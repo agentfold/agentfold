@@ -1,11 +1,13 @@
 import {
   closestCorners,
   DndContext,
+  DragOverlay,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from '@dnd-kit/core'
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { useState } from 'react'
@@ -23,6 +25,7 @@ import { CardForm } from '../cards/CardForm'
 import { Button } from '../components/Button'
 import { ErrorMessage } from '../components/ErrorMessage'
 import { QueryStatus } from '../components/Loading'
+import { CardPreview, type BoardLookup } from './CardContent'
 import { dropCard } from './drop'
 import { LaneColumn } from './LaneColumn'
 import { LaneForm } from './LaneForm'
@@ -42,6 +45,7 @@ export function Board() {
   const projects = useProjects()
   const moveCard = useMoveCard()
   const [dialog, setDialog] = useState<Dialog | null>(null)
+  const [draggedId, setDraggedId] = useState<string | null>(null)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, {
@@ -56,13 +60,22 @@ export function Board() {
   }
 
   const allCards = cards.data
+  const lookup: BoardLookup = {
+    cards: byId(allCards),
+    cardTypes: byId(cardTypes.data),
+    projects: byId(projects.data),
+  }
+  const dragged = draggedId === null ? undefined : lookup.cards.get(draggedId)
+  const onDragStart = ({ active }: DragStartEvent) => {
+    setDraggedId(String(active.id))
+  }
   const onDragEnd = (event: DragEndEvent) => {
+    setDraggedId(null)
     dropCard(allCards, event, moveCard.mutate)
   }
   const close = () => {
     setDialog(null)
   }
-  const cardsById = byId(allCards)
 
   return (
     <div className="flex h-full flex-col gap-3">
@@ -70,7 +83,11 @@ export function Board() {
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
+        onDragStart={onDragStart}
         onDragEnd={onDragEnd}
+        onDragCancel={() => {
+          setDraggedId(null)
+        }}
       >
         <div className="flex min-h-0 flex-1 items-start gap-4 overflow-x-auto pb-2">
           {lanes.data.map((lane, i, all) => (
@@ -80,9 +97,7 @@ export function Board() {
               isFirst={i === 0}
               isLast={i === all.length - 1}
               cards={laneCards(allCards, lane.id)}
-              cardsById={cardsById}
-              cardTypes={byId(cardTypes.data)}
-              projects={byId(projects.data)}
+              lookup={lookup}
               onEdit={() => {
                 setDialog({ kind: 'lane', lane })
               }}
@@ -110,6 +125,10 @@ export function Board() {
             </Button>
           </div>
         </div>
+        {/* Drawn above the lanes, so the card is not clipped by its lane. */}
+        <DragOverlay>
+          {dragged && <CardPreview card={dragged} lookup={lookup} />}
+        </DragOverlay>
       </DndContext>
 
       {dialog?.kind === 'lane' && (

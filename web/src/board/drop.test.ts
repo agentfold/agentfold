@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { card } from '../test/fakeBackend'
-import { dropCard, dropTarget, laneDropId } from './drop'
+import { dropCard, dropTarget, isLaneTarget, laneDropId } from './drop'
 
 const cards = [
   card('a', 'L1', 't', 0),
@@ -62,5 +62,20 @@ describe('dropCard', () => {
     const move = vi.fn()
     dropCard(cards, { active: { id: a.id }, over: null } as never, move)
     expect(move).not.toHaveBeenCalled()
+  })
+})
+
+describe('isLaneTarget', () => {
+  const l1 = cards.filter((c) => c.lane_id === 'L1')
+
+  it('is true over the lane or one of its cards', () => {
+    expect(isLaneTarget({ id: laneDropId('L1') }, 'L1', l1)).toBe(true)
+    expect(isLaneTarget({ id: b.id }, 'L1', l1)).toBe(true)
+  })
+
+  it('is false elsewhere or when nothing is dragged', () => {
+    expect(isLaneTarget({ id: x.id }, 'L1', l1)).toBe(false)
+    expect(isLaneTarget({ id: laneDropId('L2') }, 'L1', l1)).toBe(false)
+    expect(isLaneTarget(null, 'L1', l1)).toBe(false)
   })
 })

@@ -39,6 +39,9 @@ function setup() {
 
 const laneSection = (name: string) => screen.findByRole('region', { name })
 
+// The keyboard sensor reacts one tick after each key.
+const tick = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)))
+
 describe('Board', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -186,19 +189,41 @@ describe('Board', () => {
     act(() => {
       handle.focus()
     })
-    // The keyboard sensor starts listening one tick after the drag starts.
-    const tick = () =>
-      act(() => new Promise((resolve) => setTimeout(resolve, 0)))
     fireEvent.keyDown(handle, { code: 'Space' })
     await tick()
+    // The card stays faded in place and a copy follows the pointer.
     expect(handle.closest('li')).toHaveAttribute('data-dragging', 'true')
+    expect(screen.getAllByText('Parent')).toHaveLength(2)
     fireEvent.keyDown(document, { code: 'ArrowDown' })
     await tick()
     fireEvent.keyDown(document, { code: 'Space' })
     await tick()
     await waitFor(() => {
-      expect(screen.getAllByRole('listitem')).toHaveLength(3)
+      expect(screen.getAllByText('Parent')).toHaveLength(1)
     })
     expect(backend.requests.length).toBeGreaterThan(0)
+  })
+
+  it('cancels a keyboard drag with Escape', async () => {
+    setup()
+    const handle = await screen.findByRole('button', { name: 'Arrastar Child' })
+    act(() => {
+      handle.focus()
+    })
+    fireEvent.keyDown(handle, { code: 'Space' })
+    await tick()
+    expect(screen.getAllByText('Child')).toHaveLength(2)
+    fireEvent.keyDown(document, { code: 'Escape' })
+    await tick()
+    await waitFor(() => {
+      expect(screen.getAllByText('Child')).toHaveLength(1)
+    })
+  })
+
+  it('colors the lane top with the lane color, gray by default', async () => {
+    setup()
+    expect(await laneSection('Todo')).toHaveStyle({ '--lane-color': '#3b82f6' })
+    expect(await laneSection('Done')).toHaveStyle({ '--lane-color': '#64748b' })
+    expect(await laneSection('Done')).toHaveAttribute('data-target', 'false')
   })
 })

@@ -1,4 +1,4 @@
-import type { DragEndEvent } from '@dnd-kit/core'
+import type { DragEndEvent, Over } from '@dnd-kit/core'
 
 import type { Card } from '../api/client'
 import { laneCards } from '../api/placement'
@@ -6,6 +6,21 @@ import type { CardMove } from '../api/queries'
 
 /** Droppable id of a lane (cards use their own ids). */
 export const laneDropId = (laneId: string) => `lane:${laneId}`
+
+/**
+ * Whether a dragged card currently over `over` would land in this lane: over
+ * the lane itself or over one of its cards.
+ */
+export function isLaneTarget(
+  over: Pick<Over, 'id'> | null,
+  laneId: string,
+  cards: Card[],
+): boolean {
+  if (!over) {
+    return false
+  }
+  return over.id === laneDropId(laneId) || cards.some((c) => c.id === over.id)
+}
 
 /**
  * Where a card dropped over `overId` (a card or a lane) should go, or null
