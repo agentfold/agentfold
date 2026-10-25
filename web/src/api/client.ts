@@ -18,6 +18,7 @@ export type Flow = Schemas['Flow']
 export type FlowInput = Schemas['FlowInput']
 export type FlowVersion = Schemas['FlowVersion']
 export type FlowRun = Schemas['FlowRun']
+export type Question = Schemas['Question']
 export type FlowGraph = Schemas['FlowGraph']
 export type FlowNode = Schemas['FlowNode']
 export type FlowEdge = Schemas['FlowEdge']
@@ -95,6 +96,8 @@ export function errorMessage(error: unknown): string {
       return 'Registro não encontrado. A tela pode estar desatualizada.'
     case 'invalid_graph':
       return 'O rascunho tem problemas: corrija-os antes de publicar.'
+    case 'question_closed':
+      return 'Essa resposta já foi entregue ao agente e não pode mudar.'
     case 'card_busy':
       return 'Um fluxo está rodando para este card: só o fluxo pode movê-lo agora.'
     case 'internal':

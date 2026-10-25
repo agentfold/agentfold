@@ -76,7 +76,7 @@ describe('Board', () => {
     renderWithApi(<Board />, backend)
     const running = await screen.findByText('Rodando · dev')
     expect(running.parentElement).toHaveAttribute('title', 'dev')
-    expect(screen.getByText('Aguardando · review')).toBeInTheDocument()
+    expect(screen.getByText('Aguardando resposta · review')).toBeInTheDocument()
     expect(screen.getByText('Falhou · dev').parentElement).toHaveAttribute(
       'title',
       'dev: sem resultado',

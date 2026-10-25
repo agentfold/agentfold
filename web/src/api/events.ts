@@ -15,6 +15,7 @@ const affected: Record<string, QueryKey[]> = {
   mcp_server: [keys.mcpServers],
   flow_run: [keys.flowRuns],
   card_event: [keys.cardEvents],
+  question: [keys.questions],
 }
 
 const changes = ['created', 'updated', 'moved', 'deleted', 'published']

@@ -48,6 +48,9 @@ type Board interface {
 
 	ListLatestFlowRuns(ctx context.Context) ([]domain.FlowRun, error)
 
+	ListCardQuestions(ctx context.Context, cardID uuid.UUID) ([]domain.Question, error)
+	AnswerQuestion(ctx context.Context, id uuid.UUID, answer string) (domain.Question, error)
+
 	ListFlows(ctx context.Context) ([]domain.Flow, error)
 	GetFlow(ctx context.Context, id uuid.UUID) (service.FlowDetail, error)
 	CreateFlow(ctx context.Context, name string) (service.FlowDetail, error)
@@ -80,9 +83,11 @@ type Options struct {
 	Log *slog.Logger
 	// Heartbeat is the interval of keep-alive comments on the event stream.
 	Heartbeat time.Duration
+	// MCP serves the MCP endpoint at /mcp; none when nil.
+	MCP http.Handler
 }
 
-// NewHandler returns the API handler, mounted under /api.
+// NewHandler returns the API handler, mounted under /api, and the MCP one.
 func NewHandler(board Board, hub Subscriber, opts Options) http.Handler {
 	mux := http.NewServeMux()
 	strict := openapi.NewStrictHandlerWithOptions(handlers{board: board}, nil, openapi.StrictHTTPServerOptions{
@@ -95,5 +100,8 @@ func NewHandler(board Board, hub Subscriber, opts Options) http.Handler {
 		ErrorHandlerFunc: badRequest,
 	})
 	mux.Handle("GET /api/events", eventStream{hub: hub, heartbeat: opts.Heartbeat})
+	if opts.MCP != nil {
+		mux.Handle("/mcp", opts.MCP)
+	}
 	return mux
 }

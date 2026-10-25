@@ -62,7 +62,7 @@ func run(m *testing.M) (int, error) {
 // newStore returns a Store over an empty database.
 func newStore(t *testing.T) *Store {
 	t.Helper()
-	_, err := pool.Exec(context.Background(), "TRUNCATE jobs, agent_sessions, node_runs, flow_runs, mcp_servers, agent_profiles, flow_versions, flows, card_events, cards, card_types, projects, lanes")
+	_, err := pool.Exec(context.Background(), "TRUNCATE jobs, review_comments, questions, agent_sessions, node_runs, flow_runs, mcp_servers, agent_profiles, flow_versions, flows, card_events, cards, card_types, projects, lanes")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,4 +185,60 @@ func (f *failing) InsertJob(ctx context.Context, arg sqlcgen.InsertJobParams) (s
 		return sqlcgen.Job{}, err
 	}
 	return f.Querier.InsertJob(ctx, arg)
+}
+
+func (f *failing) InsertQuestion(ctx context.Context, arg sqlcgen.InsertQuestionParams) (sqlcgen.Question, error) {
+	if err := f.hit("InsertQuestion"); err != nil {
+		return sqlcgen.Question{}, err
+	}
+	return f.Querier.InsertQuestion(ctx, arg)
+}
+
+func (f *failing) GetNodeRunForUpdate(ctx context.Context, id uuid.UUID) (sqlcgen.NodeRun, error) {
+	if err := f.hit("GetNodeRunForUpdate"); err != nil {
+		return sqlcgen.NodeRun{}, err
+	}
+	return f.Querier.GetNodeRunForUpdate(ctx, id)
+}
+
+func (f *failing) ListUndeliveredQuestions(ctx context.Context, nodeRunID uuid.UUID) ([]sqlcgen.Question, error) {
+	if err := f.hit("ListUndeliveredQuestions"); err != nil {
+		return nil, err
+	}
+	return f.Querier.ListUndeliveredQuestions(ctx, nodeRunID)
+}
+
+func (f *failing) SetFlowRunStatus(ctx context.Context, arg sqlcgen.SetFlowRunStatusParams) (sqlcgen.FlowRun, error) {
+	if err := f.hit("SetFlowRunStatus"); err != nil {
+		return sqlcgen.FlowRun{}, err
+	}
+	return f.Querier.SetFlowRunStatus(ctx, arg)
+}
+
+func (f *failing) InsertReviewComment(ctx context.Context, arg sqlcgen.InsertReviewCommentParams) (sqlcgen.ReviewComment, error) {
+	if err := f.hit("InsertReviewComment"); err != nil {
+		return sqlcgen.ReviewComment{}, err
+	}
+	return f.Querier.InsertReviewComment(ctx, arg)
+}
+
+func (f *failing) DeliverQuestions(ctx context.Context, nodeRunID uuid.UUID) error {
+	if err := f.hit("DeliverQuestions"); err != nil {
+		return err
+	}
+	return f.Querier.DeliverQuestions(ctx, nodeRunID)
+}
+
+func (f *failing) QueueNodeRun(ctx context.Context, id uuid.UUID) error {
+	if err := f.hit("QueueNodeRun"); err != nil {
+		return err
+	}
+	return f.Querier.QueueNodeRun(ctx, id)
+}
+
+func (f *failing) DeleteReviewComments(ctx context.Context, nodeRunID uuid.UUID) error {
+	if err := f.hit("DeleteReviewComments"); err != nil {
+		return err
+	}
+	return f.Querier.DeleteReviewComments(ctx, nodeRunID)
 }

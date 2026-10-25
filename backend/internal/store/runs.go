@@ -65,6 +65,11 @@ func toNodeRun(r sqlcgen.NodeRun) domain.NodeRun {
 	if r.Error != nil {
 		n.Error = *r.Error
 	}
+	if r.Summary != nil {
+		n.Summary = *r.Summary
+	}
+	n.StructuredOutput = r.StructuredOutput
+	n.ReviewApproved = r.ReviewApproved
 	return n
 }
 
@@ -165,10 +170,44 @@ func (s *Store) ContinueNodeRun(ctx context.Context, id uuid.UUID) (domain.NodeR
 	return run, err == nil, err
 }
 
-// StartNodeRun marks a node run as running in an agent session.
-func (s *Store) StartNodeRun(ctx context.Context, id, sessionID uuid.UUID) (domain.NodeRun, error) {
-	row, err := s.q.StartNodeRun(ctx, sqlcgen.StartNodeRunParams{ID: id, SessionID: &sessionID})
+// StartNodeRun marks a node run as running in an agent session; the board
+// tools accept the token whose hash is tokenHash until the run ends.
+func (s *Store) StartNodeRun(ctx context.Context, id, sessionID uuid.UUID, tokenHash []byte) (domain.NodeRun, error) {
+	row, err := s.q.StartNodeRun(ctx, sqlcgen.StartNodeRunParams{ID: id, SessionID: &sessionID, TokenHash: tokenHash})
 	return mapRow(row, err, toNodeRun)
+}
+
+// RunningNodeRunByToken returns the running node run whose token hashes to
+// tokenHash.
+func (s *Store) RunningNodeRunByToken(ctx context.Context, tokenHash []byte) (domain.NodeRun, error) {
+	row, err := s.q.GetRunningNodeRunByToken(ctx, tokenHash)
+	return mapRow(row, err, toNodeRun)
+}
+
+// ListNodeRuns returns the node runs of a flow run, in order.
+func (s *Store) ListNodeRuns(ctx context.Context, flowRunID uuid.UUID) ([]domain.NodeRun, error) {
+	rows, err := s.q.ListNodeRuns(ctx, flowRunID)
+	return mapRows(rows, err, toNodeRun)
+}
+
+// SetNodeRunSummary records the summary an agent reported.
+func (s *Store) SetNodeRunSummary(ctx context.Context, id uuid.UUID, summary string) (domain.NodeRun, error) {
+	row, err := s.q.SetNodeRunSummary(ctx, sqlcgen.SetNodeRunSummaryParams{ID: id, Summary: &summary})
+	return mapRow(row, err, toNodeRun)
+}
+
+// SetNodeRunOutput records the structured output an agent submitted.
+func (s *Store) SetNodeRunOutput(ctx context.Context, id uuid.UUID, output json.RawMessage) (domain.NodeRun, error) {
+	row, err := s.q.SetNodeRunOutput(ctx, sqlcgen.SetNodeRunOutputParams{ID: id, StructuredOutput: output})
+	return mapRow(row, err, toNodeRun)
+}
+
+// WaitFlowRun pauses a running flow run until a human answers.
+func (s *Store) WaitFlowRun(ctx context.Context, id uuid.UUID) (domain.FlowRun, error) {
+	row, err := s.q.SetFlowRunStatus(ctx, sqlcgen.SetFlowRunStatusParams{
+		ID: id, Status: string(domain.RunWaiting), FromStatus: string(domain.RunRunning),
+	})
+	return mapRow(row, err, toFlowRun)
 }
 
 // FinishNodeRun records how a node run ended.

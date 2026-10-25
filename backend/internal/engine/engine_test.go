@@ -32,6 +32,8 @@ type fakeStore struct {
 	order     []uuid.UUID // node runs in creation order
 	continued map[uuid.UUID]bool
 	jobs      []store.NewJob
+	// answered makes ResumeIfAnswered resume.
+	answered  bool
 	errs      map[string]error
 	failAfter map[string]int
 }
@@ -209,6 +211,34 @@ func (f *fakeStore) EnqueueJob(_ context.Context, j store.NewJob) (uuid.UUID, er
 	}
 	f.jobs = append(f.jobs, j)
 	return uuid.New(), nil
+}
+
+func (f *fakeStore) GetNodeRun(_ context.Context, id uuid.UUID) (domain.NodeRun, error) {
+	return f.nodeRuns[id], f.err("GetNodeRun")
+}
+
+func (f *fakeStore) WaitFlowRun(_ context.Context, id uuid.UUID) (domain.FlowRun, error) {
+	if err := f.err("WaitFlowRun"); err != nil {
+		return domain.FlowRun{}, err
+	}
+	r := f.runs[id]
+	if r.Status != domain.RunRunning {
+		return r, domain.ErrNotFound
+	}
+	r.Status = domain.RunWaiting
+	f.runs[id] = r
+	return r, nil
+}
+
+func (f *fakeStore) ResumeIfAnswered(_ context.Context, id uuid.UUID) (domain.FlowRun, bool, error) {
+	if err := f.err("ResumeIfAnswered"); err != nil || !f.answered {
+		return domain.FlowRun{}, false, err
+	}
+	nr := f.nodeRuns[id]
+	r := f.runs[nr.FlowRunID]
+	r.Status = domain.RunRunning
+	f.runs[r.ID] = r
+	return r, true, nil
 }
 
 // lastNodeRun returns the node run created last.
@@ -497,7 +527,7 @@ func TestBoardNodesThatFailEndTheRun(t *testing.T) {
 		edges []string
 		msg   string
 	}{
-		{"review", []string{"x:review"}, nil, nil, "o nó x (review) ainda não é suportado"},
+		{"trigger", []string{"x:trigger"}, nil, nil, "o nó x (trigger) ainda não é suportado"},
 		{"lane gone", []string{"x:move_card"}, map[string]any{"lane_id": missing}, nil, "a baia de destino não existe mais"},
 		{"bad config", []string{"x:move_card"}, `{"lane_id": 1}`, nil, "configuração inválida"},
 		{"unknown node", []string{"x:move_card"}, map[string]any{"lane_id": missing}, []string{"t.next>nowhere"}, "o nó nowhere não existe"},
@@ -731,5 +761,99 @@ func TestEndingAfterABoardNodeFails(t *testing.T) {
 	e.store.errs["FinishFlowRun"] = errBoom
 	if err := e.engine.HandleTrigger(context.Background(), e.created()); !errors.Is(err, errBoom) {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestAgentWaitingForAnswers(t *testing.T) {
+	for _, answered := range []bool{false, true} {
+		e := newEnv(t)
+		e.addFlow("dev", graph{
+			nodes:   []string{"t:trigger", "dev:agent"},
+			configs: map[string]any{"t": triggerCfg(domain.EventCardCreated, nil)},
+			edges:   []string{"t.next>dev"},
+		})
+		e.trigger(e.created())
+		e.store.answered = answered
+		e.agents.result = func(domain.NodeRun) domain.NodeResult { return domain.NodeResult{Status: domain.NodeAwaitingInput} }
+		if err := e.runAgent(); err != nil {
+			t.Fatal(err)
+		}
+		want := domain.RunWaiting
+		if answered {
+			want = domain.RunRunning
+		}
+		if run := e.onlyRun(); run.Status != want {
+			t.Fatalf("answered %v: run %+v", answered, run)
+		}
+		e.wantTimeline("flow.started", "node.started dev")
+	}
+}
+
+func TestWaitingErrors(t *testing.T) {
+	for _, method := range []string{"GetNodeRun", "WaitFlowRun", "ResumeIfAnswered"} {
+		e := newEnv(t)
+		e.addFlow("dev", graph{
+			nodes:   []string{"t:trigger", "dev:agent"},
+			configs: map[string]any{"t": triggerCfg(domain.EventCardCreated, nil)},
+			edges:   []string{"t.next>dev"},
+		})
+		e.trigger(e.created())
+		e.agents.result = func(domain.NodeRun) domain.NodeResult { return domain.NodeResult{Status: domain.NodeAwaitingInput} }
+		e.store.errs[method] = errBoom
+		if err := e.runAgent(); !errors.Is(err, errBoom) {
+			t.Fatalf("%s: got %v", method, err)
+		}
+	}
+}
+
+func TestWaitingAfterTheRunEnded(t *testing.T) {
+	e := newEnv(t)
+	e.addFlow("dev", graph{
+		nodes:   []string{"t:trigger", "dev:agent"},
+		configs: map[string]any{"t": triggerCfg(domain.EventCardCreated, nil)},
+		edges:   []string{"t.next>dev"},
+	})
+	e.trigger(e.created())
+	run := e.onlyRun()
+	run.Status = domain.RunCanceled
+	e.store.runs[run.ID] = run
+	e.agents.result = func(domain.NodeRun) domain.NodeResult { return domain.NodeResult{Status: domain.NodeAwaitingInput} }
+	if err := e.runAgent(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReviewLoop(t *testing.T) {
+	e := newEnv(t)
+	e.addFlow("impl", graph{
+		nodes:   []string{"t:trigger", "dev:agent", "rev:review", "end:end"},
+		configs: map[string]any{"t": triggerCfg(domain.EventCardCreated, nil)},
+		edges:   []string{"t.next>dev", "dev.done>rev", "rev.changes_requested>dev", "rev.approved>end"},
+	})
+	e.trigger(e.created())
+	verdicts := []string{"changes_requested", "approved"}
+	e.agents.result = func(nr domain.NodeRun) domain.NodeResult {
+		if nr.NodeKey == "rev" {
+			v := verdicts[0]
+			verdicts = verdicts[1:]
+			out, _ := json.Marshal(map[string]string{"result": "review: " + v})
+			return domain.NodeResult{Status: domain.NodeDone, OutputHandle: v, Output: out}
+		}
+		return done("ok")
+	}
+	for range 4 {
+		if err := e.runAgent(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if run := e.onlyRun(); run.Status != domain.RunDone {
+		t.Fatalf("run %+v", run)
+	}
+	if p := e.store.jobs[2].Payload.(agent.Payload); p.Prompt != "review: changes_requested" {
+		t.Fatalf("dev resumed with %+v", p)
+	}
+	types := e.store.timelineTypes()
+	if !slices.Contains(types, "node.finished rev done") || types[len(types)-1] != "flow.finished done" {
+		t.Fatalf("timeline %q", types)
 	}
 }

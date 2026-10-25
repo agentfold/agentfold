@@ -327,6 +327,42 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/CardEvent" }
         default: { $ref: "#/components/responses/Error" }
+  /cards/{id}/questions:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: listCardQuestions
+      tags: [questions]
+      responses:
+        "200":
+          description: The questions agents asked on the card, oldest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Question" }
+        default: { $ref: "#/components/responses/Error" }
+  /questions/{id}/answer:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      operationId: answerQuestion
+      tags: [questions]
+      description: >
+        Answers a question. Once every question its agent asked is answered,
+        the agent resumes with the answers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/QuestionAnswer" }
+      responses:
+        "200":
+          description: Answered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Question" }
+        default: { $ref: "#/components/responses/Error" }
   /flows:
     get:
       operationId: listFlows
@@ -617,7 +653,7 @@ components:
       properties:
         code:
           type: string
-          enum: [bad_request, validation, not_found, conflict, in_use, invalid_reference, invalid_graph, card_busy, internal]
+          enum: [bad_request, validation, not_found, conflict, in_use, invalid_reference, invalid_graph, card_busy, question_closed, internal]
         message: { type: string }
         field:
           type: string
@@ -741,7 +777,7 @@ components:
       description: >
         A change to the board. `type` is "<entity>.<change>", with entity one of
         lane, project, card_type, card, flow, agent_profile, mcp_server,
-        flow_run, card_event and change one of created,
+        flow_run, card_event, question and change one of created,
         updated, moved, deleted, published.
       required: [type, id]
       properties:
@@ -756,6 +792,26 @@ components:
           type: object
           additionalProperties: true
           description: The entity after the change; absent when it was deleted.
+    Question:
+      type: object
+      description: Something an agent asked a human; its node waits for the answers.
+      required: [id, card_id, node_run_id, text, answer, answered_at, delivered, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        card_id: { type: string, format: uuid }
+        node_run_id: { type: string, format: uuid }
+        text: { type: string }
+        answer: { type: string, nullable: true }
+        answered_at: { type: string, format: date-time, nullable: true }
+        delivered:
+          type: boolean
+          description: Whether the answer already reached the agent; it can no longer change.
+        created_at: { type: string, format: date-time }
+    QuestionAnswer:
+      type: object
+      required: [answer]
+      properties:
+        answer: { type: string }
     FlowRun:
       type: object
       description: A run of a flow for a card.

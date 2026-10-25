@@ -33,6 +33,8 @@ export const keys = {
   flowRuns: ['flowRuns'],
   cardEvents: ['cardEvents'],
   cardTimeline: (id: string) => ['cardEvents', id],
+  questions: ['questions'],
+  cardQuestions: (id: string) => ['questions', id],
 } as const
 
 const byId = (id: string) => ({ params: { path: { id } } })
@@ -85,6 +87,14 @@ export function useCardEvents(id: string) {
   return useQuery({
     queryKey: keys.cardTimeline(id),
     queryFn: () => unwrap(client.GET('/cards/{id}/events', byId(id))),
+  })
+}
+
+export function useCardQuestions(id: string) {
+  const { client } = useApi()
+  return useQuery({
+    queryKey: keys.cardQuestions(id),
+    queryFn: () => unwrap(client.GET('/cards/{id}/questions', byId(id))),
   })
 }
 
@@ -336,4 +346,18 @@ export function useMoveCard() {
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: keys.cards }),
   })
+}
+
+export function useAnswerQuestion() {
+  const { client } = useApi()
+  return useChange(
+    keys.questions,
+    ({ id, answer }: { id: string; answer: string }) =>
+      unwrap(
+        client.POST('/questions/{id}/answer', {
+          ...byId(id),
+          body: { answer },
+        }),
+      ),
+  )
 }

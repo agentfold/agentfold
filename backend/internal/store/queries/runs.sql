@@ -41,15 +41,43 @@ SELECT * FROM node_runs WHERE id = $1;
 SELECT count(*)::integer FROM node_runs WHERE flow_run_id = $1 AND node_key = $2;
 
 -- name: StartNodeRun :one
-UPDATE node_runs SET status = 'running', started_at = now(), session_id = $2 WHERE id = $1 RETURNING *;
+UPDATE node_runs SET status = 'running', started_at = now(), finished_at = NULL, session_id = $2, token_hash = $3
+WHERE id = $1 RETURNING *;
 
+-- FinishNodeRun adds the usage: a node resumed after questions runs again.
 -- name: FinishNodeRun :one
 UPDATE node_runs
 SET status = $2, output = $3, output_handle = $4, error = $5,
-    tokens_in = $6, tokens_out = $7, cache_read = $8, cache_write = $9,
-    cost_usd = $10, turns = $11, duration_ms = $12, finished_at = now()
+    tokens_in = tokens_in + $6, tokens_out = tokens_out + $7,
+    cache_read = cache_read + $8, cache_write = cache_write + $9,
+    cost_usd = cost_usd + $10, turns = turns + $11, duration_ms = duration_ms + $12,
+    token_hash = NULL, finished_at = now()
 WHERE id = $1
 RETURNING *;
+
+-- name: ListNodeRuns :many
+SELECT * FROM node_runs WHERE flow_run_id = $1 ORDER BY created_at, id;
+
+-- name: GetRunningNodeRunByToken :one
+SELECT * FROM node_runs WHERE token_hash = $1 AND status = 'running';
+
+-- name: SetNodeRunSummary :one
+UPDATE node_runs SET summary = $2 WHERE id = $1 RETURNING *;
+
+-- name: SetNodeRunOutput :one
+UPDATE node_runs SET structured_output = $2 WHERE id = $1 RETURNING *;
+
+-- name: SetNodeRunReview :one
+UPDATE node_runs SET review_approved = $2 WHERE id = $1 RETURNING *;
+
+-- name: GetNodeRunForUpdate :one
+SELECT * FROM node_runs WHERE id = $1 FOR UPDATE;
+
+-- name: QueueNodeRun :exec
+UPDATE node_runs SET status = 'queued' WHERE id = $1;
+
+-- name: SetFlowRunStatus :one
+UPDATE flow_runs SET status = sqlc.arg(status) WHERE id = sqlc.arg(id) AND status = sqlc.arg(from_status) RETURNING *;
 
 -- ContinueNodeRun claims the right to follow the output of a finished node run.
 -- name: ContinueNodeRun :one

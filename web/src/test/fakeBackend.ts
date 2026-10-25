@@ -7,6 +7,7 @@ import type {
   Flow,
   FlowGraph,
   FlowRun,
+  Question,
   GraphProblem,
   Lane,
   McpServer,
@@ -22,6 +23,7 @@ interface State {
   events: CardEvent[]
   flows: Flow[]
   runs: FlowRun[]
+  questions: Question[]
   agentProfiles: AgentProfile[]
   mcpServers: McpServer[]
 }
@@ -145,6 +147,24 @@ export function flowRun(
   }
 }
 
+export function question(
+  cardId: string,
+  text: string,
+  extra: Partial<Question> = {},
+): Question {
+  return {
+    id: newId(),
+    card_id: cardId,
+    node_run_id: newId(),
+    text,
+    answer: null,
+    answered_at: null,
+    delivered: false,
+    created_at: stamp,
+    ...extra,
+  }
+}
+
 export function cardEvent(
   cardId: string,
   type: string,
@@ -209,6 +229,7 @@ export function createFakeBackend(initial: Partial<State> = {}): FakeBackend {
     events: [],
     flows: [],
     runs: [],
+    questions: [],
     agentProfiles: [],
     mcpServers: [],
     ...initial,
@@ -324,6 +345,19 @@ export function createFakeBackend(initial: Partial<State> = {}): FakeBackend {
         return [200, state.cards.filter((c) => c.parent_card_id === id)]
       case 'GET /cards/:id/events':
         return [200, state.events.filter((e) => e.card_id === id)]
+      case 'GET /cards/:id/questions':
+        return [200, state.questions.filter((q) => q.card_id === id)]
+      case 'POST /questions/:id/answer': {
+        const q = state.questions.find((x) => x.id === id)
+        if (!q) return notFound
+        if (q.delivered) {
+          return [409, { code: 'question_closed', message: 'closed' }]
+        }
+        if (!str(body.answer).trim()) return invalid('answer')
+        q.answer = str(body.answer)
+        q.answered_at = stamp
+        return [200, q]
+      }
       case 'GET /flow-runs/:id':
         return [200, state.runs]
       case 'GET /agent-profiles':

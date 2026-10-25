@@ -28,6 +28,12 @@ type fakeRepo struct {
 	sealed  []byte
 	// busy is what CardHasActiveRun answers; it is not recorded as a call.
 	busy bool
+	// Run methods return these.
+	nodeRun  domain.NodeRun
+	flowRun  domain.FlowRun
+	version  domain.FlowVersion
+	question domain.Question
+	resumed  bool
 }
 
 func (f *fakeRepo) call(name string, in any) error {

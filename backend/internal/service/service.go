@@ -3,6 +3,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/google/uuid"
 
@@ -41,9 +42,22 @@ type Repository interface {
 	ListCardEvents(ctx context.Context, cardID uuid.UUID) ([]domain.CardEvent, error)
 	GetCardEvent(ctx context.Context, id uuid.UUID) (domain.CardEvent, error)
 
+	AddCardEvent(ctx context.Context, cardID uuid.UUID, typ domain.CardEventType, payload any) (domain.CardEvent, error)
+
 	CardHasActiveRun(ctx context.Context, cardID uuid.UUID) (bool, error)
 	GetFlowRun(ctx context.Context, id uuid.UUID) (domain.FlowRun, error)
+	GetFlowVersion(ctx context.Context, id uuid.UUID) (domain.FlowVersion, error)
 	ListLatestFlowRuns(ctx context.Context) ([]domain.FlowRun, error)
+	ListNodeRuns(ctx context.Context, flowRunID uuid.UUID) ([]domain.NodeRun, error)
+	RunningNodeRunByToken(ctx context.Context, tokenHash []byte) (domain.NodeRun, error)
+	SetNodeRunSummary(ctx context.Context, id uuid.UUID, summary string) (domain.NodeRun, error)
+	SetNodeRunOutput(ctx context.Context, id uuid.UUID, output json.RawMessage) (domain.NodeRun, error)
+	SubmitReview(ctx context.Context, nr domain.NodeRun, cardID uuid.UUID, approved bool, comments []domain.ReviewInput) ([]domain.ReviewComment, error)
+
+	AddQuestions(ctx context.Context, cardID, nodeRunID uuid.UUID, texts []string) ([]domain.Question, error)
+	ListCardQuestions(ctx context.Context, cardID uuid.UUID) ([]domain.Question, error)
+	AnswerQuestion(ctx context.Context, id uuid.UUID, answer string) (domain.Question, error)
+	ResumeIfAnswered(ctx context.Context, nodeRunID uuid.UUID) (domain.FlowRun, bool, error)
 
 	ListFlows(ctx context.Context) ([]domain.Flow, error)
 	GetFlow(ctx context.Context, id uuid.UUID) (domain.Flow, error)

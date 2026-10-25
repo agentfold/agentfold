@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,15 +18,10 @@ import (
 )
 
 // JobKind is the queue job that runs an agent node.
-const JobKind = "agent.run"
+const JobKind = domain.JobAgentRun
 
 // Payload is the payload of an agent.run job.
-type Payload struct {
-	NodeRunID uuid.UUID `json:"node_run_id"`
-	// Prompt continues an existing session of the node (answers, review
-	// comments); the first run of a node uses its configured prompt.
-	Prompt string `json:"prompt,omitempty"`
-}
+type Payload = domain.AgentJob
 
 // Store is the persistence the executor needs. *store.Store implements it.
 type Store interface {
@@ -39,8 +36,10 @@ type Store interface {
 	McpSecrets(ctx context.Context, id uuid.UUID) ([]byte, error)
 	AgentSession(ctx context.Context, flowRunID uuid.UUID, nodeKey string) (uuid.UUID, error)
 	CreateAgentSession(ctx context.Context, flowRunID uuid.UUID, nodeKey string, profileID, sessionID uuid.UUID) error
-	StartNodeRun(ctx context.Context, id, sessionID uuid.UUID) (domain.NodeRun, error)
+	StartNodeRun(ctx context.Context, id, sessionID uuid.UUID, tokenHash []byte) (domain.NodeRun, error)
 	FinishNodeRun(ctx context.Context, id uuid.UUID, r domain.NodeResult) (domain.NodeRun, error)
+	PendingQuestions(ctx context.Context, nodeRunID uuid.UUID) (int, error)
+	ListReviewComments(ctx context.Context, nodeRunID uuid.UUID) ([]domain.ReviewComment, error)
 }
 
 // Opener decrypts stored secrets. *crypto.Box implements it.
@@ -56,6 +55,8 @@ type Executor struct {
 	Runner     runner.Runner
 	// Binary is the path of the claude CLI on the host.
 	Binary string
+	// BoardURL is where agents reach the board MCP server (BoardURL/mcp).
+	BoardURL string
 }
 
 // Handle runs the node of an agent.run job and records its result. Agent
@@ -70,7 +71,7 @@ func (e *Executor) Handle(ctx context.Context, payload json.RawMessage) error {
 	if err != nil {
 		return err
 	}
-	if run.Status == domain.NodeDone || run.Status == domain.NodeFailed {
+	if run.Status != domain.NodeQueued && run.Status != domain.NodeRunning {
 		return nil // a retried job whose node already ran
 	}
 	result, err := e.execute(ctx, run, p.Prompt)
@@ -85,7 +86,7 @@ func (e *Executor) Handle(ctx context.Context, payload json.RawMessage) error {
 type job struct {
 	run     domain.NodeRun
 	flowRun domain.FlowRun
-	config  domain.AgentConfig
+	node    node
 	card    domain.Card
 	project *domain.Project
 	profile domain.AgentProfile
@@ -106,19 +107,21 @@ func (e *Executor) execute(ctx context.Context, run domain.NodeRun, prompt strin
 		return domain.NodeResult{}, err
 	}
 	if !resume || prompt == "" {
-		prompt = firstPrompt(j.config.Prompt, j.card)
+		prompt = firstPrompt(j.node.config.Prompt, j.card)
 	}
+	token, tokenHash := newToken()
 	layout := e.Runner.Layout(ws)
-	inv := Invocation{Prompt: prompt, SessionID: session, Resume: resume, Config: j.config}
-	if len(j.config.McpServerIDs) > 0 {
-		name := "mcp-" + run.ID.String() + ".json"
-		if err := e.writeMcpConfig(ctx, filepath.Join(ws.ClaudeDir, name), j.config.McpServerIDs); err != nil {
-			return domain.NodeResult{}, err
-		}
-		defer func() { _ = os.Remove(filepath.Join(ws.ClaudeDir, name)) }()
-		inv.McpConfig = layout.Claude + "/" + name
+	name := "mcp-" + run.ID.String() + ".json"
+	servers, err := e.writeMcpConfig(ctx, filepath.Join(ws.ClaudeDir, name), token, j.node.config.McpServerIDs)
+	if err != nil {
+		return domain.NodeResult{}, err
 	}
-	if _, err := e.Store.StartNodeRun(ctx, run.ID, session); err != nil {
+	defer func() { _ = os.Remove(filepath.Join(ws.ClaudeDir, name)) }()
+	inv := Invocation{
+		Prompt: prompt, SessionID: session, Resume: resume, Config: j.node.config,
+		SystemPrompt: j.node.systemPrompt(), McpConfig: layout.Claude + "/" + name, McpServers: servers,
+	}
+	if _, err := e.Store.StartNodeRun(ctx, run.ID, session, tokenHash); err != nil {
 		return domain.NodeResult{}, err
 	}
 	logFile, err := os.OpenFile(filepath.Join(ws.LogsDir, run.ID.String()+".jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
@@ -137,7 +140,35 @@ func (e *Executor) execute(ctx context.Context, run domain.NodeRun, prompt strin
 		_, _ = logFile.Write(append(line, '\n'))
 		stream.Line(line)
 	})
-	return stream.Outcome(runErr), nil
+	return e.outcome(context.WithoutCancel(ctx), j, stream.Outcome(runErr))
+}
+
+// outcome reads what the agent reported through the board tools while it
+// ran and settles the node result.
+func (e *Executor) outcome(ctx context.Context, j job, cli domain.NodeResult) (domain.NodeResult, error) {
+	nr, err := e.Store.GetNodeRun(ctx, j.run.ID)
+	if err != nil {
+		return domain.NodeResult{}, err
+	}
+	pending, err := e.Store.PendingQuestions(ctx, nr.ID)
+	if err != nil {
+		return domain.NodeResult{}, err
+	}
+	var comments []domain.ReviewComment
+	if j.node.typ == domain.NodeReview {
+		if comments, err = e.Store.ListReviewComments(ctx, nr.ID); err != nil {
+			return domain.NodeResult{}, err
+		}
+	}
+	return j.node.outcome(cli, nr, pending, comments), nil
+}
+
+// newToken returns a random token for the board tools and its hash, which
+// is all the board keeps.
+func newToken() (string, []byte) {
+	token := rand.Text()
+	sum := sha256.Sum256([]byte(token))
+	return token, sum[:]
 }
 
 // load reads the node config, the card, its project and the agent profile.
@@ -151,7 +182,7 @@ func (e *Executor) load(ctx context.Context, run domain.NodeRun) (job, error) {
 	if err != nil {
 		return j, err
 	}
-	if j.config, err = agentConfig(version.Graph, run.NodeKey); err != nil {
+	if j.node, err = findNode(version.Graph, run.NodeKey); err != nil {
 		return j, err
 	}
 	if j.card, err = e.Store.GetCard(ctx, j.flowRun.CardID); err != nil {
@@ -164,10 +195,10 @@ func (e *Executor) load(ctx context.Context, run domain.NodeRun) (job, error) {
 		}
 		j.project = &project
 	}
-	if j.config.ProfileID == nil {
+	if j.node.config.ProfileID == nil {
 		return j, errors.New("the node has no agent profile")
 	}
-	if j.profile, err = e.Store.GetAgentProfile(ctx, *j.config.ProfileID); err != nil {
+	if j.profile, err = e.Store.GetAgentProfile(ctx, *j.node.config.ProfileID); err != nil {
 		return j, err
 	}
 	sealed, err := e.Store.AgentCredential(ctx, j.profile.ID)
@@ -180,18 +211,6 @@ func (e *Executor) load(ctx context.Context, run domain.NodeRun) (job, error) {
 	secret, err := e.Secrets.Open(sealed)
 	j.secret = string(secret)
 	return j, err
-}
-
-// agentConfig finds the config of an agent node in a graph.
-func agentConfig(g domain.Graph, key string) (domain.AgentConfig, error) {
-	var c domain.AgentConfig
-	for _, n := range g.Nodes {
-		if n.ID == key && n.Type == domain.NodeAgent {
-			err := json.Unmarshal(n.Config, &c)
-			return c, err
-		}
-	}
-	return c, fmt.Errorf("agent node %q not found in the flow version", key)
 }
 
 // session returns the Claude session of the node in this run, creating it
@@ -227,18 +246,22 @@ type mcpEntry struct {
 	Headers map[string]string `json:"headers,omitempty"`
 }
 
-// writeMcpConfig writes the --mcp-config file of a run, secrets included;
-// it is removed when the run ends.
-func (e *Executor) writeMcpConfig(ctx context.Context, path string, ids []uuid.UUID) error {
-	servers := map[string]mcpEntry{}
+// writeMcpConfig writes the --mcp-config file of a run: the board server,
+// authenticated by the run token, and the node's servers, secrets included.
+// The file is removed when the run ends. It returns the server names.
+func (e *Executor) writeMcpConfig(ctx context.Context, path, token string, ids []uuid.UUID) ([]string, error) {
+	servers := map[string]mcpEntry{
+		boardServer: {Type: "http", URL: e.BoardURL + "/mcp", Headers: map[string]string{"Authorization": "Bearer " + token}},
+	}
+	names := []string{boardServer}
 	for _, id := range ids {
 		server, err := e.Store.GetMcpServer(ctx, id)
 		if err != nil {
-			return fmt.Errorf("mcp server %s: %w", id, err)
+			return nil, fmt.Errorf("mcp server %s: %w", id, err)
 		}
 		secrets, err := e.mcpSecrets(ctx, id)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		entry := mcpEntry{Type: string(server.Transport), Command: server.Command, Args: server.Args, URL: server.URL}
 		if server.Transport == domain.McpStdio {
@@ -247,9 +270,10 @@ func (e *Executor) writeMcpConfig(ctx context.Context, path string, ids []uuid.U
 			entry.Headers = merge(server.Headers, secrets)
 		}
 		servers[server.Name] = entry
+		names = append(names, server.Name)
 	}
 	data, _ := json.Marshal(map[string]any{"mcpServers": servers}) // plain values
-	return os.WriteFile(path, data, 0o600)
+	return names, os.WriteFile(path, data, 0o600)
 }
 
 func (e *Executor) mcpSecrets(ctx context.Context, id uuid.UUID) (map[string]string, error) {

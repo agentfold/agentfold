@@ -91,6 +91,7 @@ const (
 	InvalidGraph     ErrorCode = "invalid_graph"
 	InvalidReference ErrorCode = "invalid_reference"
 	NotFound         ErrorCode = "not_found"
+	QuestionClosed   ErrorCode = "question_closed"
 	Validation       ErrorCode = "validation"
 )
 
@@ -112,6 +113,8 @@ func (e ErrorCode) Valid() bool {
 	case InvalidReference:
 		return true
 	case NotFound:
+		return true
+	case QuestionClosed:
 		return true
 	case Validation:
 		return true
@@ -653,6 +656,25 @@ type ProjectInput struct {
 	Name      string `json:"name"`
 }
 
+// Question Something an agent asked a human; its node waits for the answers.
+type Question struct {
+	Answer     *string            `json:"answer"`
+	AnsweredAt *time.Time         `json:"answered_at"`
+	CardId     openapi_types.UUID `json:"card_id"`
+	CreatedAt  time.Time          `json:"created_at"`
+
+	// Delivered Whether the answer already reached the agent; it can no longer change.
+	Delivered bool               `json:"delivered"`
+	Id        openapi_types.UUID `json:"id"`
+	NodeRunId openapi_types.UUID `json:"node_run_id"`
+	Text      string             `json:"text"`
+}
+
+// QuestionAnswer defines model for QuestionAnswer.
+type QuestionAnswer struct {
+	Answer string `json:"answer"`
+}
+
 // ReviewConfig Runs a reviewer on the work of the previous agent.
 type ReviewConfig struct {
 	AllowedTools    *[]string `json:"allowed_tools,omitempty"`
@@ -758,6 +780,9 @@ type CreateProjectJSONRequestBody = ProjectInput
 
 // UpdateProjectJSONRequestBody defines body for UpdateProject for application/json ContentType.
 type UpdateProjectJSONRequestBody = ProjectInput
+
+// AnswerQuestionJSONRequestBody defines body for AnswerQuestion for application/json ContentType.
+type AnswerQuestionJSONRequestBody = QuestionAnswer
 
 // AsTriggerNode returns the union data inside the FlowNode as a TriggerNode
 func (t FlowNode) AsTriggerNode() (TriggerNode, error) {
@@ -1025,6 +1050,9 @@ type ServerInterface interface {
 	// (POST /cards/{id}/move)
 	MoveCard(w http.ResponseWriter, r *http.Request, id ID)
 
+	// (GET /cards/{id}/questions)
+	ListCardQuestions(w http.ResponseWriter, r *http.Request, id ID)
+
 	// (GET /flow-runs/latest)
 	ListLatestFlowRuns(w http.ResponseWriter, r *http.Request)
 
@@ -1099,6 +1127,9 @@ type ServerInterface interface {
 
 	// (PUT /projects/{id})
 	UpdateProject(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /questions/{id}/answer)
+	AnswerQuestion(w http.ResponseWriter, r *http.Request, id ID)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -1497,6 +1528,32 @@ func (siw *ServerInterfaceWrapper) MoveCard(w http.ResponseWriter, r *http.Reque
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.MoveCard(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListCardQuestions operation middleware
+func (siw *ServerInterfaceWrapper) ListCardQuestions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListCardQuestions(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2048,6 +2105,32 @@ func (siw *ServerInterfaceWrapper) UpdateProject(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// AnswerQuestion operation middleware
+func (siw *ServerInterfaceWrapper) AnswerQuestion(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AnswerQuestion(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -2192,6 +2275,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/cards/{id}/move", wrapper.MoveCard)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/cards/{id}/children", wrapper.ListChildCards)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/cards/{id}/events", wrapper.ListCardEvents)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/cards/{id}/questions", wrapper.ListCardQuestions)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/questions/{id}/answer", wrapper.AnswerQuestion)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/flows", wrapper.ListFlows)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/flows", wrapper.CreateFlow)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/flows/{id}", wrapper.DeleteFlow)
@@ -2891,6 +2976,45 @@ type MoveCarddefaultJSONResponse struct {
 }
 
 func (response MoveCarddefaultJSONResponse) VisitMoveCardResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCardQuestionsRequestObject struct {
+	Id ID `json:"id"`
+}
+
+type ListCardQuestionsResponseObject interface {
+	VisitListCardQuestionsResponse(w http.ResponseWriter) error
+}
+
+type ListCardQuestions200JSONResponse []Question
+
+func (response ListCardQuestions200JSONResponse) VisitListCardQuestionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCardQuestionsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListCardQuestionsdefaultJSONResponse) VisitListCardQuestionsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -3854,6 +3978,46 @@ func (response UpdateProjectdefaultJSONResponse) VisitUpdateProjectResponse(w ht
 	return err
 }
 
+type AnswerQuestionRequestObject struct {
+	Id   ID `json:"id"`
+	Body *AnswerQuestionJSONRequestBody
+}
+
+type AnswerQuestionResponseObject interface {
+	VisitAnswerQuestionResponse(w http.ResponseWriter) error
+}
+
+type AnswerQuestion200JSONResponse Question
+
+func (response AnswerQuestion200JSONResponse) VisitAnswerQuestionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AnswerQuestiondefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AnswerQuestiondefaultJSONResponse) VisitAnswerQuestionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 
@@ -3910,6 +4074,9 @@ type StrictServerInterface interface {
 
 	// (POST /cards/{id}/move)
 	MoveCard(ctx context.Context, request MoveCardRequestObject) (MoveCardResponseObject, error)
+
+	// (GET /cards/{id}/questions)
+	ListCardQuestions(ctx context.Context, request ListCardQuestionsRequestObject) (ListCardQuestionsResponseObject, error)
 
 	// (GET /flow-runs/latest)
 	ListLatestFlowRuns(ctx context.Context, request ListLatestFlowRunsRequestObject) (ListLatestFlowRunsResponseObject, error)
@@ -3985,6 +4152,9 @@ type StrictServerInterface interface {
 
 	// (PUT /projects/{id})
 	UpdateProject(ctx context.Context, request UpdateProjectRequestObject) (UpdateProjectResponseObject, error)
+
+	// (POST /questions/{id}/answer)
+	AnswerQuestion(ctx context.Context, request AnswerQuestionRequestObject) (AnswerQuestionResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -4524,6 +4694,32 @@ func (sh *strictHandler) MoveCard(w http.ResponseWriter, r *http.Request, id ID)
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(MoveCardResponseObject); ok {
 		if err := validResponse.VisitMoveCardResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListCardQuestions operation middleware
+func (sh *strictHandler) ListCardQuestions(w http.ResponseWriter, r *http.Request, id ID) {
+	var request ListCardQuestionsRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListCardQuestions(ctx, request.(ListCardQuestionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListCardQuestions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListCardQuestionsResponseObject); ok {
+		if err := validResponse.VisitListCardQuestionsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -5226,6 +5422,39 @@ func (sh *strictHandler) UpdateProject(w http.ResponseWriter, r *http.Request, i
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateProjectResponseObject); ok {
 		if err := validResponse.VisitUpdateProjectResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AnswerQuestion operation middleware
+func (sh *strictHandler) AnswerQuestion(w http.ResponseWriter, r *http.Request, id ID) {
+	var request AnswerQuestionRequestObject
+
+	request.Id = id
+
+	var body AnswerQuestionJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AnswerQuestion(ctx, request.(AnswerQuestionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AnswerQuestion")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AnswerQuestionResponseObject); ok {
+		if err := validResponse.VisitAnswerQuestionResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

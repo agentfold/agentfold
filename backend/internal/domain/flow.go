@@ -376,10 +376,12 @@ func agentProblems(c AgentConfig) []string {
 	if c.MaxTurns != nil && *c.MaxTurns < 1 {
 		out = append(out, "max_turns precisa ser pelo menos 1")
 	}
-	if len(c.OutputSchema) > 0 && string(c.OutputSchema) != "null" {
+	if c.HasOutputSchema() {
 		var schema map[string]any
 		if json.Unmarshal(c.OutputSchema, &schema) != nil {
 			out = append(out, "o schema de saída precisa ser um objeto JSON")
+		} else if _, err := compileSchema(c.OutputSchema); err != nil {
+			out = append(out, "o schema de saída é inválido: "+err.Error())
 		}
 	}
 	return out

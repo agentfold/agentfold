@@ -21,9 +21,10 @@ import (
 )
 
 var (
-	id1   = uuid.MustParse("00000000-0000-7000-8000-000000000001")
-	id2   = uuid.MustParse("00000000-0000-7000-8000-000000000002")
-	stamp = time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+	answerText = "Postgres"
+	id1        = uuid.MustParse("00000000-0000-7000-8000-000000000001")
+	id2        = uuid.MustParse("00000000-0000-7000-8000-000000000002")
+	stamp      = time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
 )
 
 func newStub() *stubBoard {
@@ -33,6 +34,9 @@ func newStub() *stubBoard {
 		cardType:  domain.CardType{ID: id1, Name: "bug", CreatedAt: stamp},
 		card:      domain.Card{ID: id1, Title: "t", CardTypeID: id2, LaneID: id2, ParentCardID: &id2, CreatedAt: stamp, UpdatedAt: stamp},
 		cardEvent: domain.CardEvent{ID: id1, CardID: id2, Type: domain.CardMoved, Payload: []byte(`{"position":1}`), CreatedAt: stamp},
+		question: domain.Question{
+			ID: id1, CardID: id2, NodeRunID: id2, Text: "DB?", Answer: &answerText, AnsweredAt: &stamp, DeliveredAt: &stamp, CreatedAt: stamp,
+		},
 		run: domain.FlowRun{
 			ID: id1, FlowID: id2, FlowVersionID: id2, FlowName: "dev", CardID: id2, Trigger: domain.EventCardCreated,
 			Status: domain.RunFailed, Error: "boom", StartedAt: stamp, FinishedAt: &stamp,
@@ -65,6 +69,9 @@ func newHandler(b Board, log *bytes.Buffer) http.Handler {
 	return NewHandler(b, events.NewHub(1), Options{
 		Log:       slog.New(slog.NewTextHandler(log, nil)),
 		Heartbeat: time.Hour,
+		MCP: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusTeapot)
+		}),
 	})
 }
 
@@ -110,6 +117,9 @@ const (
 	mcpJSON = `{"id":"00000000-0000-7000-8000-000000000001","name":"sg","transport":"http","url":"https://sg/mcp",` +
 		`"args":[],"env":{},"headers":{},"secret_names":["Authorization"],` +
 		`"created_at":"2026-10-25T12:00:00Z","updated_at":"2026-10-25T12:00:00Z"}`
+	questionJSON = `{"id":"00000000-0000-7000-8000-000000000001","card_id":"00000000-0000-7000-8000-000000000002",` +
+		`"node_run_id":"00000000-0000-7000-8000-000000000002","text":"DB?","answer":"Postgres",` +
+		`"answered_at":"2026-10-25T12:00:00Z","delivered":true,"created_at":"2026-10-25T12:00:00Z"}`
 	runJSON = `{"id":"00000000-0000-7000-8000-000000000001","flow_id":"00000000-0000-7000-8000-000000000002",` +
 		`"flow_version_id":"00000000-0000-7000-8000-000000000002","flow_name":"dev",` +
 		`"card_id":"00000000-0000-7000-8000-000000000002","trigger":"card_created","status":"failed","error":"boom",` +
@@ -170,6 +180,8 @@ func TestRoutes(t *testing.T) {
 		{"GET", "/api/cards" + p1 + "/children", "", 200, "ListChildCards", []any{id1}, "[" + cardJSON + "]"},
 		{"GET", "/api/cards" + p1 + "/events", "", 200, "ListCardEvents", []any{id1}, "[" + cardEventJSON + "]"},
 		{"GET", "/api/flow-runs/latest", "", 200, "ListLatestFlowRuns", nil, "[" + runJSON + "]"},
+		{"GET", "/api/cards" + p1 + "/questions", "", 200, "ListCardQuestions", []any{id1}, "[" + questionJSON + "]"},
+		{"POST", "/api/questions" + p1 + "/answer", `{"answer":"Postgres"}`, 200, "AnswerQuestion", []any{id1, "Postgres"}, questionJSON},
 
 		{"GET", "/api/flows", "", 200, "ListFlows", nil, "[" + flowSummaryJSON + "]"},
 		{"POST", "/api/flows", `{"name":"dev"}`, 201, "CreateFlow", []any{"dev"}, flowJSON},
@@ -239,6 +251,7 @@ func TestErrors(t *testing.T) {
 			`{"code":"conflict","message":"conflict: lanes_name_key"}`},
 		{"in use", domain.ErrInUse, 409, `{"code":"in_use","message":"in use"}`},
 		{"card busy", domain.ErrCardBusy, 409, `{"code":"card_busy","message":"a flow is running for the card"}`},
+		{"question closed", domain.ErrQuestionClosed, 409, `{"code":"question_closed","message":"the answer was already delivered to the agent"}`},
 		{"invalid reference", domain.ErrInvalidReference, 422, `{"code":"invalid_reference","message":"invalid reference"}`},
 		{"invalid graph", &domain.GraphError{Problems: []domain.GraphProblem{{Message: "no trigger"}}}, 422,
 			`{"code":"invalid_graph","message":"the draft has problems","problems":[{"message":"no trigger"}]}`},
@@ -321,6 +334,7 @@ func TestToEntity(t *testing.T) {
 		{b.mcp, mcpJSON},
 		{b.cardEvent, cardEventJSON},
 		{b.run, runJSON},
+		{b.question, questionJSON},
 		{nil, "null"},
 	}
 	for _, tt := range tests {
@@ -331,5 +345,16 @@ func TestToEntity(t *testing.T) {
 		if got, want := decode(t, data), decode(t, []byte(tt.want)); !reflect.DeepEqual(got, want) {
 			t.Errorf("toEntity(%T) = %s, want %s", tt.in, data, tt.want)
 		}
+	}
+}
+
+func TestMCPMount(t *testing.T) {
+	var log bytes.Buffer
+	if rec := do(t, newHandler(newStub(), &log), "POST", "/mcp", "{}"); rec.Code != http.StatusTeapot {
+		t.Fatalf("got %d", rec.Code)
+	}
+	without := NewHandler(newStub(), events.NewHub(1), Options{Log: slog.New(slog.NewTextHandler(&log, nil))})
+	if rec := do(t, without, "POST", "/mcp", "{}"); rec.Code != http.StatusNotFound {
+		t.Fatalf("without MCP: got %d", rec.Code)
 	}
 }

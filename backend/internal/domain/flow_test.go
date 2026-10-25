@@ -141,6 +141,7 @@ func TestConfigProblems(t *testing.T) {
 		}},
 		{"agent with missing profile and MCP", NodeAgent, `{"profile_id":"` + uuid.NewString() + `","mcp_server_ids":["` + uuid.NewString() + `"],"prompt":"p"}`,
 			[]string{"escolha o perfil do agente", "um dos servidores MCP não existe mais"}},
+		{"agent with invalid schema", NodeAgent, `{` + profile + `,"prompt":"p","output_schema":{"type":1}}`, []string{"o schema de saída é inválido: "}},
 		{"agent with null schema", NodeAgent, `{` + profile + `,"prompt":"p","output_schema":null}`, nil},
 		{"agent with bad JSON", NodeAgent, `[]`, []string{"configuração inválida"}},
 		{"review with bad values", NodeReview, `{"prompt":"","max_rounds":0}`, []string{

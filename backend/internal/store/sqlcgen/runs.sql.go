@@ -25,7 +25,7 @@ func (q *Queries) CardHasActiveRun(ctx context.Context, cardID uuid.UUID) (bool,
 const continueNodeRun = `-- name: ContinueNodeRun :one
 UPDATE node_runs SET continued_at = now()
 WHERE id = $1 AND continued_at IS NULL AND status IN ('done', 'failed')
-RETURNING id, flow_run_id, node_key, iteration, status, input, output, output_handle, session_id, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, created_at, started_at, finished_at, continued_at
+RETURNING id, flow_run_id, node_key, iteration, status, input, output, output_handle, session_id, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, created_at, started_at, finished_at, continued_at, token_hash, summary, structured_output, review_approved
 `
 
 // ContinueNodeRun claims the right to follow the output of a finished node run.
@@ -54,6 +54,10 @@ func (q *Queries) ContinueNodeRun(ctx context.Context, id uuid.UUID) (NodeRun, e
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.ContinuedAt,
+		&i.TokenHash,
+		&i.Summary,
+		&i.StructuredOutput,
+		&i.ReviewApproved,
 	)
 	return i, err
 }
@@ -106,10 +110,12 @@ func (q *Queries) FinishFlowRun(ctx context.Context, arg FinishFlowRunParams) (F
 const finishNodeRun = `-- name: FinishNodeRun :one
 UPDATE node_runs
 SET status = $2, output = $3, output_handle = $4, error = $5,
-    tokens_in = $6, tokens_out = $7, cache_read = $8, cache_write = $9,
-    cost_usd = $10, turns = $11, duration_ms = $12, finished_at = now()
+    tokens_in = tokens_in + $6, tokens_out = tokens_out + $7,
+    cache_read = cache_read + $8, cache_write = cache_write + $9,
+    cost_usd = cost_usd + $10, turns = turns + $11, duration_ms = duration_ms + $12,
+    token_hash = NULL, finished_at = now()
 WHERE id = $1
-RETURNING id, flow_run_id, node_key, iteration, status, input, output, output_handle, session_id, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, created_at, started_at, finished_at, continued_at
+RETURNING id, flow_run_id, node_key, iteration, status, input, output, output_handle, session_id, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, created_at, started_at, finished_at, continued_at, token_hash, summary, structured_output, review_approved
 `
 
 type FinishNodeRunParams struct {
@@ -127,6 +133,7 @@ type FinishNodeRunParams struct {
 	DurationMs   int64
 }
 
+// FinishNodeRun adds the usage: a node resumed after questions runs again.
 func (q *Queries) FinishNodeRun(ctx context.Context, arg FinishNodeRunParams) (NodeRun, error) {
 	row := q.db.QueryRow(ctx, finishNodeRun,
 		arg.ID,
@@ -165,6 +172,10 @@ func (q *Queries) FinishNodeRun(ctx context.Context, arg FinishNodeRunParams) (N
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.ContinuedAt,
+		&i.TokenHash,
+		&i.Summary,
+		&i.StructuredOutput,
+		&i.ReviewApproved,
 	)
 	return i, err
 }
@@ -222,7 +233,7 @@ func (q *Queries) GetFlowRun(ctx context.Context, id uuid.UUID) (GetFlowRunRow, 
 }
 
 const getNodeRun = `-- name: GetNodeRun :one
-SELECT id, flow_run_id, node_key, iteration, status, input, output, output_handle, session_id, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, created_at, started_at, finished_at, continued_at FROM node_runs WHERE id = $1
+SELECT id, flow_run_id, node_key, iteration, status, input, output, output_handle, session_id, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, created_at, started_at, finished_at, continued_at, token_hash, summary, structured_output, review_approved FROM node_runs WHERE id = $1
 `
 
 func (q *Queries) GetNodeRun(ctx context.Context, id uuid.UUID) (NodeRun, error) {
@@ -250,6 +261,84 @@ func (q *Queries) GetNodeRun(ctx context.Context, id uuid.UUID) (NodeRun, error)
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.ContinuedAt,
+		&i.TokenHash,
+		&i.Summary,
+		&i.StructuredOutput,
+		&i.ReviewApproved,
+	)
+	return i, err
+}
+
+const getNodeRunForUpdate = `-- name: GetNodeRunForUpdate :one
+SELECT id, flow_run_id, node_key, iteration, status, input, output, output_handle, session_id, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, created_at, started_at, finished_at, continued_at, token_hash, summary, structured_output, review_approved FROM node_runs WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) GetNodeRunForUpdate(ctx context.Context, id uuid.UUID) (NodeRun, error) {
+	row := q.db.QueryRow(ctx, getNodeRunForUpdate, id)
+	var i NodeRun
+	err := row.Scan(
+		&i.ID,
+		&i.FlowRunID,
+		&i.NodeKey,
+		&i.Iteration,
+		&i.Status,
+		&i.Input,
+		&i.Output,
+		&i.OutputHandle,
+		&i.SessionID,
+		&i.TokensIn,
+		&i.TokensOut,
+		&i.CacheRead,
+		&i.CacheWrite,
+		&i.CostUsd,
+		&i.Turns,
+		&i.DurationMs,
+		&i.Error,
+		&i.CreatedAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.ContinuedAt,
+		&i.TokenHash,
+		&i.Summary,
+		&i.StructuredOutput,
+		&i.ReviewApproved,
+	)
+	return i, err
+}
+
+const getRunningNodeRunByToken = `-- name: GetRunningNodeRunByToken :one
+SELECT id, flow_run_id, node_key, iteration, status, input, output, output_handle, session_id, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, created_at, started_at, finished_at, continued_at, token_hash, summary, structured_output, review_approved FROM node_runs WHERE token_hash = $1 AND status = 'running'
+`
+
+func (q *Queries) GetRunningNodeRunByToken(ctx context.Context, tokenHash []byte) (NodeRun, error) {
+	row := q.db.QueryRow(ctx, getRunningNodeRunByToken, tokenHash)
+	var i NodeRun
+	err := row.Scan(
+		&i.ID,
+		&i.FlowRunID,
+		&i.NodeKey,
+		&i.Iteration,
+		&i.Status,
+		&i.Input,
+		&i.Output,
+		&i.OutputHandle,
+		&i.SessionID,
+		&i.TokensIn,
+		&i.TokensOut,
+		&i.CacheRead,
+		&i.CacheWrite,
+		&i.CostUsd,
+		&i.Turns,
+		&i.DurationMs,
+		&i.Error,
+		&i.CreatedAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.ContinuedAt,
+		&i.TokenHash,
+		&i.Summary,
+		&i.StructuredOutput,
+		&i.ReviewApproved,
 	)
 	return i, err
 }
@@ -322,7 +411,7 @@ func (q *Queries) InsertFlowRun(ctx context.Context, arg InsertFlowRunParams) (F
 }
 
 const insertNodeRun = `-- name: InsertNodeRun :one
-INSERT INTO node_runs (flow_run_id, node_key, iteration, status, input) VALUES ($1, $2, $3, $4, $5) RETURNING id, flow_run_id, node_key, iteration, status, input, output, output_handle, session_id, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, created_at, started_at, finished_at, continued_at
+INSERT INTO node_runs (flow_run_id, node_key, iteration, status, input) VALUES ($1, $2, $3, $4, $5) RETURNING id, flow_run_id, node_key, iteration, status, input, output, output_handle, session_id, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, created_at, started_at, finished_at, continued_at, token_hash, summary, structured_output, review_approved
 `
 
 type InsertNodeRunParams struct {
@@ -364,6 +453,10 @@ func (q *Queries) InsertNodeRun(ctx context.Context, arg InsertNodeRunParams) (N
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.ContinuedAt,
+		&i.TokenHash,
+		&i.Summary,
+		&i.StructuredOutput,
+		&i.ReviewApproved,
 	)
 	return i, err
 }
@@ -401,6 +494,56 @@ func (q *Queries) ListLatestFlowRuns(ctx context.Context) ([]ListLatestFlowRunsR
 			&i.FlowRun.FlowID,
 			&i.FlowRun.Error,
 			&i.FlowName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listNodeRuns = `-- name: ListNodeRuns :many
+SELECT id, flow_run_id, node_key, iteration, status, input, output, output_handle, session_id, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, created_at, started_at, finished_at, continued_at, token_hash, summary, structured_output, review_approved FROM node_runs WHERE flow_run_id = $1 ORDER BY created_at, id
+`
+
+func (q *Queries) ListNodeRuns(ctx context.Context, flowRunID uuid.UUID) ([]NodeRun, error) {
+	rows, err := q.db.Query(ctx, listNodeRuns, flowRunID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NodeRun
+	for rows.Next() {
+		var i NodeRun
+		if err := rows.Scan(
+			&i.ID,
+			&i.FlowRunID,
+			&i.NodeKey,
+			&i.Iteration,
+			&i.Status,
+			&i.Input,
+			&i.Output,
+			&i.OutputHandle,
+			&i.SessionID,
+			&i.TokensIn,
+			&i.TokensOut,
+			&i.CacheRead,
+			&i.CacheWrite,
+			&i.CostUsd,
+			&i.Turns,
+			&i.DurationMs,
+			&i.Error,
+			&i.CreatedAt,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.ContinuedAt,
+			&i.TokenHash,
+			&i.Summary,
+			&i.StructuredOutput,
+			&i.ReviewApproved,
 		); err != nil {
 			return nil, err
 		}
@@ -451,17 +594,53 @@ func (q *Queries) ListRunnableFlows(ctx context.Context) ([]ListRunnableFlowsRow
 	return items, nil
 }
 
-const startNodeRun = `-- name: StartNodeRun :one
-UPDATE node_runs SET status = 'running', started_at = now(), session_id = $2 WHERE id = $1 RETURNING id, flow_run_id, node_key, iteration, status, input, output, output_handle, session_id, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, created_at, started_at, finished_at, continued_at
+const queueNodeRun = `-- name: QueueNodeRun :exec
+UPDATE node_runs SET status = 'queued' WHERE id = $1
 `
 
-type StartNodeRunParams struct {
-	ID        uuid.UUID
-	SessionID *uuid.UUID
+func (q *Queries) QueueNodeRun(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, queueNodeRun, id)
+	return err
 }
 
-func (q *Queries) StartNodeRun(ctx context.Context, arg StartNodeRunParams) (NodeRun, error) {
-	row := q.db.QueryRow(ctx, startNodeRun, arg.ID, arg.SessionID)
+const setFlowRunStatus = `-- name: SetFlowRunStatus :one
+UPDATE flow_runs SET status = $1 WHERE id = $2 AND status = $3 RETURNING id, flow_version_id, card_id, trigger, status, started_at, finished_at, flow_id, error
+`
+
+type SetFlowRunStatusParams struct {
+	Status     string
+	ID         uuid.UUID
+	FromStatus string
+}
+
+func (q *Queries) SetFlowRunStatus(ctx context.Context, arg SetFlowRunStatusParams) (FlowRun, error) {
+	row := q.db.QueryRow(ctx, setFlowRunStatus, arg.Status, arg.ID, arg.FromStatus)
+	var i FlowRun
+	err := row.Scan(
+		&i.ID,
+		&i.FlowVersionID,
+		&i.CardID,
+		&i.Trigger,
+		&i.Status,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.FlowID,
+		&i.Error,
+	)
+	return i, err
+}
+
+const setNodeRunOutput = `-- name: SetNodeRunOutput :one
+UPDATE node_runs SET structured_output = $2 WHERE id = $1 RETURNING id, flow_run_id, node_key, iteration, status, input, output, output_handle, session_id, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, created_at, started_at, finished_at, continued_at, token_hash, summary, structured_output, review_approved
+`
+
+type SetNodeRunOutputParams struct {
+	ID               uuid.UUID
+	StructuredOutput []byte
+}
+
+func (q *Queries) SetNodeRunOutput(ctx context.Context, arg SetNodeRunOutputParams) (NodeRun, error) {
+	row := q.db.QueryRow(ctx, setNodeRunOutput, arg.ID, arg.StructuredOutput)
 	var i NodeRun
 	err := row.Scan(
 		&i.ID,
@@ -485,6 +664,138 @@ func (q *Queries) StartNodeRun(ctx context.Context, arg StartNodeRunParams) (Nod
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.ContinuedAt,
+		&i.TokenHash,
+		&i.Summary,
+		&i.StructuredOutput,
+		&i.ReviewApproved,
+	)
+	return i, err
+}
+
+const setNodeRunReview = `-- name: SetNodeRunReview :one
+UPDATE node_runs SET review_approved = $2 WHERE id = $1 RETURNING id, flow_run_id, node_key, iteration, status, input, output, output_handle, session_id, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, created_at, started_at, finished_at, continued_at, token_hash, summary, structured_output, review_approved
+`
+
+type SetNodeRunReviewParams struct {
+	ID             uuid.UUID
+	ReviewApproved *bool
+}
+
+func (q *Queries) SetNodeRunReview(ctx context.Context, arg SetNodeRunReviewParams) (NodeRun, error) {
+	row := q.db.QueryRow(ctx, setNodeRunReview, arg.ID, arg.ReviewApproved)
+	var i NodeRun
+	err := row.Scan(
+		&i.ID,
+		&i.FlowRunID,
+		&i.NodeKey,
+		&i.Iteration,
+		&i.Status,
+		&i.Input,
+		&i.Output,
+		&i.OutputHandle,
+		&i.SessionID,
+		&i.TokensIn,
+		&i.TokensOut,
+		&i.CacheRead,
+		&i.CacheWrite,
+		&i.CostUsd,
+		&i.Turns,
+		&i.DurationMs,
+		&i.Error,
+		&i.CreatedAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.ContinuedAt,
+		&i.TokenHash,
+		&i.Summary,
+		&i.StructuredOutput,
+		&i.ReviewApproved,
+	)
+	return i, err
+}
+
+const setNodeRunSummary = `-- name: SetNodeRunSummary :one
+UPDATE node_runs SET summary = $2 WHERE id = $1 RETURNING id, flow_run_id, node_key, iteration, status, input, output, output_handle, session_id, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, created_at, started_at, finished_at, continued_at, token_hash, summary, structured_output, review_approved
+`
+
+type SetNodeRunSummaryParams struct {
+	ID      uuid.UUID
+	Summary *string
+}
+
+func (q *Queries) SetNodeRunSummary(ctx context.Context, arg SetNodeRunSummaryParams) (NodeRun, error) {
+	row := q.db.QueryRow(ctx, setNodeRunSummary, arg.ID, arg.Summary)
+	var i NodeRun
+	err := row.Scan(
+		&i.ID,
+		&i.FlowRunID,
+		&i.NodeKey,
+		&i.Iteration,
+		&i.Status,
+		&i.Input,
+		&i.Output,
+		&i.OutputHandle,
+		&i.SessionID,
+		&i.TokensIn,
+		&i.TokensOut,
+		&i.CacheRead,
+		&i.CacheWrite,
+		&i.CostUsd,
+		&i.Turns,
+		&i.DurationMs,
+		&i.Error,
+		&i.CreatedAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.ContinuedAt,
+		&i.TokenHash,
+		&i.Summary,
+		&i.StructuredOutput,
+		&i.ReviewApproved,
+	)
+	return i, err
+}
+
+const startNodeRun = `-- name: StartNodeRun :one
+UPDATE node_runs SET status = 'running', started_at = now(), finished_at = NULL, session_id = $2, token_hash = $3
+WHERE id = $1 RETURNING id, flow_run_id, node_key, iteration, status, input, output, output_handle, session_id, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, created_at, started_at, finished_at, continued_at, token_hash, summary, structured_output, review_approved
+`
+
+type StartNodeRunParams struct {
+	ID        uuid.UUID
+	SessionID *uuid.UUID
+	TokenHash []byte
+}
+
+func (q *Queries) StartNodeRun(ctx context.Context, arg StartNodeRunParams) (NodeRun, error) {
+	row := q.db.QueryRow(ctx, startNodeRun, arg.ID, arg.SessionID, arg.TokenHash)
+	var i NodeRun
+	err := row.Scan(
+		&i.ID,
+		&i.FlowRunID,
+		&i.NodeKey,
+		&i.Iteration,
+		&i.Status,
+		&i.Input,
+		&i.Output,
+		&i.OutputHandle,
+		&i.SessionID,
+		&i.TokensIn,
+		&i.TokensOut,
+		&i.CacheRead,
+		&i.CacheWrite,
+		&i.CostUsd,
+		&i.Turns,
+		&i.DurationMs,
+		&i.Error,
+		&i.CreatedAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.ContinuedAt,
+		&i.TokenHash,
+		&i.Summary,
+		&i.StructuredOutput,
+		&i.ReviewApproved,
 	)
 	return i, err
 }

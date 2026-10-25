@@ -4,19 +4,34 @@
 //
 //	[fail]  the result event reports an error
 //	[crash] exits with status 2 before any result
+//
+// Markers in the first prompt of a session script calls to the board MCP
+// tools, made on the runs of that session:
+//
+//	[ask:Q]          ask_human([Q]) on the first run
+//	[done:S]         report_done(S) on every run without questions
+//	[output:JSON]    submit_output(JSON) on every run without questions
+//	[review:a,b,…]   submit_review on run i with verdict i (approve or
+//	                 reject; the last one repeats)
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
+
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func main() {
 	args := os.Args[1:]
-	prompt := ""
-	mcp := ""
+	prompt, mcp, session := "", "", ""
 	for i, a := range args {
 		if a == "-p" && i+1 < len(args) {
 			prompt = args[i+1]
@@ -25,6 +40,13 @@ func main() {
 			data, _ := os.ReadFile(args[i+1])
 			mcp = string(data)
 		}
+		if (a == "--session-id" || a == "--resume") && i+1 < len(args) {
+			session = args[i+1]
+		}
+	}
+	if err := script(prompt, mcp, session); err != nil {
+		fmt.Fprintln(os.Stderr, "board tools:", err)
+		os.Exit(3)
 	}
 	cwd, _ := os.Getwd()
 	record, _ := json.Marshal(map[string]any{
@@ -57,4 +79,100 @@ func main() {
 		},
 	})
 	fmt.Println(string(result))
+}
+
+var marker = regexp.MustCompile(`\[(ask|done|output|review):([^\]]*)\]`)
+
+// script runs the board tool calls the first prompt of the session asks for.
+func script(prompt, mcpConfig, session string) error {
+	dir := os.Getenv("CLAUDE_CONFIG_DIR")
+	if dir == "" || session == "" {
+		return nil
+	}
+	first := filepath.Join(dir, "fake-"+session+".prompt")
+	if _, err := os.Stat(first); err != nil {
+		_ = os.WriteFile(first, []byte(prompt), 0o600)
+	}
+	original, _ := os.ReadFile(first)
+	counter := filepath.Join(dir, "fake-"+session+".runs")
+	data, _ := os.ReadFile(counter)
+	run, _ := strconv.Atoi(string(data))
+	run++
+	_ = os.WriteFile(counter, []byte(strconv.Itoa(run)), 0o600)
+
+	calls := marker.FindAllStringSubmatch(string(original), -1)
+	if len(calls) == 0 {
+		return nil
+	}
+	cs, err := connect(mcpConfig)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = cs.Close() }()
+	ctx := context.Background()
+	call := func(name string, args map[string]any) error {
+		res, err := cs.CallTool(ctx, &sdk.CallToolParams{Name: name, Arguments: args})
+		if err == nil && res.IsError {
+			err = fmt.Errorf("%s: %v", name, res.Content)
+		}
+		return err
+	}
+	for _, c := range calls {
+		if c[1] == "ask" && run == 1 {
+			return call("ask_human", map[string]any{"questions": []string{c[2]}})
+		}
+	}
+	for _, c := range calls {
+		var err error
+		switch c[1] {
+		case "done":
+			err = call("report_done", map[string]any{"summary": c[2]})
+		case "output":
+			err = call("submit_output", map[string]any{"output": json.RawMessage(c[2])})
+		case "review":
+			verdicts := strings.Split(c[2], ",")
+			verdict := verdicts[min(run, len(verdicts))-1]
+			args := map[string]any{"approved": verdict == "approve"}
+			if verdict != "approve" {
+				args["comments"] = []map[string]any{{"file": "main.go", "line": 1, "body": "add tests"}}
+			}
+			err = call("submit_review", args)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// connect opens the board MCP server of the --mcp-config file.
+func connect(mcpConfig string) (*sdk.ClientSession, error) {
+	var cfg struct {
+		McpServers map[string]struct {
+			URL     string            `json:"url"`
+			Headers map[string]string `json:"headers"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal([]byte(mcpConfig), &cfg); err != nil {
+		return nil, err
+	}
+	board := cfg.McpServers["orquestrator"]
+	client := sdk.NewClient(&sdk.Implementation{Name: "fakeclaude", Version: "0"}, nil)
+	transport := &sdk.StreamableClientTransport{
+		Endpoint:             board.URL,
+		HTTPClient:           &http.Client{Transport: headers{board.Headers}},
+		DisableStandaloneSSE: true,
+	}
+	return client.Connect(context.Background(), transport, nil)
+}
+
+// headers adds the configured headers to every request.
+type headers struct{ values map[string]string }
+
+func (h headers) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	for k, v := range h.values {
+		r.Header.Set(k, v)
+	}
+	return http.DefaultTransport.RoundTrip(r)
 }

@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,7 +30,11 @@ const (
 	envDataDir   = "ORQ_DATA_DIR"
 	envClaudeBin = "ORQ_CLAUDE_BIN"
 	envRunner    = "ORQ_RUNNER"
+	envServerURL = "ORQ_SERVER_URL"
 )
+
+// defaultServerURL is the server address agents reach the board MCP at.
+const defaultServerURL = "http://" + defaultAddr
 
 const (
 	jobLease = 2 * time.Minute
@@ -66,6 +71,14 @@ func claudeBinary() (string, error) {
 		return "", fmt.Errorf("claude CLI not found: install it (mise install) or set %s", envClaudeBin)
 	}
 	return bin, nil
+}
+
+// serverURL is ORQ_SERVER_URL, or the server's default address.
+func serverURL() string {
+	if url := os.Getenv(envServerURL); url != "" {
+		return strings.TrimSuffix(url, "/")
+	}
+	return defaultServerURL
 }
 
 // newRunner builds the runner named by ORQ_RUNNER: bwrap (default) or local.
@@ -126,6 +139,7 @@ func runWorker(ctx context.Context, args []string, stdout, stderr io.Writer) err
 			Workspaces: workspace.Local{DataDir: data},
 			Runner:     run,
 			Binary:     claude,
+			BoardURL:   serverURL(),
 		},
 		Pub: notifier{store: st, log: log},
 	}

@@ -189,7 +189,7 @@ func TestRuns(t *testing.T) {
 		t.Fatalf("CreateNodeRun = %+v, %v", n, err)
 	}
 	session := uuid.New()
-	if n, err = s.StartNodeRun(ctx, n.ID, session); err != nil || n.Status != domain.NodeRunning || *n.SessionID != session || n.StartedAt == nil {
+	if n, err = s.StartNodeRun(ctx, n.ID, session, []byte("hash")); err != nil || n.Status != domain.NodeRunning || *n.SessionID != session || n.StartedAt == nil {
 		t.Fatalf("StartNodeRun = %+v, %v", n, err)
 	}
 	result := domain.NodeResult{

@@ -3,7 +3,7 @@ import { isActive } from './runs'
 
 const labels: Record<FlowRun['status'], string> = {
   running: 'Rodando',
-  waiting: 'Aguardando',
+  waiting: 'Aguardando resposta',
   done: 'Concluído',
   failed: 'Falhou',
   canceled: 'Cancelado',

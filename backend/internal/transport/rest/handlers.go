@@ -169,3 +169,13 @@ func (h handlers) ListLatestFlowRuns(ctx context.Context, _ openapi.ListLatestFl
 	runs, err := h.board.ListLatestFlowRuns(ctx)
 	return openapi.ListLatestFlowRuns200JSONResponse(mapAll(runs, toFlowRun)), err
 }
+
+func (h handlers) ListCardQuestions(ctx context.Context, req openapi.ListCardQuestionsRequestObject) (openapi.ListCardQuestionsResponseObject, error) {
+	questions, err := h.board.ListCardQuestions(ctx, req.Id)
+	return openapi.ListCardQuestions200JSONResponse(mapAll(questions, toQuestion)), err
+}
+
+func (h handlers) AnswerQuestion(ctx context.Context, req openapi.AnswerQuestionRequestObject) (openapi.AnswerQuestionResponseObject, error) {
+	q, err := h.board.AnswerQuestion(ctx, req.Id, req.Body.Answer)
+	return openapi.AnswerQuestion200JSONResponse(toQuestion(q)), err
+}

@@ -1,10 +1,17 @@
 import type { CardEvent } from '../api/client'
-import { kindLabels, outputLabels } from '../flows/graph'
+import { kindLabels } from '../flows/graph'
 
 const runStatus: Record<string, string> = {
   done: 'concluído',
   failed: 'falhou',
   canceled: 'cancelado',
+}
+
+/** How a node ended, by the output it left through. */
+const outcomes: Record<string, string> = {
+  approved: 'aprovado',
+  changes_requested: 'mudanças pedidas',
+  max_rounds_exceeded: 'limite de rodadas atingido',
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
@@ -42,9 +49,39 @@ export function describeEvent(
       // Outputs other than the plain "done"/"next" tell how it ended.
       const handle = str(p.output_handle)
       const plain = ['', 'done', 'next'].includes(handle)
-      return `${node} ${plain ? 'concluído' : (outputLabels[handle] ?? handle)}`
+      return plain
+        ? `${node} concluído`
+        : `${node} concluído (${outcomes[handle] ?? handle})`
     }
+    case 'question.asked':
+      return `O nó ${str(p.node_key)} perguntou: ${str(p.text)}`
+    case 'question.answered':
+      return `Respondido "${str(p.text)}": ${str(p.answer)}`
+    case 'review.submitted':
+      return reviewLine(p)
     default:
       return event.type
   }
+}
+
+interface Comment {
+  file?: string
+  line?: number
+  body: string
+}
+
+/** A review verdict, with the comments when it asks for changes. */
+function reviewLine(p: CardEvent['payload']): string {
+  const who = `Review ${str(p.node_key)} (rodada ${String(p.round)})`
+  if (p.approved === true) {
+    return `${who} aprovou`
+  }
+  const comments = (Array.isArray(p.comments) ? p.comments : []) as Comment[]
+  const lines = comments.map((c) => {
+    const where = c.file
+      ? `${c.file}${c.line === undefined ? '' : `:${String(c.line)}`}: `
+      : ''
+    return `${where}${c.body}`
+  })
+  return `${who} pediu mudanças: ${lines.join('; ')}`
 }

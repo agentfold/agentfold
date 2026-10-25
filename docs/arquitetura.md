@@ -161,7 +161,11 @@ segredos injetados no momento da execução. Tools do board expostas ao agente:
 | `get_card()` | contexto do card (título, descrição, histórico relevante) |
 
 Se o agente terminar sem chamar `report_done`/`submit_review`, o resultado final do
-`stream-json` é usado; para Review sem `submit_review` o nó falha.
+`stream-json` é usado; para Review sem `submit_review` o nó falha, e para Agent com schema sem
+`submit_output` também.
+
+O endpoint `/mcp` é stateless: requisições com `Authorization: Bearer <token do NodeRun>` (válido só
+enquanto o nó roda) recebem as tools acima; sem token, recebem as tools de integração.
 
 O agente **não comita nem abre PR** (garantido pelas tools bloqueadas/prompt; o PR será um nó futuro).
 

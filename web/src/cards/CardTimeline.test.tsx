@@ -73,7 +73,7 @@ describe('describe', () => {
         status: 'done',
         output_handle: 'approved',
       },
-      'Review r aprovado',
+      'Review r concluído (aprovado)',
     ],
     [
       'node.finished',
@@ -83,7 +83,7 @@ describe('describe', () => {
         status: 'done',
         output_handle: 'odd',
       },
-      'future x odd',
+      'future x concluído (odd)',
     ],
     [
       'node.finished',
@@ -94,6 +94,40 @@ describe('describe', () => {
         error: 'no result',
       },
       'Agente dev falhou: no result',
+    ],
+    [
+      'question.asked',
+      { node_key: 'dev', text: 'Which DB?' },
+      'O nó dev perguntou: Which DB?',
+    ],
+    [
+      'question.answered',
+      { text: 'Which DB?', answer: 'Postgres' },
+      'Respondido "Which DB?": Postgres',
+    ],
+    [
+      'review.submitted',
+      { node_key: 'rev', round: 2, approved: true, comments: [] },
+      'Review rev (rodada 2) aprovou',
+    ],
+    [
+      'review.submitted',
+      {
+        node_key: 'rev',
+        round: 1,
+        approved: false,
+        comments: [
+          { file: 'a.go', line: 3, body: 'tests' },
+          { file: 'b.go', body: 'name' },
+          { body: 'docs' },
+        ],
+      },
+      'Review rev (rodada 1) pediu mudanças: a.go:3: tests; b.go: name; docs',
+    ],
+    [
+      'review.submitted',
+      { node_key: 'rev', round: 1, approved: false },
+      'Review rev (rodada 1) pediu mudanças: ',
     ],
     ['something.else', {}, 'something.else'],
   ])('%s %j', (type, payload, want) => {

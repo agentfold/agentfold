@@ -61,6 +61,13 @@ func toFlowRun(r domain.FlowRun) openapi.FlowRun {
 	}
 }
 
+func toQuestion(q domain.Question) openapi.Question {
+	return openapi.Question{
+		Id: q.ID, CardId: q.CardID, NodeRunId: q.NodeRunID, Text: q.Text, Answer: q.Answer,
+		AnsweredAt: q.AnsweredAt, Delivered: q.DeliveredAt != nil, CreatedAt: q.CreatedAt,
+	}
+}
+
 // toEntity converts the domain value carried by a board event.
 func toEntity(v any) any {
 	switch v := v.(type) {
@@ -76,6 +83,8 @@ func toEntity(v any) any {
 		return toCardEvent(v)
 	case domain.FlowRun:
 		return toFlowRun(v)
+	case domain.Question:
+		return toQuestion(v)
 	case domain.Flow:
 		return toFlowSummary(v)
 	case domain.AgentProfile:

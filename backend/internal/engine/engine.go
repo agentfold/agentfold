@@ -33,6 +33,9 @@ type Store interface {
 	CreateNodeRun(ctx context.Context, flowRunID uuid.UUID, nodeKey string, iteration int, input json.RawMessage) (domain.NodeRun, error)
 	FinishNodeRun(ctx context.Context, id uuid.UUID, r domain.NodeResult) (domain.NodeRun, error)
 	ContinueNodeRun(ctx context.Context, id uuid.UUID) (domain.NodeRun, bool, error)
+	GetNodeRun(ctx context.Context, id uuid.UUID) (domain.NodeRun, error)
+	WaitFlowRun(ctx context.Context, id uuid.UUID) (domain.FlowRun, error)
+	ResumeIfAnswered(ctx context.Context, nodeRunID uuid.UUID) (domain.FlowRun, bool, error)
 	EnqueueJob(ctx context.Context, j store.NewJob) (uuid.UUID, error)
 }
 
@@ -90,14 +93,41 @@ func (e *Engine) HandleTrigger(ctx context.Context, payload json.RawMessage) err
 }
 
 // HandleAgent runs agent.run jobs: it runs the agent node, then follows its
-// output. A retried job only follows the output if that is still pending.
+// output, or holds the run while the agent waits for answers. A retried job
+// only follows the output if that is still pending.
 func (e *Engine) HandleAgent(ctx context.Context, payload json.RawMessage) error {
 	var p agent.Payload
 	if err := json.Unmarshal(payload, &p); err != nil {
 		return fmt.Errorf("agent.run payload: %w", err)
 	}
 	err := e.Agents.Handle(ctx, payload)
-	return errors.Join(err, e.continueFrom(context.WithoutCancel(ctx), p.NodeRunID))
+	ctx = context.WithoutCancel(ctx)
+	nr, getErr := e.Store.GetNodeRun(ctx, p.NodeRunID)
+	if getErr != nil {
+		return errors.Join(err, getErr)
+	}
+	if nr.Status == domain.NodeAwaitingInput {
+		return errors.Join(err, e.await(ctx, nr))
+	}
+	return errors.Join(err, e.continueFrom(ctx, p.NodeRunID))
+}
+
+// await holds the run of a node waiting for answers. Answers given while
+// the agent still ran resume it right away.
+func (e *Engine) await(ctx context.Context, nr domain.NodeRun) error {
+	fr, err := e.Store.WaitFlowRun(ctx, nr.FlowRunID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil // the run ended meanwhile
+	}
+	if err != nil {
+		return err
+	}
+	e.Pub.Publish(events.Event{Type: "flow_run.updated", ID: fr.ID, Data: fr})
+	fr, resumed, err := e.Store.ResumeIfAnswered(ctx, nr.ID)
+	if err == nil && resumed {
+		e.Pub.Publish(events.Event{Type: "flow_run.updated", ID: fr.ID, Data: fr})
+	}
+	return err
 }
 
 // run is a flow run being walked.
@@ -148,7 +178,8 @@ func (e *Engine) continueFrom(ctx context.Context, nodeRunID uuid.UUID) error {
 		return err
 	}
 	r := &run{FlowRun: fr, graph: version.Graph}
-	if err := e.nodeFinished(ctx, r, nr, domain.NodeAgent); err != nil {
+	node, _ := findNode(r.graph, nr.NodeKey)
+	if err := e.nodeFinished(ctx, r, nr, node.Type); err != nil {
 		return err
 	}
 	if !fr.Status.Active() {
@@ -176,7 +207,7 @@ func (e *Engine) advance(ctx context.Context, r *run, key string, input json.Raw
 		if err != nil {
 			return err
 		}
-		if node.Type == domain.NodeAgent {
+		if node.Type == domain.NodeAgent || node.Type == domain.NodeReview {
 			return e.queueAgent(ctx, nr, input)
 		}
 		result, err := e.runBoardNode(ctx, r, node)

@@ -121,27 +121,31 @@ type McpServer struct {
 }
 
 type NodeRun struct {
-	ID           uuid.UUID
-	FlowRunID    uuid.UUID
-	NodeKey      string
-	Iteration    int32
-	Status       string
-	Input        []byte
-	Output       []byte
-	OutputHandle *string
-	SessionID    *uuid.UUID
-	TokensIn     int64
-	TokensOut    int64
-	CacheRead    int64
-	CacheWrite   int64
-	CostUsd      float64
-	Turns        int32
-	DurationMs   int64
-	Error        *string
-	CreatedAt    time.Time
-	StartedAt    *time.Time
-	FinishedAt   *time.Time
-	ContinuedAt  *time.Time
+	ID               uuid.UUID
+	FlowRunID        uuid.UUID
+	NodeKey          string
+	Iteration        int32
+	Status           string
+	Input            []byte
+	Output           []byte
+	OutputHandle     *string
+	SessionID        *uuid.UUID
+	TokensIn         int64
+	TokensOut        int64
+	CacheRead        int64
+	CacheWrite       int64
+	CostUsd          float64
+	Turns            int32
+	DurationMs       int64
+	Error            *string
+	CreatedAt        time.Time
+	StartedAt        *time.Time
+	FinishedAt       *time.Time
+	ContinuedAt      *time.Time
+	TokenHash        []byte
+	Summary          *string
+	StructuredOutput []byte
+	ReviewApproved   *bool
 }
 
 type Project struct {
@@ -150,4 +154,26 @@ type Project struct {
 	SourceKind string
 	LocalPath  string
 	CreatedAt  time.Time
+}
+
+type Question struct {
+	ID          uuid.UUID
+	CardID      uuid.UUID
+	NodeRunID   uuid.UUID
+	Text        string
+	Answer      *string
+	AnsweredAt  *time.Time
+	DeliveredAt *time.Time
+	CreatedAt   time.Time
+}
+
+type ReviewComment struct {
+	ID        uuid.UUID
+	CardID    uuid.UUID
+	NodeRunID uuid.UUID
+	Round     int32
+	File      *string
+	Line      *int32
+	Body      string
+	CreatedAt time.Time
 }

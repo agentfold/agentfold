@@ -16,10 +16,6 @@ import (
 // that (the PR node, later).
 var alwaysDisallowed = []string{"Bash(git commit:*)", "Bash(git push:*)"}
 
-// systemPrompt is appended to Claude's own.
-const systemPrompt = "You are working on a card of the Orquestrator board. " +
-	"Never commit, push or open pull requests: leave your changes in the working tree; the board takes it from there."
-
 // Invocation is one run of `claude -p`.
 type Invocation struct {
 	Prompt string
@@ -27,9 +23,12 @@ type Invocation struct {
 	SessionID uuid.UUID
 	Resume    bool
 	Config    domain.AgentConfig
+	// SystemPrompt is appended to Claude's own.
+	SystemPrompt string
 	// McpConfig is the path, as the process sees it, of the --mcp-config
-	// file; empty when the node uses no MCP server.
-	McpConfig string
+	// file, which declares McpServers; their tools are allowed.
+	McpConfig  string
+	McpServers []string
 }
 
 // Args builds the command line. The prompt comes right after -p: flags with
@@ -41,10 +40,14 @@ func Args(inv Invocation) []string {
 	} else {
 		args = append(args, "--session-id", inv.SessionID.String())
 	}
-	args = append(args, "--append-system-prompt", systemPrompt)
+	args = append(args, "--append-system-prompt", inv.SystemPrompt)
 	c := inv.Config
-	if len(c.AllowedTools) > 0 {
-		args = append(args, "--allowedTools", strings.Join(c.AllowedTools, ","))
+	allowed := append([]string{}, c.AllowedTools...)
+	for _, name := range inv.McpServers {
+		allowed = append(allowed, "mcp__"+name)
+	}
+	if len(allowed) > 0 {
+		args = append(args, "--allowedTools", strings.Join(allowed, ","))
 	}
 	args = append(args, "--disallowedTools", strings.Join(append(append([]string{}, c.DisallowedTools...), alwaysDisallowed...), ","))
 	if c.MaxTurns != nil {

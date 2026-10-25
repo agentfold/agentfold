@@ -1,7 +1,9 @@
 package agent
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -53,12 +55,28 @@ type fakeStore struct {
 	session  *uuid.UUID
 	started  bool
 	result   *domain.NodeResult
+	// tokenHash is what the run started with; pending and comments are what
+	// the agent left through the board tools.
+	tokenHash []byte
+	pending   int
+	comments  []domain.ReviewComment
 }
 
 func (f *fakeStore) err(name string) error { return f.errs[name] }
 
 func (f *fakeStore) GetNodeRun(context.Context, uuid.UUID) (domain.NodeRun, error) {
+	if f.started { // reading what the agent reported
+		return f.run, f.err("GetNodeRun after")
+	}
 	return f.run, f.err("GetNodeRun")
+}
+
+func (f *fakeStore) PendingQuestions(context.Context, uuid.UUID) (int, error) {
+	return f.pending, f.err("PendingQuestions")
+}
+
+func (f *fakeStore) ListReviewComments(context.Context, uuid.UUID) ([]domain.ReviewComment, error) {
+	return f.comments, f.err("ListReviewComments")
 }
 
 func (f *fakeStore) GetFlowRun(context.Context, uuid.UUID) (domain.FlowRun, error) {
@@ -108,8 +126,9 @@ func (f *fakeStore) CreateAgentSession(_ context.Context, _ uuid.UUID, _ string,
 	return f.err("CreateAgentSession")
 }
 
-func (f *fakeStore) StartNodeRun(context.Context, uuid.UUID, uuid.UUID) (domain.NodeRun, error) {
+func (f *fakeStore) StartNodeRun(_ context.Context, _, _ uuid.UUID, tokenHash []byte) (domain.NodeRun, error) {
 	f.started = true
+	f.tokenHash = tokenHash
 	return f.run, f.err("StartNodeRun")
 }
 
@@ -147,7 +166,7 @@ func newSetup(t *testing.T) setup {
 	flowRun := domain.FlowRun{ID: uuid.New(), FlowVersionID: uuid.New(), CardID: uuid.New()}
 	store := &fakeStore{
 		errs:    map[string]error{},
-		run:     domain.NodeRun{ID: uuid.New(), FlowRunID: flowRun.ID, NodeKey: "dev"},
+		run:     domain.NodeRun{ID: uuid.New(), FlowRunID: flowRun.ID, NodeKey: "dev", Status: domain.NodeQueued},
 		flowRun: flowRun,
 		version: domain.FlowVersion{Graph: domain.Graph{Nodes: []domain.Node{
 			{ID: "dev", Type: domain.NodeAgent, Config: json.RawMessage(config)},
@@ -167,6 +186,7 @@ func newSetup(t *testing.T) setup {
 			Workspaces: workspace.Local{DataDir: data},
 			Runner:     runner.Local{Home: t.TempDir()},
 			Binary:     fakeClaude,
+			BoardURL:   "http://board:8080",
 		},
 	}
 }
@@ -224,8 +244,17 @@ func TestFirstRun(t *testing.T) {
 	if call["oauth_token"] != "sk-ant-oat-secret" || call["api_key"] != "" || call["config_dir"] != filepath.Join(s.cardDir(), "claude") {
 		t.Fatalf("env: %v", call)
 	}
-	if strings.Contains(args, "--mcp-config") {
-		t.Fatal("unexpected MCP config")
+	if string(r.Output) != `{"result":"did it"}` {
+		t.Fatalf("output %s", r.Output)
+	}
+	board := mcpServers(t, call)[boardServer]
+	token, ok := strings.CutPrefix(board["headers"].(map[string]any)["Authorization"].(string), "Bearer ")
+	sum := sha256.Sum256([]byte(token))
+	if !ok || board["url"] != "http://board:8080/mcp" || !bytes.Equal(sum[:], s.store.tokenHash) {
+		t.Fatalf("board MCP entry %v", board)
+	}
+	if !strings.Contains(args, "--allowedTools mcp__orquestrator ") || !strings.Contains(args, "call report_done") {
+		t.Fatalf("args: %s", args)
 	}
 	log, err := os.ReadFile(filepath.Join(s.cardDir(), "logs", s.store.run.ID.String()+".jsonl"))
 	if err != nil || strings.Count(string(log), "\n") != 3 {
@@ -285,15 +314,15 @@ func TestProjectWorktreeAndMcp(t *testing.T) {
 		t.Fatal(err)
 	}
 	call := s.call(t)
-	var mcp map[string]map[string]map[string]any
-	if err := json.Unmarshal([]byte(call["mcp_config"].(string)), &mcp); err != nil {
-		t.Fatalf("mcp config %q: %v", call["mcp_config"], err)
-	}
-	if mcp["mcpServers"]["fs"]["command"] != "srv" || mcp["mcpServers"]["fs"]["env"].(map[string]any)["A"] != "1" {
+	mcp := mcpServers(t, call)
+	if mcp["fs"]["command"] != "srv" || mcp["fs"]["env"].(map[string]any)["A"] != "1" {
 		t.Fatalf("stdio entry: %v", mcp)
 	}
-	if mcp["mcpServers"]["sg"]["headers"].(map[string]any)["Authorization"] != "Bearer x" || mcp["mcpServers"]["sg"]["type"] != "http" {
+	if mcp["sg"]["headers"].(map[string]any)["Authorization"] != "Bearer x" || mcp["sg"]["type"] != "http" {
 		t.Fatalf("http entry: %v", mcp)
+	}
+	if args := argsOf(call); !strings.Contains(args, "--allowedTools mcp__orquestrator,mcp__fs,mcp__sg ") {
+		t.Fatalf("the node MCP servers are not allowed: %s", args)
 	}
 	leftovers, _ := filepath.Glob(filepath.Join(s.cardDir(), "claude", "mcp-*.json"))
 	if len(leftovers) != 0 {
@@ -341,7 +370,11 @@ func TestRunFailures(t *testing.T) {
 	}{
 		{"flow run", func(s setup) { s.store.errs["GetFlowRun"] = errStore }, "store failed"},
 		{"version", func(s setup) { s.store.errs["GetFlowVersion"] = errStore }, "store failed"},
-		{"node missing", func(s setup) { s.store.run.NodeKey = "other" }, `agent node "other" not found`},
+		{"node missing", func(s setup) { s.store.run.NodeKey = "other" }, `node "other" not found`},
+		{"not an agent", func(s setup) { s.store.version.Graph.Nodes[0].Type = domain.NodeEnd }, `is a end node, not an agent`},
+		{"bad review config", func(s setup) {
+			s.store.version.Graph.Nodes[0] = domain.Node{ID: "dev", Type: domain.NodeReview, Config: json.RawMessage(`[]`)}
+		}, "cannot unmarshal"},
 		{"bad config", func(s setup) { s.store.version.Graph.Nodes[0].Config = json.RawMessage(`[]`) }, "cannot unmarshal"},
 		{"card", func(s setup) { s.store.errs["GetCard"] = errStore }, "store failed"},
 		{"project", func(s setup) {
@@ -374,6 +407,12 @@ func TestRunFailures(t *testing.T) {
 			_ = os.MkdirAll(filepath.Join(s.cardDir(), "claude", "mcp-"+s.store.run.ID.String()+".json"), 0o700)
 		}, "is a directory"},
 		{"start", func(s setup) { s.store.errs["StartNodeRun"] = errStore }, "store failed"},
+		{"reports", func(s setup) { s.store.errs["GetNodeRun after"] = errStore }, "store failed"},
+		{"questions", func(s setup) { s.store.errs["PendingQuestions"] = errStore }, "store failed"},
+		{"comments", func(s setup) {
+			s.store.version.Graph.Nodes[0].Type = domain.NodeReview
+			s.store.errs["ListReviewComments"] = errStore
+		}, "store failed"},
 		{"log file", func(s setup) {
 			_ = os.MkdirAll(filepath.Join(s.cardDir(), "logs", s.store.run.ID.String()+".jsonl"), 0o700)
 		}, "is a directory"},
@@ -423,7 +462,7 @@ func TestMerge(t *testing.T) {
 }
 
 func TestFinishedNodeRunsAreNotRunAgain(t *testing.T) {
-	for _, status := range []domain.NodeStatus{domain.NodeDone, domain.NodeFailed} {
+	for _, status := range []domain.NodeStatus{domain.NodeDone, domain.NodeFailed, domain.NodeAwaitingInput} {
 		s := newSetup(t)
 		s.store.run.Status = status
 		if err := s.handle(t, ""); err != nil {
@@ -432,5 +471,48 @@ func TestFinishedNodeRunsAreNotRunAgain(t *testing.T) {
 		if s.store.started || s.store.result != nil {
 			t.Fatalf("%s: the node ran again", status)
 		}
+	}
+}
+
+// mcpServers reads the servers of the --mcp-config the fake CLI got.
+func mcpServers(t *testing.T, call map[string]any) map[string]map[string]any {
+	t.Helper()
+	var mcp struct {
+		McpServers map[string]map[string]any `json:"mcpServers"`
+	}
+	if err := json.Unmarshal([]byte(call["mcp_config"].(string)), &mcp); err != nil {
+		t.Fatalf("mcp config %q: %v", call["mcp_config"], err)
+	}
+	return mcp.McpServers
+}
+
+func TestWaitingForAnswers(t *testing.T) {
+	s := newSetup(t)
+	s.store.pending = 1
+	if err := s.handle(t, ""); err != nil {
+		t.Fatal(err)
+	}
+	if r := s.store.result; r.Status != domain.NodeAwaitingInput || r.OutputHandle != "" || r.Output != nil || r.Turns != 3 {
+		t.Fatalf("result %+v", r)
+	}
+}
+
+func TestReviewNode(t *testing.T) {
+	s := newSetup(t)
+	cfg := `{"profile_id":"` + s.store.profile.ID.String() + `","prompt":"Review it","max_rounds":2,"disallowed_tools":["WebFetch"]}`
+	s.store.version.Graph.Nodes[0] = domain.Node{ID: "dev", Type: domain.NodeReview, Config: json.RawMessage(cfg)}
+	approved := false
+	s.store.run.ReviewApproved = &approved
+	s.store.run.Iteration = 1
+	s.store.comments = []domain.ReviewComment{{File: "a.go", Body: "add tests"}}
+	if err := s.handle(t, ""); err != nil {
+		t.Fatal(err)
+	}
+	if r := s.store.result; r.OutputHandle != "changes_requested" || !strings.Contains(string(r.Output), "a.go: add tests") {
+		t.Fatalf("result %+v (%s)", r, r.Output)
+	}
+	args := argsOf(s.call(t))
+	if !strings.Contains(args, "--disallowedTools WebFetch,Edit,MultiEdit,Write,NotebookEdit,") || !strings.Contains(args, "calling submit_review") {
+		t.Fatalf("args: %s", args)
 	}
 }

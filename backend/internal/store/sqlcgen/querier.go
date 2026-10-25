@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	AnswerQuestion(ctx context.Context, arg AnswerQuestionParams) (Question, error)
 	CardHasActiveRun(ctx context.Context, cardID uuid.UUID) (bool, error)
 	// ClaimJob takes the oldest job the worker can run: queued, or running with
 	// an expired lease (its worker died) and attempts left.
@@ -27,9 +28,12 @@ type Querier interface {
 	DeleteLane(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteMcpServer(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteProject(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteReviewComments(ctx context.Context, nodeRunID uuid.UUID) error
+	DeliverQuestions(ctx context.Context, nodeRunID uuid.UUID) error
 	ExtendJobLease(ctx context.Context, arg ExtendJobLeaseParams) (int64, error)
 	FinishFlowRun(ctx context.Context, arg FinishFlowRunParams) (FlowRun, error)
 	FinishJob(ctx context.Context, arg FinishJobParams) (int64, error)
+	// FinishNodeRun adds the usage: a node resumed after questions runs again.
 	FinishNodeRun(ctx context.Context, arg FinishNodeRunParams) (NodeRun, error)
 	GetAgentProfile(ctx context.Context, id uuid.UUID) (AgentProfile, error)
 	GetAgentProfileByName(ctx context.Context, name string) (AgentProfile, error)
@@ -46,7 +50,10 @@ type Querier interface {
 	GetLaneForUpdate(ctx context.Context, id uuid.UUID) (Lane, error)
 	GetMcpServer(ctx context.Context, id uuid.UUID) (McpServer, error)
 	GetNodeRun(ctx context.Context, id uuid.UUID) (NodeRun, error)
+	GetNodeRunForUpdate(ctx context.Context, id uuid.UUID) (NodeRun, error)
 	GetProject(ctx context.Context, id uuid.UUID) (Project, error)
+	GetQuestion(ctx context.Context, id uuid.UUID) (Question, error)
+	GetRunningNodeRunByToken(ctx context.Context, tokenHash []byte) (NodeRun, error)
 	InsertAgentProfile(ctx context.Context, arg InsertAgentProfileParams) (AgentProfile, error)
 	InsertAgentSession(ctx context.Context, arg InsertAgentSessionParams) (AgentSession, error)
 	InsertCard(ctx context.Context, arg InsertCardParams) (Card, error)
@@ -61,8 +68,11 @@ type Querier interface {
 	InsertMcpServer(ctx context.Context, arg InsertMcpServerParams) (McpServer, error)
 	InsertNodeRun(ctx context.Context, arg InsertNodeRunParams) (NodeRun, error)
 	InsertProject(ctx context.Context, arg InsertProjectParams) (Project, error)
+	InsertQuestion(ctx context.Context, arg InsertQuestionParams) (Question, error)
+	InsertReviewComment(ctx context.Context, arg InsertReviewCommentParams) (ReviewComment, error)
 	ListAgentProfiles(ctx context.Context) ([]AgentProfile, error)
 	ListCardEvents(ctx context.Context, cardID uuid.UUID) ([]CardEvent, error)
+	ListCardQuestions(ctx context.Context, cardID uuid.UUID) ([]Question, error)
 	ListCardTypes(ctx context.Context) ([]CardType, error)
 	ListCards(ctx context.Context) ([]Card, error)
 	ListChildCards(ctx context.Context, parentCardID *uuid.UUID) ([]Card, error)
@@ -73,15 +83,23 @@ type Querier interface {
 	// any, else the last one.
 	ListLatestFlowRuns(ctx context.Context) ([]ListLatestFlowRunsRow, error)
 	ListMcpServers(ctx context.Context) ([]McpServer, error)
+	ListNodeRuns(ctx context.Context, flowRunID uuid.UUID) ([]NodeRun, error)
 	ListProjects(ctx context.Context) ([]Project, error)
+	ListReviewComments(ctx context.Context, nodeRunID uuid.UUID) ([]ReviewComment, error)
 	ListRunnableFlows(ctx context.Context) ([]ListRunnableFlowsRow, error)
+	ListUndeliveredQuestions(ctx context.Context, nodeRunID uuid.UUID) ([]Question, error)
 	NextFlowVersion(ctx context.Context, flowID uuid.UUID) (int32, error)
 	NotifyChange(ctx context.Context, change string) error
 	NotifyJobs(ctx context.Context) error
 	PlaceCard(ctx context.Context, arg PlaceCardParams) (Card, error)
+	QueueNodeRun(ctx context.Context, id uuid.UUID) error
 	RenameAgentProfile(ctx context.Context, arg RenameAgentProfileParams) (AgentProfile, error)
 	SetAgentCredential(ctx context.Context, arg SetAgentCredentialParams) (AgentProfile, error)
+	SetFlowRunStatus(ctx context.Context, arg SetFlowRunStatusParams) (FlowRun, error)
 	SetLanePosition(ctx context.Context, arg SetLanePositionParams) (Lane, error)
+	SetNodeRunOutput(ctx context.Context, arg SetNodeRunOutputParams) (NodeRun, error)
+	SetNodeRunReview(ctx context.Context, arg SetNodeRunReviewParams) (NodeRun, error)
+	SetNodeRunSummary(ctx context.Context, arg SetNodeRunSummaryParams) (NodeRun, error)
 	ShiftCards(ctx context.Context, arg ShiftCardsParams) error
 	ShiftLanes(ctx context.Context, arg ShiftLanesParams) error
 	StartNodeRun(ctx context.Context, arg StartNodeRunParams) (NodeRun, error)

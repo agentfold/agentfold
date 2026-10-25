@@ -15,6 +15,7 @@ import { QueryStatus } from '../components/Loading'
 import { SelectField, TextArea, TextField } from '../components/Field'
 import { Modal } from '../components/Modal'
 import { pageHref } from '../route'
+import { CardQuestions } from './CardQuestions'
 import { CardTimeline } from './CardTimeline'
 
 type Props = { onClose: () => void } & (
@@ -95,6 +96,7 @@ export function CardForm({ card, laneId, onClose }: Props) {
           }
         }}
       >
+        {card && <CardQuestions cardId={card.id} />}
         <TextField label="Título" value={title} onChange={setTitle} autoFocus />
         <TextArea
           label="Descrição"

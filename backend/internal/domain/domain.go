@@ -23,6 +23,8 @@ var (
 	ErrInvalidReference = errors.New("invalid reference")
 	// ErrCardBusy means a flow is running for the card, which holds it in place.
 	ErrCardBusy = errors.New("a flow is running for the card")
+	// ErrQuestionClosed means the answer already reached the agent.
+	ErrQuestionClosed = errors.New("the answer was already delivered to the agent")
 )
 
 // ValidationError reports an invalid field value.
@@ -95,6 +97,10 @@ const (
 	FlowFinished CardEventType = "flow.finished"
 	NodeStarted  CardEventType = "node.started"
 	NodeFinished CardEventType = "node.finished"
+
+	QuestionAsked    CardEventType = "question.asked"
+	QuestionAnswered CardEventType = "question.answered"
+	ReviewSubmitted  CardEventType = "review.submitted"
 )
 
 // CardEvent is an entry of the card timeline.

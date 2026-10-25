@@ -23,13 +23,16 @@ func TestArgs(t *testing.T) {
 			MaxTurns:        &turns,
 			Model:           "opus",
 		},
-		McpConfig: "/claude/mcp.json",
+		SystemPrompt: "be nice",
+		McpConfig:    "/claude/mcp.json",
+		McpServers:   []string{"orquestrator", "sg"},
 	})
 	line := strings.Join(args, " ")
 	for _, want := range []string{
 		"-p do it --output-format stream-json --verbose --permission-mode acceptEdits",
 		"--session-id " + session.String(),
-		"--allowedTools Read,Edit",
+		"--allowedTools Read,Edit,mcp__orquestrator,mcp__sg",
+		"--append-system-prompt be nice",
 		"--disallowedTools WebFetch,Bash(git commit:*),Bash(git push:*)",
 		"--max-turns 7",
 		"--model opus",
@@ -39,10 +42,6 @@ func TestArgs(t *testing.T) {
 			t.Errorf("missing %q in %s", want, line)
 		}
 	}
-	if !slices.Contains(args, "--append-system-prompt") {
-		t.Error("missing the system prompt")
-	}
-
 	minimal := strings.Join(Args(Invocation{Prompt: "go on", SessionID: session, Resume: true}), " ")
 	if !strings.Contains(minimal, "--resume "+session.String()) {
 		t.Errorf("resume: %s", minimal)

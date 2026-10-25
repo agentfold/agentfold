@@ -43,6 +43,8 @@ func errorWriter(log *slog.Logger) func(http.ResponseWriter, *http.Request, erro
 			writeJSON(w, http.StatusConflict, openapi.Error{Code: openapi.Conflict, Message: err.Error()})
 		case errors.Is(err, domain.ErrCardBusy):
 			writeJSON(w, http.StatusConflict, openapi.Error{Code: openapi.CardBusy, Message: err.Error()})
+		case errors.Is(err, domain.ErrQuestionClosed):
+			writeJSON(w, http.StatusConflict, openapi.Error{Code: openapi.QuestionClosed, Message: err.Error()})
 		case errors.Is(err, domain.ErrInUse):
 			writeJSON(w, http.StatusConflict, openapi.Error{Code: openapi.InUse, Message: err.Error()})
 		case errors.Is(err, domain.ErrInvalidReference):

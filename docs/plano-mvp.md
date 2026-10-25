@@ -124,6 +124,16 @@ orquestrator/
 - Migrations `questions`, `review_comments`; estado `awaiting_input` e retomada com respostas.
 - Nó Review com `approved` / `changes_requested` / `max_rounds_exceeded`.
 - **Pronto quando:** ciclo dev → review → comentários → retomada → aprovado funciona.
+- Decidido: `submit_output` validado no board com `santhosh-tekuri/jsonschema/v6` (o agente recebe o
+  erro e pode corrigir); revisor somente leitura (Edit, MultiEdit, Write e NotebookEdit bloqueados);
+  formulário simples de resposta no modal do card; tools de integração no mesmo `/mcp`, sem token
+  (loopback, como a REST).
+- Detalhes: servidor MCP stateless (um servidor por requisição: com token do NodeRun, as tools do
+  agente; sem token, as de integração); o token vale enquanto o nó roda e só o hash fica no banco;
+  respostas dadas antes de o agente encerrar o turno o retomam assim que ele encerra; o consumo de
+  um nó retomado é somado; as tools do MCP do board e dos MCPs selecionados no nó são liberadas no
+  `--allowedTools` (antes os MCPs externos ficavam bloqueados no modo `-p`); comentários de review
+  aparecem na linha do tempo até a F8.
 
 ### F8 — Painel do card
 - Linha do tempo, saída do agente ao vivo, perguntas com resposta, comentários de review,

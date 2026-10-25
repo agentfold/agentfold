@@ -215,6 +215,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cards/{id}/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["listCardQuestions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/questions/{id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Answers a question. Once every question its agent asked is answered, the agent resumes with the answers. */
+        post: operations["answerQuestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/flows": {
         parameters: {
             query?: never;
@@ -415,7 +452,7 @@ export interface components {
     schemas: {
         Error: {
             /** @enum {string} */
-            code: "bad_request" | "validation" | "not_found" | "conflict" | "in_use" | "invalid_reference" | "invalid_graph" | "card_busy" | "internal";
+            code: "bad_request" | "validation" | "not_found" | "conflict" | "in_use" | "invalid_reference" | "invalid_graph" | "card_busy" | "question_closed" | "internal";
             message: string;
             /** @description Invalid field, for validation errors. */
             field?: string;
@@ -528,7 +565,7 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
-        /** @description A change to the board. `type` is "<entity>.<change>", with entity one of lane, project, card_type, card, flow, agent_profile, mcp_server, flow_run, card_event and change one of created, updated, moved, deleted, published. */
+        /** @description A change to the board. `type` is "<entity>.<change>", with entity one of lane, project, card_type, card, flow, agent_profile, mcp_server, flow_run, card_event, question and change one of created, updated, moved, deleted, published. */
         BoardEvent: {
             /** @example card.moved */
             type: string;
@@ -541,6 +578,26 @@ export interface components {
             data?: {
                 [key: string]: unknown;
             };
+        };
+        /** @description Something an agent asked a human; its node waits for the answers. */
+        Question: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            card_id: string;
+            /** Format: uuid */
+            node_run_id: string;
+            text: string;
+            answer: string | null;
+            /** Format: date-time */
+            answered_at: string | null;
+            /** @description Whether the answer already reached the agent; it can no longer change. */
+            delivered: boolean;
+            /** Format: date-time */
+            created_at: string;
+        };
+        QuestionAnswer: {
+            answer: string;
         };
         /** @description A run of a flow for a card. */
         FlowRun: {
@@ -1377,6 +1434,56 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CardEvent"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listCardQuestions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The questions agents asked on the card, oldest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Question"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    answerQuestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionAnswer"];
+            };
+        };
+        responses: {
+            /** @description Answered. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Question"];
                 };
             };
             default: components["responses"]["Error"];

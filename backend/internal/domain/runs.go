@@ -2,6 +2,8 @@ package domain
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -93,10 +95,14 @@ type NodeRun struct {
 	OutputHandle string
 	SessionID    *uuid.UUID
 	Usage
-	Error      string
-	CreatedAt  time.Time
-	StartedAt  *time.Time
-	FinishedAt *time.Time
+	Error string
+	// What the agent reported through the board tools while the node ran.
+	Summary          string
+	StructuredOutput json.RawMessage
+	ReviewApproved   *bool
+	CreatedAt        time.Time
+	StartedAt        *time.Time
+	FinishedAt       *time.Time
 }
 
 // NodeResult is how a node run ended.
@@ -106,4 +112,87 @@ type NodeResult struct {
 	OutputHandle string
 	Error        string
 	Usage
+}
+
+// JobAgentRun is the queue job that runs an agent or review node.
+const JobAgentRun = "agent.run"
+
+// AgentJob is the payload of an agent.run job.
+type AgentJob struct {
+	NodeRunID uuid.UUID `json:"node_run_id"`
+	// Prompt continues an existing session of the node (answers, review
+	// comments); the first run of a node uses its configured prompt.
+	Prompt string `json:"prompt,omitempty"`
+}
+
+// Question is something an agent asked a human. Its node waits until every
+// question it asked is answered.
+type Question struct {
+	ID          uuid.UUID
+	CardID      uuid.UUID
+	NodeRunID   uuid.UUID
+	Text        string
+	Answer      *string
+	AnsweredAt  *time.Time
+	DeliveredAt *time.Time
+	CreatedAt   time.Time
+}
+
+// EntityID returns the question id.
+func (q Question) EntityID() uuid.UUID { return q.ID }
+
+// ReviewComment is a change a reviewer asks for.
+type ReviewComment struct {
+	ID        uuid.UUID
+	CardID    uuid.UUID
+	NodeRunID uuid.UUID
+	Round     int
+	File      string
+	Line      *int
+	Body      string
+	CreatedAt time.Time
+}
+
+// ReviewInput is a comment as the reviewer submits it.
+type ReviewInput struct {
+	File string `json:"file,omitempty"`
+	Line *int   `json:"line,omitempty"`
+	Body string `json:"body"`
+}
+
+// AnswersPrompt is the prompt that resumes an agent with the answers to its
+// questions.
+func AnswersPrompt(questions []Question) string {
+	var b strings.Builder
+	b.WriteString("Answers to your questions:\n")
+	for i, q := range questions {
+		answer := ""
+		if q.Answer != nil {
+			answer = *q.Answer
+		}
+		fmt.Fprintf(&b, "\n%d. %s\nAnswer: %s\n", i+1, q.Text, answer)
+	}
+	return b.String()
+}
+
+// ReviewPrompt is the text a review hands to the next node: the comments
+// to address, or that the work was approved.
+func ReviewPrompt(approved bool, comments []ReviewComment) string {
+	if approved {
+		return "The review approved the changes."
+	}
+	var b strings.Builder
+	b.WriteString("The review asked for changes. Address every comment:\n")
+	for _, c := range comments {
+		b.WriteString("\n- ")
+		if c.File != "" {
+			b.WriteString(c.File)
+			if c.Line != nil {
+				fmt.Fprintf(&b, ":%d", *c.Line)
+			}
+			b.WriteString(": ")
+		}
+		b.WriteString(c.Body)
+	}
+	return b.String()
 }

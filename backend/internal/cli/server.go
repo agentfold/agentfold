@@ -19,6 +19,7 @@ import (
 	"orquestrator/internal/gitrepo"
 	"orquestrator/internal/service"
 	"orquestrator/internal/store"
+	"orquestrator/internal/transport/mcp"
 	"orquestrator/internal/transport/rest"
 	"orquestrator/migrations"
 )
@@ -113,7 +114,7 @@ func runServer(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	st := store.New(pool)
 	hub := events.NewHub(eventBuffer)
 	board := service.New(st, gitrepo.Inspector{}, hub, box)
-	handler := rest.NewHandler(board, hub, rest.Options{Log: log, Heartbeat: sseHeartbeat})
+	handler := rest.NewHandler(board, hub, rest.Options{Log: log, Heartbeat: sseHeartbeat, MCP: mcp.NewHandler(board, log)})
 	relay := &events.Relay{
 		Listen: func(ctx context.Context) (events.Changes, error) { return st.ListenChanges(ctx) },
 		Load:   board.Entity,
