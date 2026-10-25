@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -182,11 +183,13 @@ func TestWorkerConfigurationErrors(t *testing.T) {
 // local runner and the fake claude CLI (found in PATH) takes the job and
 // records the run in the database.
 // nextEventOf returns the next "event:" line of the stream, skipping the
-// events of type skip.
-func nextEventOf(t *testing.T, lines chan string, skip string) string {
+// events of the entities in skip.
+func nextEventOf(t *testing.T, lines chan string, skip ...string) string {
 	t.Helper()
 	for {
-		if line := nextEvent(t, lines); line != "event: "+skip {
+		line := nextEvent(t, lines)
+		entity, _, _ := strings.Cut(strings.TrimPrefix(line, "event: "), ".")
+		if !slices.Contains(skip, entity) {
 			return line
 		}
 	}

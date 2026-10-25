@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -17,6 +18,7 @@ import (
 
 	"orquestrator/internal/crypto"
 	"orquestrator/internal/domain"
+	"orquestrator/internal/events"
 	"orquestrator/internal/runner"
 	"orquestrator/internal/workspace"
 )
@@ -60,7 +62,21 @@ type fakeStore struct {
 	tokenHash []byte
 	pending   int
 	comments  []domain.ReviewComment
+	outputs   []domain.NodeOutput
 }
+
+func (f *fakeStore) AddNodeOutput(_ context.Context, _ uuid.UUID, entries []domain.NodeOutput) error {
+	if err := f.err("AddNodeOutput"); err != nil {
+		return err
+	}
+	f.outputs = append(f.outputs, entries...)
+	return nil
+}
+
+// recorder keeps the published event types.
+type recorder struct{ types []string }
+
+func (r *recorder) Publish(e events.Event) { r.types = append(r.types, e.Type) }
 
 func (f *fakeStore) err(name string) error { return f.errs[name] }
 
@@ -138,6 +154,7 @@ func (f *fakeStore) FinishNodeRun(_ context.Context, _ uuid.UUID, r domain.NodeR
 }
 
 type setup struct {
+	pub   *recorder
 	store *fakeStore
 	exec  *Executor
 	box   *crypto.Box
@@ -176,7 +193,9 @@ func newSetup(t *testing.T) setup {
 		cred:    seal(t, box, "sk-ant-oat-secret"),
 	}
 	data := t.TempDir()
+	pub := &recorder{}
 	return setup{
+		pub:   pub,
 		store: store,
 		box:   box,
 		data:  data,
@@ -187,6 +206,7 @@ func newSetup(t *testing.T) setup {
 			Runner:     runner.Local{Home: t.TempDir()},
 			Binary:     fakeClaude,
 			BoardURL:   "http://board:8080",
+			Pub:        pub,
 		},
 	}
 }
@@ -255,6 +275,12 @@ func TestFirstRun(t *testing.T) {
 	}
 	if !strings.Contains(args, "--allowedTools mcp__orquestrator ") || !strings.Contains(args, "call report_done") {
 		t.Fatalf("args: %s", args)
+	}
+	if len(s.store.outputs) != 1 || s.store.outputs[0].Kind != domain.OutputResult || s.store.outputs[0].Text != "did it" {
+		t.Fatalf("outputs %+v", s.store.outputs)
+	}
+	if !slices.Equal(s.pub.types, []string{"node_run.updated", "node_output.created"}) {
+		t.Fatalf("published %v", s.pub.types)
 	}
 	log, err := os.ReadFile(filepath.Join(s.cardDir(), "logs", s.store.run.ID.String()+".jsonl"))
 	if err != nil || strings.Count(string(log), "\n") != 3 {
@@ -515,4 +541,39 @@ func TestReviewNode(t *testing.T) {
 	if !strings.Contains(args, "--disallowedTools WebFetch,Edit,MultiEdit,Write,NotebookEdit,") || !strings.Contains(args, "calling submit_review") {
 		t.Fatalf("args: %s", args)
 	}
+}
+
+func TestOutputThatCannotBeKept(t *testing.T) {
+	s := newSetup(t)
+	s.store.errs["AddNodeOutput"] = errStore
+	if err := s.handle(t, ""); err != nil {
+		t.Fatal(err)
+	}
+	if s.store.result.Status != domain.NodeDone || slices.Contains(s.pub.types, "node_output.created") {
+		t.Fatalf("result %+v, published %v", s.store.result, s.pub.types)
+	}
+}
+
+func TestInterruptedAgent(t *testing.T) {
+	s := newSetup(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	payload, _ := json.Marshal(Payload{NodeRunID: s.store.run.ID})
+	s.exec.Runner = cancelling{Runner: s.exec.Runner, cancel: cancel}
+	if err := s.exec.Handle(ctx, payload); err != nil {
+		t.Fatal(err)
+	}
+	if r := s.store.result; r.Status != domain.NodeFailed || !strings.Contains(r.Error, "interrupted") {
+		t.Fatalf("result %+v", r)
+	}
+}
+
+// cancelling cancels the job context while the agent runs.
+type cancelling struct {
+	runner.Runner
+	cancel context.CancelFunc
+}
+
+func (c cancelling) Run(ctx context.Context, spec runner.Spec, line func([]byte)) error {
+	c.cancel()
+	return c.Runner.Run(ctx, spec, line)
 }

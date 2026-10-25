@@ -148,6 +148,16 @@ type NodeRun struct {
 	ReviewApproved   *bool
 }
 
+type NodeRunOutput struct {
+	ID        uuid.UUID
+	NodeRunID uuid.UUID
+	Kind      string
+	Text      string
+	Tool      *string
+	IsError   bool
+	CreatedAt time.Time
+}
+
 type Project struct {
 	ID         uuid.UUID
 	Name       string

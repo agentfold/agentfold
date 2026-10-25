@@ -222,7 +222,7 @@ func TestFlowEndToEnd(t *testing.T) {
 	// publish concurrently, so only the flow events keep their order.
 	var seen []string
 	for len(seen) == 0 || seen[len(seen)-1] != "event: flow_run.updated" {
-		seen = append(seen, nextEventOf(t, s.stream, "card_event.created"))
+		seen = append(seen, nextEventOf(t, s.stream, "card_event", "node_run", "node_output"))
 	}
 	slices.Sort(seen)
 	if want := []string{"event: card.created", "event: card.moved", "event: card.moved", "event: flow_run.created", "event: flow_run.updated"}; !slices.Equal(seen, want) {
@@ -335,4 +335,62 @@ func getJSON[T any](t *testing.T, url string) T {
 		t.Fatalf("GET %s: %s", url, data)
 	}
 	return v
+}
+
+// TestCancelEndToEnd cancels a run waiting for answers and one whose agent
+// is running: the cards are free again and the agent is interrupted.
+func TestCancelEndToEnd(t *testing.T) {
+	s := newStack(t)
+	s.flow(t, []domain.Node{s.agent("dev", "Implement it [ask:Which database?] [sleep]")})
+	waiting := s.startCard(t)
+	run := s.waitRun(t, waiting, domain.RunWaiting)
+	canceled := postStatus(t, s.base+"/api/flow-runs/"+run.ID.String()+"/cancel", "", http.StatusOK)
+	if canceled["status"] != "canceled" {
+		t.Fatalf("canceled %v", canceled)
+	}
+	if qs := getJSON[[]map[string]any](t, s.base+"/api/cards/"+waiting.String()+"/questions"); qs[0]["delivered"] != true {
+		t.Fatalf("the question is still open: %v", qs)
+	}
+	postStatus(t, s.base+"/api/cards/"+waiting.String()+"/move", fmt.Sprintf(`{"lane_id":%q,"position":0}`, s.todo), http.StatusOK)
+
+	// The answer resumes the agent, which now sleeps until interrupted.
+	busy := s.startCard(t)
+	run = s.waitRun(t, busy, domain.RunWaiting)
+	qs := getJSON[[]map[string]any](t, s.base+"/api/cards/"+busy.String()+"/questions")
+	postStatus(t, s.base+"/api/questions/"+qs[0]["id"].(string)+"/answer", `{"answer":"Postgres"}`, http.StatusOK)
+	s.waitRun(t, busy, domain.RunRunning)
+	deadline := time.Now().Add(10 * time.Second)
+	for s.nodeStatus(t, run.ID) != domain.NodeRunning && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	start := time.Now()
+	postStatus(t, s.base+"/api/flow-runs/"+run.ID.String()+"/cancel", "", http.StatusOK)
+	for !strings.Contains(s.workerErr.String(), "job lease lost") && time.Since(start) < 20*time.Second {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !strings.Contains(s.workerErr.String(), "job lease lost") {
+		t.Fatalf("the agent was not interrupted; worker log: %s", s.workerErr.String())
+	}
+	resp, err := http.Post(s.base+"/api/flow-runs/"+run.ID.String()+"/cancel", "application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("canceling an ended run: %d", resp.StatusCode)
+	}
+	var steps int
+	if err := s.pool.QueryRow(context.Background(), `SELECT count(*) FROM node_run_output`).Scan(&steps); err != nil || steps == 0 {
+		t.Fatalf("no agent output recorded: %d, %v", steps, err)
+	}
+	s.stop(t)
+}
+
+func (s *stack) nodeStatus(t *testing.T, flowRunID uuid.UUID) domain.NodeStatus {
+	t.Helper()
+	nodes, err := s.store.ListNodeRuns(context.Background(), flowRunID)
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("node runs %v, %v", nodes, err)
+	}
+	return nodes[len(nodes)-1].Status
 }

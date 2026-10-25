@@ -40,9 +40,11 @@ type Worker struct {
 	// Capabilities filter the jobs the worker takes (jobs.requirements).
 	Capabilities map[string]string
 	Handlers     map[string]Handler
-	// Lease is how long a job stays with the worker without a heartbeat;
-	// heartbeats renew it every Lease/3.
+	// Lease is how long a job stays with the worker without a heartbeat.
 	Lease time.Duration
+	// Beat is how often heartbeats renew the lease, which is also how soon
+	// a job canceled meanwhile stops; Lease/3 when zero.
+	Beat time.Duration
 	// Idle bounds the wait for new jobs, in case a notification is missed.
 	Idle time.Duration
 	Log  *slog.Logger
@@ -108,7 +110,11 @@ func (w *Worker) run(ctx context.Context, job *store.Job) error {
 // heartbeat renews the lease of job until stop closes; losing the lease
 // cancels the job.
 func (w *Worker) heartbeat(ctx context.Context, job *store.Job, cancel context.CancelFunc, stop <-chan struct{}) {
-	ticker := time.NewTicker(w.Lease / 3)
+	beat := w.Beat
+	if beat == 0 {
+		beat = w.Lease / 3
+	}
+	ticker := time.NewTicker(beat)
 	defer ticker.Stop()
 	for {
 		select {

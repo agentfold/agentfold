@@ -38,6 +38,7 @@ const defaultServerURL = "http://" + defaultAddr
 
 const (
 	jobLease = 2 * time.Minute
+	jobBeat  = 5 * time.Second
 	jobIdle  = 30 * time.Second
 )
 
@@ -131,6 +132,7 @@ func runWorker(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	st := store.New(pool)
 	log := slog.New(slog.NewTextHandler(stderr, nil))
 	host, _ := os.Hostname() // empty only on broken systems; jobs then need no host
+	pub := notifier{store: st, log: log}
 	flows := &engine.Engine{
 		Store: st,
 		Agents: &agent.Executor{
@@ -140,8 +142,9 @@ func runWorker(ctx context.Context, args []string, stdout, stderr io.Writer) err
 			Runner:     run,
 			Binary:     claude,
 			BoardURL:   serverURL(),
+			Pub:        pub,
 		},
-		Pub: notifier{store: st, log: log},
+		Pub: pub,
 	}
 	w := &worker.Worker{
 		Queue:        st,
@@ -153,6 +156,7 @@ func runWorker(ctx context.Context, args []string, stdout, stderr io.Writer) err
 			agent.JobKind:         flows.HandleAgent,
 		},
 		Lease: jobLease,
+		Beat:  jobBeat,
 		Idle:  jobIdle,
 		Log:   log,
 	}

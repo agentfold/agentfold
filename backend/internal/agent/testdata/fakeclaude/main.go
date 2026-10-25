@@ -4,6 +4,7 @@
 //
 //	[fail]  the result event reports an error
 //	[crash] exits with status 2 before any result
+//	[sleep] waits a minute before answering, when resumed (to be interrupted)
 //
 // Markers in the first prompt of a session script calls to the board MCP
 // tools, made on the runs of that session:
@@ -25,6 +26,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -44,7 +46,8 @@ func main() {
 			session = args[i+1]
 		}
 	}
-	if err := script(prompt, mcp, session); err != nil {
+	run, first, err := script(prompt, mcp, session)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "board tools:", err)
 		os.Exit(3)
 	}
@@ -61,6 +64,9 @@ func main() {
 
 	fmt.Println(`{"type":"system","subtype":"init","session_id":"s"}`)
 	fmt.Println(`not json`)
+	if strings.Contains(first, "[sleep]") && run > 1 {
+		time.Sleep(time.Minute)
+	}
 	if strings.Contains(prompt, "[crash]") {
 		fmt.Fprintln(os.Stderr, "boom")
 		os.Exit(2)
@@ -83,11 +89,12 @@ func main() {
 
 var marker = regexp.MustCompile(`\[(ask|done|output|review):([^\]]*)\]`)
 
-// script runs the board tool calls the first prompt of the session asks for.
-func script(prompt, mcpConfig, session string) error {
+// script runs the board tool calls the first prompt of the session asks for
+// and returns which run of the session this is, and that first prompt.
+func script(prompt, mcpConfig, session string) (int, string, error) {
 	dir := os.Getenv("CLAUDE_CONFIG_DIR")
 	if dir == "" || session == "" {
-		return nil
+		return 1, prompt, nil
 	}
 	first := filepath.Join(dir, "fake-"+session+".prompt")
 	if _, err := os.Stat(first); err != nil {
@@ -102,11 +109,11 @@ func script(prompt, mcpConfig, session string) error {
 
 	calls := marker.FindAllStringSubmatch(string(original), -1)
 	if len(calls) == 0 {
-		return nil
+		return run, string(original), nil
 	}
 	cs, err := connect(mcpConfig)
 	if err != nil {
-		return err
+		return run, string(original), err
 	}
 	defer func() { _ = cs.Close() }()
 	ctx := context.Background()
@@ -119,7 +126,7 @@ func script(prompt, mcpConfig, session string) error {
 	}
 	for _, c := range calls {
 		if c[1] == "ask" && run == 1 {
-			return call("ask_human", map[string]any{"questions": []string{c[2]}})
+			return run, string(original), call("ask_human", map[string]any{"questions": []string{c[2]}})
 		}
 	}
 	for _, c := range calls {
@@ -139,10 +146,10 @@ func script(prompt, mcpConfig, session string) error {
 			err = call("submit_review", args)
 		}
 		if err != nil {
-			return err
+			return run, string(original), err
 		}
 	}
-	return nil
+	return run, string(original), nil
 }
 
 // connect opens the board MCP server of the --mcp-config file.

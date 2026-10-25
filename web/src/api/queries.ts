@@ -34,6 +34,10 @@ export const keys = {
   cardEvents: ['cardEvents'],
   cardTimeline: (id: string) => ['cardEvents', id],
   questions: ['questions'],
+  cardRuns: ['cardRuns'],
+  cardRunsOf: (id: string) => ['cardRuns', id],
+  nodeOutput: ['nodeOutput'],
+  nodeOutputOf: (id: string) => ['nodeOutput', id],
   cardQuestions: (id: string) => ['questions', id],
 } as const
 
@@ -95,6 +99,24 @@ export function useCardQuestions(id: string) {
   return useQuery({
     queryKey: keys.cardQuestions(id),
     queryFn: () => unwrap(client.GET('/cards/{id}/questions', byId(id))),
+  })
+}
+
+/** The flow runs of a card with their nodes, newest first. */
+export function useCardRuns(id: string) {
+  const { client } = useApi()
+  return useQuery({
+    queryKey: keys.cardRunsOf(id),
+    queryFn: () => unwrap(client.GET('/cards/{id}/runs', byId(id))),
+  })
+}
+
+/** What the agent did while running a node. */
+export function useNodeOutput(id: string) {
+  const { client } = useApi()
+  return useQuery({
+    queryKey: keys.nodeOutputOf(id),
+    queryFn: () => unwrap(client.GET('/node-runs/{id}/output', byId(id))),
   })
 }
 
@@ -359,5 +381,12 @@ export function useAnswerQuestion() {
           body: { answer },
         }),
       ),
+  )
+}
+
+export function useCancelRun() {
+  const { client } = useApi()
+  return useChange(keys.cardRuns, (id: string) =>
+    unwrap(client.POST('/flow-runs/{id}/cancel', byId(id))),
   )
 }

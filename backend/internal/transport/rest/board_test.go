@@ -19,6 +19,7 @@ type stubBoard struct {
 	cardEvent domain.CardEvent
 	run       domain.FlowRun
 	question  domain.Question
+	nodeRun   domain.NodeRun
 	flow      service.FlowDetail
 	version   domain.FlowVersion
 	profile   domain.AgentProfile
@@ -123,6 +124,18 @@ func (b *stubBoard) MoveCard(_ context.Context, id, laneID uuid.UUID, position i
 
 func (b *stubBoard) DeleteCard(_ context.Context, id uuid.UUID) error {
 	return b.record("DeleteCard", id)
+}
+
+func (b *stubBoard) ListCardRuns(_ context.Context, cardID uuid.UUID) ([]service.RunDetail, error) {
+	return []service.RunDetail{{FlowRun: b.run, Nodes: []service.RunNode{{NodeRun: b.nodeRun, Type: domain.NodeAgent}}}}, b.record("ListCardRuns", cardID)
+}
+
+func (b *stubBoard) CancelFlowRun(_ context.Context, id uuid.UUID) (domain.FlowRun, error) {
+	return b.run, b.record("CancelFlowRun", id)
+}
+
+func (b *stubBoard) ListNodeOutput(_ context.Context, id uuid.UUID) ([]domain.NodeOutput, error) {
+	return []domain.NodeOutput{{ID: id1, NodeRunID: id2, Kind: domain.OutputToolUse, Tool: "Read", Text: "{}", CreatedAt: stamp}}, b.record("ListNodeOutput", id)
 }
 
 func (b *stubBoard) ListCardQuestions(_ context.Context, cardID uuid.UUID) ([]domain.Question, error) {

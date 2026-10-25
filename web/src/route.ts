@@ -1,8 +1,16 @@
 import { useSyncExternalStore } from 'react'
 
-export type Page = 'board' | 'projects' | 'card-types' | 'flows' | 'agents'
+export type Page =
+  'board' | 'cards' | 'projects' | 'card-types' | 'flows' | 'agents'
 
-const pages: Page[] = ['board', 'projects', 'card-types', 'flows', 'agents']
+const pages: Page[] = [
+  'board',
+  'cards',
+  'projects',
+  'card-types',
+  'flows',
+  'agents',
+]
 
 export interface Route {
   page: Page

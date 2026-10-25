@@ -115,7 +115,10 @@ func (b *fakeBoard) ListLatestFlowRuns(context.Context) ([]domain.FlowRun, error
 func (b *fakeBoard) GetRunDetail(_ context.Context, id uuid.UUID) (service.RunDetail, error) {
 	return service.RunDetail{
 		FlowRun: domain.FlowRun{ID: id, FlowName: "dev", Status: domain.RunWaiting},
-		Nodes:   []domain.NodeRun{{NodeKey: "dev", Iteration: 1, Status: domain.NodeAwaitingInput, Usage: domain.Usage{Turns: 3}}},
+		Nodes: []service.RunNode{{
+			NodeRun: domain.NodeRun{NodeKey: "dev", Iteration: 1, Status: domain.NodeAwaitingInput, Usage: domain.Usage{Turns: 3}},
+			Type:    domain.NodeAgent,
+		}},
 	}, b.call("GetRunDetail", id)
 }
 

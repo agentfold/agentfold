@@ -15,6 +15,9 @@ func (f *fakeRepo) AddCardEvent(_ context.Context, cardID uuid.UUID, typ domain.
 }
 
 func (f *fakeRepo) GetFlowVersion(_ context.Context, id uuid.UUID) (domain.FlowVersion, error) {
+	if f.version.Graph.Nodes == nil {
+		return domain.FlowVersion{Graph: domain.Graph{Nodes: []domain.Node{{ID: "dev", Type: domain.NodeAgent}}}}, f.call("GetFlowVersion", id)
+	}
 	return f.version, f.call("GetFlowVersion", id)
 }
 
@@ -62,4 +65,20 @@ func (f *fakeRepo) AnswerQuestion(_ context.Context, _ uuid.UUID, answer string)
 
 func (f *fakeRepo) ResumeIfAnswered(_ context.Context, id uuid.UUID) (domain.FlowRun, bool, error) {
 	return f.flowRun, f.resumed, f.call("ResumeIfAnswered", id)
+}
+
+func (f *fakeRepo) GetNodeRun(_ context.Context, id uuid.UUID) (domain.NodeRun, error) {
+	return f.nodeRun, f.call("GetNodeRun", id)
+}
+
+func (f *fakeRepo) ListNodeOutput(_ context.Context, id uuid.UUID) ([]domain.NodeOutput, error) {
+	return []domain.NodeOutput{{NodeRunID: id}}, f.call("ListNodeOutput", id)
+}
+
+func (f *fakeRepo) ListCardFlowRuns(_ context.Context, cardID uuid.UUID) ([]domain.FlowRun, error) {
+	return []domain.FlowRun{f.flowRun}, f.call("ListCardFlowRuns", cardID)
+}
+
+func (f *fakeRepo) CancelFlowRun(_ context.Context, id uuid.UUID) (domain.FlowRun, error) {
+	return domain.FlowRun{ID: id, Status: domain.RunCanceled, Error: "cancelado"}, f.call("CancelFlowRun", id)
 }

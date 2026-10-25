@@ -203,14 +203,11 @@ describe('Board', () => {
     })
   })
 
-  it('opens a card to edit it', async () => {
-    setup()
+  it('opens the page of a card', async () => {
+    const { child } = setup()
     await userEvent.click(await screen.findByRole('button', { name: /^Child/ }))
-    expect(
-      screen.getByRole('dialog', { name: 'Editar card' }),
-    ).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(window.location.hash).toBe(`#/cards/${child.id}`)
+    window.location.hash = ''
   })
 
   it('moves a card with the keyboard', async () => {

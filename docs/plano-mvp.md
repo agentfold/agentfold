@@ -139,6 +139,14 @@ orquestrator/
 - Linha do tempo, saída do agente ao vivo, perguntas com resposta, comentários de review,
   consumo agregado (tokens, turnos, custo estimado).
 - **Pronto quando:** tudo do card visível e operável pela UI.
+- Decidido: página própria em `#/cards/<id>` (o clique no card do board abre a página; criar card
+  continua no modal), com abas Execução, Detalhes, Linha do tempo e Consumo e as perguntas abertas
+  no topo; saída do agente resumida numa tabela `node_run_output` e entregue ao vivo pelo SSE;
+  botão para cancelar o fluxo; consumo só na página.
+- Detalhes: cancelar marca o run como `canceled`, falha os nós abertos, fecha as perguntas e
+  derruba os jobs de agente; o worker renova o lease a cada 5 s e, ao perdê-lo, interrompe o
+  agente. O stream bruto continua em `logs/`; a página guarda mensagens, chamadas e resultados de
+  tools (encurtados) e o resultado final.
 
 ### F9 — Smoke de ponta a ponta
 - Roteiro manual com Claude real: criar fluxo Dev → Review → MoveCard, criar card num repo de

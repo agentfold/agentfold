@@ -62,7 +62,7 @@ func run(m *testing.M) (int, error) {
 // newStore returns a Store over an empty database.
 func newStore(t *testing.T) *Store {
 	t.Helper()
-	_, err := pool.Exec(context.Background(), "TRUNCATE jobs, review_comments, questions, agent_sessions, node_runs, flow_runs, mcp_servers, agent_profiles, flow_versions, flows, card_events, cards, card_types, projects, lanes")
+	_, err := pool.Exec(context.Background(), "TRUNCATE jobs, node_run_output, review_comments, questions, agent_sessions, node_runs, flow_runs, mcp_servers, agent_profiles, flow_versions, flows, card_events, cards, card_types, projects, lanes")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,4 +241,25 @@ func (f *failing) DeleteReviewComments(ctx context.Context, nodeRunID uuid.UUID)
 		return err
 	}
 	return f.Querier.DeleteReviewComments(ctx, nodeRunID)
+}
+
+func (f *failing) FailOpenNodeRuns(ctx context.Context, flowRunID uuid.UUID) error {
+	if err := f.hit("FailOpenNodeRuns"); err != nil {
+		return err
+	}
+	return f.Querier.FailOpenNodeRuns(ctx, flowRunID)
+}
+
+func (f *failing) CloseRunQuestions(ctx context.Context, flowRunID uuid.UUID) error {
+	if err := f.hit("CloseRunQuestions"); err != nil {
+		return err
+	}
+	return f.Querier.CloseRunQuestions(ctx, flowRunID)
+}
+
+func (f *failing) CancelRunJobs(ctx context.Context, flowRunID uuid.UUID) error {
+	if err := f.hit("CancelRunJobs"); err != nil {
+		return err
+	}
+	return f.Querier.CancelRunJobs(ctx, flowRunID)
 }

@@ -12,7 +12,7 @@ import {
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { useState } from 'react'
 
-import type { Card, Lane } from '../api/client'
+import type { Lane } from '../api/client'
 import { laneCards } from '../api/placement'
 import {
   useCards,
@@ -26,15 +26,14 @@ import { CardForm } from '../cards/CardForm'
 import { Button } from '../components/Button'
 import { ErrorMessage } from '../components/ErrorMessage'
 import { QueryStatus } from '../components/Loading'
+import { goTo } from '../route'
 import { CardPreview, type BoardLookup } from './CardContent'
 import { dropCard } from './drop'
 import { LaneColumn } from './LaneColumn'
 import { LaneForm } from './LaneForm'
 
 type Dialog =
-  | { kind: 'lane'; lane?: Lane }
-  | { kind: 'new-card'; laneId: string }
-  | { kind: 'card'; card: Card }
+  { kind: 'lane'; lane?: Lane } | { kind: 'new-card'; laneId: string }
 
 const byId = <T extends { id: string }>(items: T[] = []) =>
   new Map(items.map((item) => [item.id, item]))
@@ -108,7 +107,7 @@ export function Board() {
                 setDialog({ kind: 'new-card', laneId: lane.id })
               }}
               onOpenCard={(card) => {
-                setDialog({ kind: 'card', card })
+                goTo('cards', card.id)
               }}
             />
           ))}
@@ -141,9 +140,6 @@ export function Board() {
       )}
       {dialog?.kind === 'new-card' && (
         <CardForm laneId={dialog.laneId} onClose={close} />
-      )}
-      {dialog?.kind === 'card' && (
-        <CardForm card={dialog.card} onClose={close} />
       )}
     </div>
   )

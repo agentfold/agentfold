@@ -125,25 +125,25 @@ func (e ErrorCode) Valid() bool {
 
 // Defines values for FlowRunStatus.
 const (
-	Canceled FlowRunStatus = "canceled"
-	Done     FlowRunStatus = "done"
-	Failed   FlowRunStatus = "failed"
-	Running  FlowRunStatus = "running"
-	Waiting  FlowRunStatus = "waiting"
+	FlowRunStatusCanceled FlowRunStatus = "canceled"
+	FlowRunStatusDone     FlowRunStatus = "done"
+	FlowRunStatusFailed   FlowRunStatus = "failed"
+	FlowRunStatusRunning  FlowRunStatus = "running"
+	FlowRunStatusWaiting  FlowRunStatus = "waiting"
 )
 
 // Valid indicates whether the value is a known member of the FlowRunStatus enum.
 func (e FlowRunStatus) Valid() bool {
 	switch e {
-	case Canceled:
+	case FlowRunStatusCanceled:
 		return true
-	case Done:
+	case FlowRunStatusDone:
 		return true
-	case Failed:
+	case FlowRunStatusFailed:
 		return true
-	case Running:
+	case FlowRunStatusRunning:
 		return true
-	case Waiting:
+	case FlowRunStatusWaiting:
 		return true
 	default:
 		return false
@@ -162,6 +162,51 @@ func (e FlowRunTrigger) Valid() bool {
 	case FlowRunTriggerCardCreated:
 		return true
 	case FlowRunTriggerCardEnteredLane:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FlowRunDetailStatus.
+const (
+	FlowRunDetailStatusCanceled FlowRunDetailStatus = "canceled"
+	FlowRunDetailStatusDone     FlowRunDetailStatus = "done"
+	FlowRunDetailStatusFailed   FlowRunDetailStatus = "failed"
+	FlowRunDetailStatusRunning  FlowRunDetailStatus = "running"
+	FlowRunDetailStatusWaiting  FlowRunDetailStatus = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the FlowRunDetailStatus enum.
+func (e FlowRunDetailStatus) Valid() bool {
+	switch e {
+	case FlowRunDetailStatusCanceled:
+		return true
+	case FlowRunDetailStatusDone:
+		return true
+	case FlowRunDetailStatusFailed:
+		return true
+	case FlowRunDetailStatusRunning:
+		return true
+	case FlowRunDetailStatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FlowRunDetailTrigger.
+const (
+	FlowRunDetailTriggerCardCreated     FlowRunDetailTrigger = "card_created"
+	FlowRunDetailTriggerCardEnteredLane FlowRunDetailTrigger = "card_entered_lane"
+)
+
+// Valid indicates whether the value is a known member of the FlowRunDetailTrigger enum.
+func (e FlowRunDetailTrigger) Valid() bool {
+	switch e {
+	case FlowRunDetailTriggerCardCreated:
+		return true
+	case FlowRunDetailTriggerCardEnteredLane:
 		return true
 	default:
 		return false
@@ -213,6 +258,57 @@ const (
 func (e MoveCardNodeType) Valid() bool {
 	switch e {
 	case MoveCard:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NodeOutputKind.
+const (
+	Result     NodeOutputKind = "result"
+	Text       NodeOutputKind = "text"
+	ToolResult NodeOutputKind = "tool_result"
+	ToolUse    NodeOutputKind = "tool_use"
+)
+
+// Valid indicates whether the value is a known member of the NodeOutputKind enum.
+func (e NodeOutputKind) Valid() bool {
+	switch e {
+	case Result:
+		return true
+	case Text:
+		return true
+	case ToolResult:
+		return true
+	case ToolUse:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NodeRunStatus.
+const (
+	NodeRunStatusAwaitingInput NodeRunStatus = "awaiting_input"
+	NodeRunStatusDone          NodeRunStatus = "done"
+	NodeRunStatusFailed        NodeRunStatus = "failed"
+	NodeRunStatusQueued        NodeRunStatus = "queued"
+	NodeRunStatusRunning       NodeRunStatus = "running"
+)
+
+// Valid indicates whether the value is a known member of the NodeRunStatus enum.
+func (e NodeRunStatus) Valid() bool {
+	switch e {
+	case NodeRunStatusAwaitingInput:
+		return true
+	case NodeRunStatusDone:
+		return true
+	case NodeRunStatusFailed:
+		return true
+	case NodeRunStatusQueued:
+		return true
+	case NodeRunStatusRunning:
 		return true
 	default:
 		return false
@@ -499,6 +595,31 @@ type FlowRunStatus string
 // FlowRunTrigger defines model for FlowRun.Trigger.
 type FlowRunTrigger string
 
+// FlowRunDetail defines model for FlowRunDetail.
+type FlowRunDetail struct {
+	CardId openapi_types.UUID `json:"card_id"`
+
+	// Error Why the run failed; empty otherwise.
+	Error         string             `json:"error"`
+	FinishedAt    *time.Time         `json:"finished_at"`
+	FlowId        openapi_types.UUID `json:"flow_id"`
+	FlowName      string             `json:"flow_name"`
+	FlowVersionId openapi_types.UUID `json:"flow_version_id"`
+	Id            openapi_types.UUID `json:"id"`
+	Nodes         []NodeRun          `json:"nodes"`
+	StartedAt     time.Time          `json:"started_at"`
+
+	// Status While running or waiting, the card can only be moved by the flow.
+	Status  FlowRunDetailStatus  `json:"status"`
+	Trigger FlowRunDetailTrigger `json:"trigger"`
+}
+
+// FlowRunDetailStatus While running or waiting, the card can only be moved by the flow.
+type FlowRunDetailStatus string
+
+// FlowRunDetailTrigger defines model for FlowRunDetail.Trigger.
+type FlowRunDetailTrigger string
+
 // FlowSummary defines model for FlowSummary.
 type FlowSummary struct {
 	CreatedAt time.Time `json:"created_at"`
@@ -628,6 +749,63 @@ type NewCard struct {
 type NewFlow struct {
 	Name string `json:"name"`
 }
+
+// NodeOutput A step of what an agent did.
+type NodeOutput struct {
+	CreatedAt time.Time          `json:"created_at"`
+	Id        openapi_types.UUID `json:"id"`
+	IsError   bool               `json:"is_error"`
+	Kind      NodeOutputKind     `json:"kind"`
+	NodeRunId openapi_types.UUID `json:"node_run_id"`
+
+	// Text The message, or the tool input or result, shortened.
+	Text string `json:"text"`
+
+	// Tool The tool name of tool_use steps.
+	Tool string `json:"tool"`
+}
+
+// NodeOutputKind defines model for NodeOutput.Kind.
+type NodeOutputKind string
+
+// NodeRun One execution of a node within a flow run.
+type NodeRun struct {
+	CacheRead  int64 `json:"cache_read"`
+	CacheWrite int64 `json:"cache_write"`
+
+	// CostUsd As reported by Claude Code; an estimate with a subscription token.
+	CostUsd    float64            `json:"cost_usd"`
+	CreatedAt  time.Time          `json:"created_at"`
+	DurationMs int64              `json:"duration_ms"`
+	Error      string             `json:"error"`
+	FinishedAt *time.Time         `json:"finished_at"`
+	FlowRunId  openapi_types.UUID `json:"flow_run_id"`
+	Id         openapi_types.UUID `json:"id"`
+
+	// Iteration How many times the run entered the node (review rounds re-enter agents).
+	Iteration int    `json:"iteration"`
+	NodeKey   string `json:"node_key"`
+
+	// NodeType The type of the node in the flow version; empty if it is gone.
+	NodeType string `json:"node_type"`
+
+	// Output The node output handed to the next node: the agent result, summary and structured output, or the review verdict and comments.
+	Output *map[string]interface{} `json:"output"`
+
+	// OutputHandle The output the node left through; empty while it runs.
+	OutputHandle string        `json:"output_handle"`
+	StartedAt    *time.Time    `json:"started_at"`
+	Status       NodeRunStatus `json:"status"`
+
+	// Summary What the agent reported with report_done.
+	Summary   string `json:"summary"`
+	TokensIn  int64  `json:"tokens_in"`
+	TokensOut int64  `json:"tokens_out"`
+	Turns     int    `json:"turns"`
+}
+
+// NodeRunStatus defines model for NodeRun.Status.
+type NodeRunStatus string
 
 // Position defines model for Position.
 type Position struct {
@@ -1053,8 +1231,14 @@ type ServerInterface interface {
 	// (GET /cards/{id}/questions)
 	ListCardQuestions(w http.ResponseWriter, r *http.Request, id ID)
 
+	// (GET /cards/{id}/runs)
+	ListCardRuns(w http.ResponseWriter, r *http.Request, id ID)
+
 	// (GET /flow-runs/latest)
 	ListLatestFlowRuns(w http.ResponseWriter, r *http.Request)
+
+	// (POST /flow-runs/{id}/cancel)
+	CancelFlowRun(w http.ResponseWriter, r *http.Request, id ID)
 
 	// (GET /flows)
 	ListFlows(w http.ResponseWriter, r *http.Request)
@@ -1112,6 +1296,9 @@ type ServerInterface interface {
 
 	// (PUT /mcp-servers/{id})
 	UpdateMcpServer(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /node-runs/{id}/output)
+	ListNodeOutput(w http.ResponseWriter, r *http.Request, id ID)
 
 	// (GET /projects)
 	ListProjects(w http.ResponseWriter, r *http.Request)
@@ -1563,11 +1750,63 @@ func (siw *ServerInterfaceWrapper) ListCardQuestions(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// ListCardRuns operation middleware
+func (siw *ServerInterfaceWrapper) ListCardRuns(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListCardRuns(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListLatestFlowRuns operation middleware
 func (siw *ServerInterfaceWrapper) ListLatestFlowRuns(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListLatestFlowRuns(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CancelFlowRun operation middleware
+func (siw *ServerInterfaceWrapper) CancelFlowRun(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CancelFlowRun(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1999,6 +2238,32 @@ func (siw *ServerInterfaceWrapper) UpdateMcpServer(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// ListNodeOutput operation middleware
+func (siw *ServerInterfaceWrapper) ListNodeOutput(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListNodeOutput(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListProjects operation middleware
 func (siw *ServerInterfaceWrapper) ListProjects(w http.ResponseWriter, r *http.Request) {
 
@@ -2285,6 +2550,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/flows/{id}/draft", wrapper.SaveFlowDraft)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/flows/{id}/publish", wrapper.PublishFlow)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/flows/{id}/versions", wrapper.ListFlowVersions)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/cards/{id}/runs", wrapper.ListCardRuns)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/flow-runs/{id}/cancel", wrapper.CancelFlowRun)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/node-runs/{id}/output", wrapper.ListNodeOutput)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/flow-runs/latest", wrapper.ListLatestFlowRuns)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/agent-profiles", wrapper.ListAgentProfiles)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/agent-profiles", wrapper.CreateAgentProfile)
@@ -3026,6 +3294,45 @@ func (response ListCardQuestionsdefaultJSONResponse) VisitListCardQuestionsRespo
 	return err
 }
 
+type ListCardRunsRequestObject struct {
+	Id ID `json:"id"`
+}
+
+type ListCardRunsResponseObject interface {
+	VisitListCardRunsResponse(w http.ResponseWriter) error
+}
+
+type ListCardRuns200JSONResponse []FlowRunDetail
+
+func (response ListCardRuns200JSONResponse) VisitListCardRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCardRunsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListCardRunsdefaultJSONResponse) VisitListCardRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListLatestFlowRunsRequestObject struct {
 }
 
@@ -3053,6 +3360,45 @@ type ListLatestFlowRunsdefaultJSONResponse struct {
 }
 
 func (response ListLatestFlowRunsdefaultJSONResponse) VisitListLatestFlowRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelFlowRunRequestObject struct {
+	Id ID `json:"id"`
+}
+
+type CancelFlowRunResponseObject interface {
+	VisitCancelFlowRunResponse(w http.ResponseWriter) error
+}
+
+type CancelFlowRun200JSONResponse FlowRun
+
+func (response CancelFlowRun200JSONResponse) VisitCancelFlowRunResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelFlowRundefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CancelFlowRundefaultJSONResponse) VisitCancelFlowRunResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -3789,6 +4135,45 @@ func (response UpdateMcpServerdefaultJSONResponse) VisitUpdateMcpServerResponse(
 	return err
 }
 
+type ListNodeOutputRequestObject struct {
+	Id ID `json:"id"`
+}
+
+type ListNodeOutputResponseObject interface {
+	VisitListNodeOutputResponse(w http.ResponseWriter) error
+}
+
+type ListNodeOutput200JSONResponse []NodeOutput
+
+func (response ListNodeOutput200JSONResponse) VisitListNodeOutputResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListNodeOutputdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListNodeOutputdefaultJSONResponse) VisitListNodeOutputResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListProjectsRequestObject struct {
 }
 
@@ -4078,8 +4463,14 @@ type StrictServerInterface interface {
 	// (GET /cards/{id}/questions)
 	ListCardQuestions(ctx context.Context, request ListCardQuestionsRequestObject) (ListCardQuestionsResponseObject, error)
 
+	// (GET /cards/{id}/runs)
+	ListCardRuns(ctx context.Context, request ListCardRunsRequestObject) (ListCardRunsResponseObject, error)
+
 	// (GET /flow-runs/latest)
 	ListLatestFlowRuns(ctx context.Context, request ListLatestFlowRunsRequestObject) (ListLatestFlowRunsResponseObject, error)
+
+	// (POST /flow-runs/{id}/cancel)
+	CancelFlowRun(ctx context.Context, request CancelFlowRunRequestObject) (CancelFlowRunResponseObject, error)
 
 	// (GET /flows)
 	ListFlows(ctx context.Context, request ListFlowsRequestObject) (ListFlowsResponseObject, error)
@@ -4137,6 +4528,9 @@ type StrictServerInterface interface {
 
 	// (PUT /mcp-servers/{id})
 	UpdateMcpServer(ctx context.Context, request UpdateMcpServerRequestObject) (UpdateMcpServerResponseObject, error)
+
+	// (GET /node-runs/{id}/output)
+	ListNodeOutput(ctx context.Context, request ListNodeOutputRequestObject) (ListNodeOutputResponseObject, error)
 
 	// (GET /projects)
 	ListProjects(ctx context.Context, request ListProjectsRequestObject) (ListProjectsResponseObject, error)
@@ -4727,6 +5121,32 @@ func (sh *strictHandler) ListCardQuestions(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+// ListCardRuns operation middleware
+func (sh *strictHandler) ListCardRuns(w http.ResponseWriter, r *http.Request, id ID) {
+	var request ListCardRunsRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListCardRuns(ctx, request.(ListCardRunsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListCardRuns")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListCardRunsResponseObject); ok {
+		if err := validResponse.VisitListCardRunsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListLatestFlowRuns operation middleware
 func (sh *strictHandler) ListLatestFlowRuns(w http.ResponseWriter, r *http.Request) {
 	var request ListLatestFlowRunsRequestObject
@@ -4744,6 +5164,32 @@ func (sh *strictHandler) ListLatestFlowRuns(w http.ResponseWriter, r *http.Reque
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListLatestFlowRunsResponseObject); ok {
 		if err := validResponse.VisitListLatestFlowRunsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CancelFlowRun operation middleware
+func (sh *strictHandler) CancelFlowRun(w http.ResponseWriter, r *http.Request, id ID) {
+	var request CancelFlowRunRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CancelFlowRun(ctx, request.(CancelFlowRunRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CancelFlowRun")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CancelFlowRunResponseObject); ok {
+		if err := validResponse.VisitCancelFlowRunResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -5282,6 +5728,32 @@ func (sh *strictHandler) UpdateMcpServer(w http.ResponseWriter, r *http.Request,
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateMcpServerResponseObject); ok {
 		if err := validResponse.VisitUpdateMcpServerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListNodeOutput operation middleware
+func (sh *strictHandler) ListNodeOutput(w http.ResponseWriter, r *http.Request, id ID) {
+	var request ListNodeOutputRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListNodeOutput(ctx, request.(ListNodeOutputRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListNodeOutput")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListNodeOutputResponseObject); ok {
+		if err := validResponse.VisitListNodeOutputResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

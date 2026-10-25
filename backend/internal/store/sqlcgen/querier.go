@@ -12,10 +12,15 @@ import (
 
 type Querier interface {
 	AnswerQuestion(ctx context.Context, arg AnswerQuestionParams) (Question, error)
+	CancelFlowRun(ctx context.Context, id uuid.UUID) (FlowRun, error)
+	// CancelRunJobs stops the agent jobs of a run: a worker running one loses
+	// its lease at the next heartbeat and interrupts the agent.
+	CancelRunJobs(ctx context.Context, flowRunID uuid.UUID) error
 	CardHasActiveRun(ctx context.Context, cardID uuid.UUID) (bool, error)
 	// ClaimJob takes the oldest job the worker can run: queued, or running with
 	// an expired lease (its worker died) and attempts left.
 	ClaimJob(ctx context.Context, arg ClaimJobParams) (Job, error)
+	CloseRunQuestions(ctx context.Context, flowRunID uuid.UUID) error
 	// ContinueNodeRun claims the right to follow the output of a finished node run.
 	ContinueNodeRun(ctx context.Context, id uuid.UUID) (NodeRun, error)
 	CountCardsInLane(ctx context.Context, laneID uuid.UUID) (int32, error)
@@ -31,6 +36,7 @@ type Querier interface {
 	DeleteReviewComments(ctx context.Context, nodeRunID uuid.UUID) error
 	DeliverQuestions(ctx context.Context, nodeRunID uuid.UUID) error
 	ExtendJobLease(ctx context.Context, arg ExtendJobLeaseParams) (int64, error)
+	FailOpenNodeRuns(ctx context.Context, flowRunID uuid.UUID) error
 	FinishFlowRun(ctx context.Context, arg FinishFlowRunParams) (FlowRun, error)
 	FinishJob(ctx context.Context, arg FinishJobParams) (int64, error)
 	// FinishNodeRun adds the usage: a node resumed after questions runs again.
@@ -66,12 +72,14 @@ type Querier interface {
 	InsertJob(ctx context.Context, arg InsertJobParams) (Job, error)
 	InsertLane(ctx context.Context, arg InsertLaneParams) (Lane, error)
 	InsertMcpServer(ctx context.Context, arg InsertMcpServerParams) (McpServer, error)
+	InsertNodeOutput(ctx context.Context, arg InsertNodeOutputParams) (NodeRunOutput, error)
 	InsertNodeRun(ctx context.Context, arg InsertNodeRunParams) (NodeRun, error)
 	InsertProject(ctx context.Context, arg InsertProjectParams) (Project, error)
 	InsertQuestion(ctx context.Context, arg InsertQuestionParams) (Question, error)
 	InsertReviewComment(ctx context.Context, arg InsertReviewCommentParams) (ReviewComment, error)
 	ListAgentProfiles(ctx context.Context) ([]AgentProfile, error)
 	ListCardEvents(ctx context.Context, cardID uuid.UUID) ([]CardEvent, error)
+	ListCardFlowRuns(ctx context.Context, cardID uuid.UUID) ([]ListCardFlowRunsRow, error)
 	ListCardQuestions(ctx context.Context, cardID uuid.UUID) ([]Question, error)
 	ListCardTypes(ctx context.Context) ([]CardType, error)
 	ListCards(ctx context.Context) ([]Card, error)
@@ -83,6 +91,7 @@ type Querier interface {
 	// any, else the last one.
 	ListLatestFlowRuns(ctx context.Context) ([]ListLatestFlowRunsRow, error)
 	ListMcpServers(ctx context.Context) ([]McpServer, error)
+	ListNodeOutput(ctx context.Context, nodeRunID uuid.UUID) ([]NodeRunOutput, error)
 	ListNodeRuns(ctx context.Context, flowRunID uuid.UUID) ([]NodeRun, error)
 	ListProjects(ctx context.Context) ([]Project, error)
 	ListReviewComments(ctx context.Context, nodeRunID uuid.UUID) ([]ReviewComment, error)

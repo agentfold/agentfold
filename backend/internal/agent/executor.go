@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"orquestrator/internal/domain"
+	"orquestrator/internal/events"
 	"orquestrator/internal/runner"
 	"orquestrator/internal/workspace"
 )
@@ -39,6 +40,7 @@ type Store interface {
 	StartNodeRun(ctx context.Context, id, sessionID uuid.UUID, tokenHash []byte) (domain.NodeRun, error)
 	FinishNodeRun(ctx context.Context, id uuid.UUID, r domain.NodeResult) (domain.NodeRun, error)
 	PendingQuestions(ctx context.Context, nodeRunID uuid.UUID) (int, error)
+	AddNodeOutput(ctx context.Context, nodeRunID uuid.UUID, entries []domain.NodeOutput) error
 	ListReviewComments(ctx context.Context, nodeRunID uuid.UUID) ([]domain.ReviewComment, error)
 }
 
@@ -57,6 +59,14 @@ type Executor struct {
 	Binary string
 	// BoardURL is where agents reach the board MCP server (BoardURL/mcp).
 	BoardURL string
+	// Pub announces the node runs starting and their output growing.
+	Pub Publisher
+}
+
+// Publisher announces changes to the board. The worker's announces them
+// to the server.
+type Publisher interface {
+	Publish(e events.Event)
 }
 
 // Handle runs the node of an agent.run job and records its result. Agent
@@ -121,9 +131,11 @@ func (e *Executor) execute(ctx context.Context, run domain.NodeRun, prompt strin
 		Prompt: prompt, SessionID: session, Resume: resume, Config: j.node.config,
 		SystemPrompt: j.node.systemPrompt(), McpConfig: layout.Claude + "/" + name, McpServers: servers,
 	}
-	if _, err := e.Store.StartNodeRun(ctx, run.ID, session, tokenHash); err != nil {
+	started, err := e.Store.StartNodeRun(ctx, run.ID, session, tokenHash)
+	if err != nil {
 		return domain.NodeResult{}, err
 	}
+	e.Pub.Publish(events.Event{Type: "node_run.updated", ID: run.ID, Data: started})
 	logFile, err := os.OpenFile(filepath.Join(ws.LogsDir, run.ID.String()+".jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return domain.NodeResult{}, err
@@ -139,8 +151,24 @@ func (e *Executor) execute(ctx context.Context, run domain.NodeRun, prompt strin
 	}, func(line []byte) {
 		_, _ = logFile.Write(append(line, '\n'))
 		stream.Line(line)
+		e.record(ctx, run.ID, line)
 	})
+	if ctx.Err() != nil {
+		return failure(stream.Outcome(runErr), "the agent was interrupted: its flow run was canceled, or another worker took the job over"), nil
+	}
 	return e.outcome(context.WithoutCancel(ctx), j, stream.Outcome(runErr))
+}
+
+// record keeps the steps of a stream-json line for the card page. Steps
+// that cannot be kept are lost to the page only: the log has them all.
+func (e *Executor) record(ctx context.Context, nodeRunID uuid.UUID, line []byte) {
+	steps := Steps(line)
+	if len(steps) == 0 {
+		return
+	}
+	if e.Store.AddNodeOutput(context.WithoutCancel(ctx), nodeRunID, steps) == nil {
+		e.Pub.Publish(events.Event{Type: "node_output.created", ID: nodeRunID})
+	}
 }
 
 // outcome reads what the agent reported through the board tools while it

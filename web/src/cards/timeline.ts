@@ -8,7 +8,7 @@ const runStatus: Record<string, string> = {
 }
 
 /** How a node ended, by the output it left through. */
-const outcomes: Record<string, string> = {
+export const outcomes: Record<string, string> = {
   approved: 'aprovado',
   changes_requested: 'mudanças pedidas',
   max_rounds_exceeded: 'limite de rodadas atingido',

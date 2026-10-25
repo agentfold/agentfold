@@ -9,6 +9,7 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"orquestrator/internal/domain"
+	"orquestrator/internal/service"
 )
 
 type (
@@ -34,6 +35,7 @@ type (
 	}
 	nodeRunView struct {
 		NodeKey      string  `json:"node_key"`
+		NodeType     string  `json:"node_type"`
 		Iteration    int     `json:"iteration"`
 		Status       string  `json:"status"`
 		OutputHandle string  `json:"output_handle,omitempty"`
@@ -195,9 +197,9 @@ func latestRun(ctx context.Context, board Board, cardID uuid.UUID) (runView, err
 		detail, err := board.GetRunDetail(ctx, r.ID)
 		return runView{
 			ID: detail.ID, FlowName: detail.FlowName, Status: string(detail.Status), Error: detail.Error,
-			Nodes: mapAll(detail.Nodes, func(n domain.NodeRun) nodeRunView {
+			Nodes: mapAll(detail.Nodes, func(n service.RunNode) nodeRunView {
 				return nodeRunView{
-					NodeKey: n.NodeKey, Iteration: n.Iteration, Status: string(n.Status),
+					NodeKey: n.NodeKey, NodeType: string(n.Type), Iteration: n.Iteration, Status: string(n.Status),
 					OutputHandle: n.OutputHandle, Error: n.Error, Turns: n.Turns, CostUSD: n.CostUSD,
 				}
 			}),

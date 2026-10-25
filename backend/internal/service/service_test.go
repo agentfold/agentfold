@@ -154,7 +154,9 @@ func (f *fakeRepo) CardHasActiveRun(context.Context, uuid.UUID) (bool, error) {
 }
 
 func (f *fakeRepo) GetFlowRun(_ context.Context, id uuid.UUID) (domain.FlowRun, error) {
-	return domain.FlowRun{ID: id}, f.call("GetFlowRun", id)
+	run := f.flowRun
+	run.ID = id
+	return run, f.call("GetFlowRun", id)
 }
 
 func (f *fakeRepo) ListLatestFlowRuns(context.Context) ([]domain.FlowRun, error) {

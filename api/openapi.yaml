@@ -476,6 +476,52 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/FlowVersion" }
         default: { $ref: "#/components/responses/Error" }
+  /cards/{id}/runs:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: listCardRuns
+      tags: [runs]
+      responses:
+        "200":
+          description: The flow runs of the card with their node runs, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/FlowRunDetail" }
+        default: { $ref: "#/components/responses/Error" }
+  /flow-runs/{id}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      operationId: cancelFlowRun
+      tags: [runs]
+      description: >
+        Stops an active run and frees its card: its agents are interrupted and
+        its open questions closed. 404 when the run is not active.
+      responses:
+        "200":
+          description: Canceled.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FlowRun" }
+        default: { $ref: "#/components/responses/Error" }
+  /node-runs/{id}/output:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: listNodeOutput
+      tags: [runs]
+      responses:
+        "200":
+          description: What the agent did while running the node, in order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/NodeOutput" }
+        default: { $ref: "#/components/responses/Error" }
   /flow-runs/latest:
     get:
       operationId: listLatestFlowRuns
@@ -777,7 +823,8 @@ components:
       description: >
         A change to the board. `type` is "<entity>.<change>", with entity one of
         lane, project, card_type, card, flow, agent_profile, mcp_server,
-        flow_run, card_event, question and change one of created,
+        flow_run, node_run, node_output (id is the node run; no data),
+        card_event, question and change one of created,
         updated, moved, deleted, published.
       required: [type, id]
       properties:
@@ -792,6 +839,78 @@ components:
           type: object
           additionalProperties: true
           description: The entity after the change; absent when it was deleted.
+    NodeRun:
+      type: object
+      description: One execution of a node within a flow run.
+      required: [id, flow_run_id, node_key, node_type, iteration, status, output_handle, error, summary, output,
+        tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, created_at, started_at, finished_at]
+      properties:
+        id: { type: string, format: uuid }
+        flow_run_id: { type: string, format: uuid }
+        node_key: { type: string }
+        node_type:
+          type: string
+          description: The type of the node in the flow version; empty if it is gone.
+        iteration:
+          type: integer
+          description: How many times the run entered the node (review rounds re-enter agents).
+        status:
+          type: string
+          enum: [queued, running, awaiting_input, done, failed]
+        output_handle:
+          type: string
+          description: The output the node left through; empty while it runs.
+        error: { type: string }
+        summary:
+          type: string
+          description: What the agent reported with report_done.
+        output:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: >
+            The node output handed to the next node: the agent result, summary and
+            structured output, or the review verdict and comments.
+        tokens_in: { type: integer, format: int64 }
+        tokens_out: { type: integer, format: int64 }
+        cache_read: { type: integer, format: int64 }
+        cache_write: { type: integer, format: int64 }
+        cost_usd:
+          type: number
+          format: double
+          description: As reported by Claude Code; an estimate with a subscription token.
+        turns: { type: integer }
+        duration_ms: { type: integer, format: int64 }
+        created_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time, nullable: true }
+        finished_at: { type: string, format: date-time, nullable: true }
+    FlowRunDetail:
+      allOf:
+        - $ref: "#/components/schemas/FlowRun"
+        - type: object
+          required: [nodes]
+          properties:
+            nodes:
+              type: array
+              items: { $ref: "#/components/schemas/NodeRun" }
+    NodeOutput:
+      type: object
+      description: A step of what an agent did.
+      required: [id, node_run_id, kind, text, tool, is_error, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        node_run_id: { type: string, format: uuid }
+        kind:
+          type: string
+          enum: [text, tool_use, tool_result, result]
+        text:
+          type: string
+          description: The message, or the tool input or result, shortened.
+        tool:
+          type: string
+          description: The tool name of tool_use steps.
+        is_error: { type: boolean }
+        created_at: { type: string, format: date-time }
     Question:
       type: object
       description: Something an agent asked a human; its node waits for the answers.

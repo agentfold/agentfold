@@ -48,6 +48,10 @@ type Board interface {
 
 	ListLatestFlowRuns(ctx context.Context) ([]domain.FlowRun, error)
 
+	ListCardRuns(ctx context.Context, cardID uuid.UUID) ([]service.RunDetail, error)
+	CancelFlowRun(ctx context.Context, id uuid.UUID) (domain.FlowRun, error)
+	ListNodeOutput(ctx context.Context, nodeRunID uuid.UUID) ([]domain.NodeOutput, error)
+
 	ListCardQuestions(ctx context.Context, cardID uuid.UUID) ([]domain.Question, error)
 	AnswerQuestion(ctx context.Context, id uuid.UUID, answer string) (domain.Question, error)
 

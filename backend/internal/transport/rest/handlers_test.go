@@ -37,6 +37,11 @@ func newStub() *stubBoard {
 		question: domain.Question{
 			ID: id1, CardID: id2, NodeRunID: id2, Text: "DB?", Answer: &answerText, AnsweredAt: &stamp, DeliveredAt: &stamp, CreatedAt: stamp,
 		},
+		nodeRun: domain.NodeRun{
+			ID: id1, FlowRunID: id2, NodeKey: "dev", Iteration: 2, Status: domain.NodeDone, OutputHandle: "done",
+			Summary: "did it", Output: []byte(`{"result":"ok"}`), CreatedAt: stamp, StartedAt: &stamp, FinishedAt: &stamp,
+			Usage: domain.Usage{TokensIn: 1, TokensOut: 2, CacheRead: 3, CacheWrite: 4, CostUSD: 0.5, Turns: 6, DurationMS: 7},
+		},
 		run: domain.FlowRun{
 			ID: id1, FlowID: id2, FlowVersionID: id2, FlowName: "dev", CardID: id2, Trigger: domain.EventCardCreated,
 			Status: domain.RunFailed, Error: "boom", StartedAt: stamp, FinishedAt: &stamp,
@@ -120,6 +125,12 @@ const (
 	questionJSON = `{"id":"00000000-0000-7000-8000-000000000001","card_id":"00000000-0000-7000-8000-000000000002",` +
 		`"node_run_id":"00000000-0000-7000-8000-000000000002","text":"DB?","answer":"Postgres",` +
 		`"answered_at":"2026-10-25T12:00:00Z","delivered":true,"created_at":"2026-10-25T12:00:00Z"}`
+	nodeRunJSON = `{"id":"00000000-0000-7000-8000-000000000001","flow_run_id":"00000000-0000-7000-8000-000000000002",` +
+		`"node_key":"dev","node_type":"agent","iteration":2,"status":"done","output_handle":"done","error":"","summary":"did it",` +
+		`"output":{"result":"ok"},"tokens_in":1,"tokens_out":2,"cache_read":3,"cache_write":4,"cost_usd":0.5,"turns":6,` +
+		`"duration_ms":7,"created_at":"2026-10-25T12:00:00Z","started_at":"2026-10-25T12:00:00Z","finished_at":"2026-10-25T12:00:00Z"}`
+	outputJSON = `{"id":"00000000-0000-7000-8000-000000000001","node_run_id":"00000000-0000-7000-8000-000000000002",` +
+		`"kind":"tool_use","text":"{}","tool":"Read","is_error":false,"created_at":"2026-10-25T12:00:00Z"}`
 	runJSON = `{"id":"00000000-0000-7000-8000-000000000001","flow_id":"00000000-0000-7000-8000-000000000002",` +
 		`"flow_version_id":"00000000-0000-7000-8000-000000000002","flow_name":"dev",` +
 		`"card_id":"00000000-0000-7000-8000-000000000002","trigger":"card_created","status":"failed","error":"boom",` +
@@ -180,6 +191,9 @@ func TestRoutes(t *testing.T) {
 		{"GET", "/api/cards" + p1 + "/children", "", 200, "ListChildCards", []any{id1}, "[" + cardJSON + "]"},
 		{"GET", "/api/cards" + p1 + "/events", "", 200, "ListCardEvents", []any{id1}, "[" + cardEventJSON + "]"},
 		{"GET", "/api/flow-runs/latest", "", 200, "ListLatestFlowRuns", nil, "[" + runJSON + "]"},
+		{"GET", "/api/cards" + p1 + "/runs", "", 200, "ListCardRuns", []any{id1}, "[" + runJSON[:len(runJSON)-1] + `,"nodes":[` + nodeRunJSON + "]}]"},
+		{"POST", "/api/flow-runs" + p1 + "/cancel", "", 200, "CancelFlowRun", []any{id1}, runJSON},
+		{"GET", "/api/node-runs" + p1 + "/output", "", 200, "ListNodeOutput", []any{id1}, "[" + outputJSON + "]"},
 		{"GET", "/api/cards" + p1 + "/questions", "", 200, "ListCardQuestions", []any{id1}, "[" + questionJSON + "]"},
 		{"POST", "/api/questions" + p1 + "/answer", `{"answer":"Postgres"}`, 200, "AnswerQuestion", []any{id1, "Postgres"}, questionJSON},
 
@@ -335,6 +349,7 @@ func TestToEntity(t *testing.T) {
 		{b.cardEvent, cardEventJSON},
 		{b.run, runJSON},
 		{b.question, questionJSON},
+		{b.nodeRun, strings.Replace(nodeRunJSON, `"node_type":"agent"`, `"node_type":""`, 1)},
 		{nil, "null"},
 	}
 	for _, tt := range tests {

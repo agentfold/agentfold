@@ -150,22 +150,6 @@ func (s *Service) AnswerQuestion(ctx context.Context, id uuid.UUID, answer strin
 	return q, errors.Join(err, resumeErr)
 }
 
-// RunDetail is a flow run with its node runs.
-type RunDetail struct {
-	domain.FlowRun
-	Nodes []domain.NodeRun
-}
-
-// GetRunDetail returns a flow run with its node runs.
-func (s *Service) GetRunDetail(ctx context.Context, id uuid.UUID) (RunDetail, error) {
-	run, err := s.repo.GetFlowRun(ctx, id)
-	if err != nil {
-		return RunDetail{}, err
-	}
-	nodes, err := s.repo.ListNodeRuns(ctx, id)
-	return RunDetail{FlowRun: run, Nodes: nodes}, err
-}
-
 // timeline adds an entry to a card timeline and announces it.
 func (s *Service) timeline(ctx context.Context, cardID uuid.UUID, typ domain.CardEventType, payload any) error {
 	event, err := s.repo.AddCardEvent(ctx, cardID, typ, payload)

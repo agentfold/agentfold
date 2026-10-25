@@ -7,6 +7,9 @@ import type {
   Flow,
   FlowGraph,
   FlowRun,
+  FlowRunDetail,
+  NodeOutput,
+  NodeRun,
   Question,
   GraphProblem,
   Lane,
@@ -24,6 +27,8 @@ interface State {
   flows: Flow[]
   runs: FlowRun[]
   questions: Question[]
+  cardRuns: FlowRunDetail[]
+  outputs: NodeOutput[]
   agentProfiles: AgentProfile[]
   mcpServers: McpServer[]
 }
@@ -165,6 +170,63 @@ export function question(
   }
 }
 
+export function nodeRun(
+  nodeKey: string,
+  nodeType: string,
+  extra: Partial<NodeRun> = {},
+): NodeRun {
+  return {
+    id: newId(),
+    flow_run_id: newId(),
+    node_key: nodeKey,
+    node_type: nodeType,
+    iteration: 1,
+    status: 'done',
+    output_handle: 'done',
+    error: '',
+    summary: '',
+    output: null,
+    tokens_in: 10,
+    tokens_out: 20,
+    cache_read: 30,
+    cache_write: 40,
+    cost_usd: 0.5,
+    turns: 3,
+    duration_ms: 1200,
+    created_at: stamp,
+    started_at: stamp,
+    finished_at: stamp,
+    ...extra,
+  }
+}
+
+export function runDetail(
+  cardId: string,
+  status: FlowRunDetail['status'],
+  nodes: NodeRun[],
+  extra: Partial<FlowRunDetail> = {},
+): FlowRunDetail {
+  return { ...flowRun(cardId, status), nodes, ...extra }
+}
+
+export function nodeOutput(
+  nodeRunId: string,
+  kind: NodeOutput['kind'],
+  text: string,
+  extra: Partial<NodeOutput> = {},
+): NodeOutput {
+  return {
+    id: newId(),
+    node_run_id: nodeRunId,
+    kind,
+    text,
+    tool: '',
+    is_error: false,
+    created_at: stamp,
+    ...extra,
+  }
+}
+
 export function cardEvent(
   cardId: string,
   type: string,
@@ -230,6 +292,8 @@ export function createFakeBackend(initial: Partial<State> = {}): FakeBackend {
     flows: [],
     runs: [],
     questions: [],
+    cardRuns: [],
+    outputs: [],
     agentProfiles: [],
     mcpServers: [],
     ...initial,
@@ -357,6 +421,16 @@ export function createFakeBackend(initial: Partial<State> = {}): FakeBackend {
         q.answer = str(body.answer)
         q.answered_at = stamp
         return [200, q]
+      }
+      case 'GET /cards/:id/runs':
+        return [200, state.cardRuns.filter((r) => r.card_id === id)]
+      case 'GET /node-runs/:id/output':
+        return [200, state.outputs.filter((o) => o.node_run_id === id)]
+      case 'POST /flow-runs/:id/cancel': {
+        const run = state.cardRuns.find((r) => r.id === id)
+        if (!run) return notFound
+        run.status = 'canceled'
+        return [200, run]
       }
       case 'GET /flow-runs/:id':
         return [200, state.runs]

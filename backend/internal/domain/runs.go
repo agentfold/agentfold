@@ -196,3 +196,26 @@ func ReviewPrompt(approved bool, comments []ReviewComment) string {
 	}
 	return b.String()
 }
+
+// OutputKind names an entry of what an agent did.
+type OutputKind string
+
+// Output kinds.
+const (
+	OutputText       OutputKind = "text"
+	OutputToolUse    OutputKind = "tool_use"
+	OutputToolResult OutputKind = "tool_result"
+	OutputResult     OutputKind = "result"
+)
+
+// NodeOutput is one step of what an agent did while running a node: a
+// message, a tool call or its result, or the final result.
+type NodeOutput struct {
+	ID        uuid.UUID
+	NodeRunID uuid.UUID
+	Kind      OutputKind
+	Text      string
+	Tool      string
+	IsError   bool
+	CreatedAt time.Time
+}

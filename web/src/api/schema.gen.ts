@@ -344,6 +344,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cards/{id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["listCardRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flow-runs/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Stops an active run and frees its card: its agents are interrupted and its open questions closed. 404 when the run is not active. */
+        post: operations["cancelFlowRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/node-runs/{id}/output": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["listNodeOutput"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/flow-runs/latest": {
         parameters: {
             query?: never;
@@ -565,7 +620,7 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
-        /** @description A change to the board. `type` is "<entity>.<change>", with entity one of lane, project, card_type, card, flow, agent_profile, mcp_server, flow_run, card_event, question and change one of created, updated, moved, deleted, published. */
+        /** @description A change to the board. `type` is "<entity>.<change>", with entity one of lane, project, card_type, card, flow, agent_profile, mcp_server, flow_run, node_run, node_output (id is the node run; no data), card_event, question and change one of created, updated, moved, deleted, published. */
         BoardEvent: {
             /** @example card.moved */
             type: string;
@@ -578,6 +633,70 @@ export interface components {
             data?: {
                 [key: string]: unknown;
             };
+        };
+        /** @description One execution of a node within a flow run. */
+        NodeRun: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            flow_run_id: string;
+            node_key: string;
+            /** @description The type of the node in the flow version; empty if it is gone. */
+            node_type: string;
+            /** @description How many times the run entered the node (review rounds re-enter agents). */
+            iteration: number;
+            /** @enum {string} */
+            status: "queued" | "running" | "awaiting_input" | "done" | "failed";
+            /** @description The output the node left through; empty while it runs. */
+            output_handle: string;
+            error: string;
+            /** @description What the agent reported with report_done. */
+            summary: string;
+            /** @description The node output handed to the next node: the agent result, summary and structured output, or the review verdict and comments. */
+            output: {
+                [key: string]: unknown;
+            } | null;
+            /** Format: int64 */
+            tokens_in: number;
+            /** Format: int64 */
+            tokens_out: number;
+            /** Format: int64 */
+            cache_read: number;
+            /** Format: int64 */
+            cache_write: number;
+            /**
+             * Format: double
+             * @description As reported by Claude Code; an estimate with a subscription token.
+             */
+            cost_usd: number;
+            turns: number;
+            /** Format: int64 */
+            duration_ms: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            started_at: string | null;
+            /** Format: date-time */
+            finished_at: string | null;
+        };
+        FlowRunDetail: components["schemas"]["FlowRun"] & {
+            nodes: components["schemas"]["NodeRun"][];
+        };
+        /** @description A step of what an agent did. */
+        NodeOutput: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            node_run_id: string;
+            /** @enum {string} */
+            kind: "text" | "tool_use" | "tool_result" | "result";
+            /** @description The message, or the tool input or result, shortened. */
+            text: string;
+            /** @description The tool name of tool_use steps. */
+            tool: string;
+            is_error: boolean;
+            /** Format: date-time */
+            created_at: string;
         };
         /** @description Something an agent asked a human; its node waits for the answers. */
         Question: {
@@ -1674,6 +1793,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FlowVersion"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listCardRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The flow runs of the card with their node runs, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowRunDetail"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    cancelFlowRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Canceled. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowRun"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listNodeOutput: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What the agent did while running the node, in order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeOutput"][];
                 };
             };
             default: components["responses"]["Error"];

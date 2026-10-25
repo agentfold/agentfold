@@ -13,8 +13,10 @@ const affected: Record<string, QueryKey[]> = {
   flow: [keys.flows],
   agent_profile: [keys.agentProfiles],
   mcp_server: [keys.mcpServers],
-  flow_run: [keys.flowRuns],
-  card_event: [keys.cardEvents],
+  flow_run: [keys.flowRuns, keys.cardRuns, keys.questions],
+  node_run: [keys.cardRuns],
+  node_output: [keys.nodeOutput],
+  card_event: [keys.cardEvents, keys.cardRuns],
   question: [keys.questions],
 }
 

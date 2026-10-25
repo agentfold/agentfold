@@ -31,9 +31,16 @@ describe('useBoardEvents', () => {
     events.emit('agent_profile.updated')
     expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['agentProfiles'] })
     events.emit('flow_run.updated')
-    expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['flowRuns'] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['flowRuns'] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['cardRuns'] })
+    expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['questions'] })
     events.emit('card_event.created')
-    expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['cardEvents'] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['cardEvents'] })
+    expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['cardRuns'] })
+    events.emit('node_run.updated')
+    expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['cardRuns'] })
+    events.emit('node_output.created')
+    expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['nodeOutput'] })
   })
 
   it('refreshes everything when the stream (re)connects', () => {

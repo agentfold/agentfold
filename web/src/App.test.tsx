@@ -55,6 +55,18 @@ describe('App', () => {
     goTo('#/flows/some-id')
     expect(await screen.findByRole('alert')).toBeInTheDocument()
 
+    goTo('#/cards/some-id')
+    expect(await screen.findByText(/Card não encontrado/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Board' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+
+    goTo('#/cards')
+    expect(
+      await screen.findByText('O board ainda não tem baias.'),
+    ).toBeInTheDocument()
+
     goTo('#/unknown')
     expect(screen.getByRole('link', { name: 'Board' })).toHaveAttribute(
       'aria-current',

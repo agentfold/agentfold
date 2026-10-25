@@ -1,6 +1,7 @@
 import { AgentsPage } from './agents/AgentsPage'
 import { useBoardEvents } from './api/events'
 import { Board } from './board/Board'
+import { CardPage } from './cards/CardPage'
 import { CardTypesPage } from './cardTypes/CardTypesPage'
 import { FlowEditor } from './flows/FlowEditor'
 import { FlowsPage } from './flows/FlowsPage'
@@ -18,6 +19,8 @@ const tabs: { page: Page; label: string }[] = [
 function App() {
   const { page, id } = useRoute()
   useBoardEvents()
+  // Card pages belong to the board; without an id they fall back to it.
+  const current = page === 'cards' ? 'board' : page
 
   return (
     <div className="flex h-screen flex-col bg-slate-100 text-slate-900">
@@ -28,9 +31,9 @@ function App() {
             <a
               key={tab.page}
               href={pageHref(tab.page)}
-              aria-current={page === tab.page ? 'page' : undefined}
+              aria-current={current === tab.page ? 'page' : undefined}
               className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-                page === tab.page
+                current === tab.page
                   ? 'bg-slate-900 text-white'
                   : 'text-slate-600 hover:bg-slate-100'
               }`}
@@ -41,7 +44,8 @@ function App() {
         </nav>
       </header>
       <main className="min-h-0 flex-1 overflow-auto p-6">
-        {page === 'board' && <Board />}
+        {(page === 'board' || (page === 'cards' && !id)) && <Board />}
+        {page === 'cards' && id && <CardPage key={id} cardId={id} />}
         {page === 'projects' && <ProjectsPage />}
         {page === 'card-types' && <CardTypesPage />}
         {page === 'agents' && <AgentsPage />}

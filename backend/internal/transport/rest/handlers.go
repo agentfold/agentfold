@@ -179,3 +179,18 @@ func (h handlers) AnswerQuestion(ctx context.Context, req openapi.AnswerQuestion
 	q, err := h.board.AnswerQuestion(ctx, req.Id, req.Body.Answer)
 	return openapi.AnswerQuestion200JSONResponse(toQuestion(q)), err
 }
+
+func (h handlers) ListCardRuns(ctx context.Context, req openapi.ListCardRunsRequestObject) (openapi.ListCardRunsResponseObject, error) {
+	runs, err := h.board.ListCardRuns(ctx, req.Id)
+	return openapi.ListCardRuns200JSONResponse(mapAll(runs, toRunDetail)), err
+}
+
+func (h handlers) CancelFlowRun(ctx context.Context, req openapi.CancelFlowRunRequestObject) (openapi.CancelFlowRunResponseObject, error) {
+	run, err := h.board.CancelFlowRun(ctx, req.Id)
+	return openapi.CancelFlowRun200JSONResponse(toFlowRun(run)), err
+}
+
+func (h handlers) ListNodeOutput(ctx context.Context, req openapi.ListNodeOutputRequestObject) (openapi.ListNodeOutputResponseObject, error) {
+	steps, err := h.board.ListNodeOutput(ctx, req.Id)
+	return openapi.ListNodeOutput200JSONResponse(mapAll(steps, toNodeOutput)), err
+}

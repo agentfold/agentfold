@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"orquestrator/internal/domain"
+	"orquestrator/internal/service"
 	"orquestrator/internal/transport/rest/openapi"
 )
 
@@ -68,6 +69,38 @@ func toQuestion(q domain.Question) openapi.Question {
 	}
 }
 
+func toNodeRun(n service.RunNode) openapi.NodeRun {
+	out := openapi.NodeRun{
+		Id: n.ID, FlowRunId: n.FlowRunID, NodeKey: n.NodeKey, NodeType: string(n.Type), Iteration: n.Iteration,
+		Status: openapi.NodeRunStatus(n.Status), OutputHandle: n.OutputHandle, Error: n.Error, Summary: n.Summary,
+		TokensIn: n.TokensIn, TokensOut: n.TokensOut, CacheRead: n.CacheRead, CacheWrite: n.CacheWrite,
+		CostUsd: n.CostUSD, Turns: n.Turns, DurationMs: n.DurationMS,
+		CreatedAt: n.CreatedAt, StartedAt: n.StartedAt, FinishedAt: n.FinishedAt,
+	}
+	var output map[string]any
+	if json.Unmarshal(n.Output, &output) == nil && output != nil {
+		out.Output = &output
+	}
+	return out
+}
+
+func toRunDetail(r service.RunDetail) openapi.FlowRunDetail {
+	run := toFlowRun(r.FlowRun)
+	return openapi.FlowRunDetail{
+		Id: run.Id, FlowId: run.FlowId, FlowVersionId: run.FlowVersionId, FlowName: run.FlowName, CardId: run.CardId,
+		Trigger: openapi.FlowRunDetailTrigger(run.Trigger), Status: openapi.FlowRunDetailStatus(run.Status),
+		Error: run.Error, StartedAt: run.StartedAt, FinishedAt: run.FinishedAt,
+		Nodes: mapAll(r.Nodes, toNodeRun),
+	}
+}
+
+func toNodeOutput(o domain.NodeOutput) openapi.NodeOutput {
+	return openapi.NodeOutput{
+		Id: o.ID, NodeRunId: o.NodeRunID, Kind: openapi.NodeOutputKind(o.Kind), Text: o.Text, Tool: o.Tool,
+		IsError: o.IsError, CreatedAt: o.CreatedAt,
+	}
+}
+
 // toEntity converts the domain value carried by a board event.
 func toEntity(v any) any {
 	switch v := v.(type) {
@@ -85,6 +118,8 @@ func toEntity(v any) any {
 		return toFlowRun(v)
 	case domain.Question:
 		return toQuestion(v)
+	case domain.NodeRun:
+		return toNodeRun(service.RunNode{NodeRun: v})
 	case domain.Flow:
 		return toFlowSummary(v)
 	case domain.AgentProfile:
