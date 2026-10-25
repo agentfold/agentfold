@@ -440,6 +440,21 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/FlowVersion" }
         default: { $ref: "#/components/responses/Error" }
+  /flow-runs/latest:
+    get:
+      operationId: listLatestFlowRuns
+      tags: [runs]
+      responses:
+        "200":
+          description: >
+            One run per card that ever ran a flow: an active one if there is
+            any, else the last one.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/FlowRun" }
+        default: { $ref: "#/components/responses/Error" }
   /agent-profiles:
     get:
       operationId: listAgentProfiles
@@ -602,7 +617,7 @@ components:
       properties:
         code:
           type: string
-          enum: [bad_request, validation, not_found, conflict, in_use, invalid_reference, invalid_graph, internal]
+          enum: [bad_request, validation, not_found, conflict, in_use, invalid_reference, invalid_graph, card_busy, internal]
         message: { type: string }
         field:
           type: string
@@ -725,8 +740,8 @@ components:
       type: object
       description: >
         A change to the board. `type` is "<entity>.<change>", with entity one of
-        lane, project, card_type, card, flow, agent_profile, mcp_server and
-        change one of created,
+        lane, project, card_type, card, flow, agent_profile, mcp_server,
+        flow_run, card_event and change one of created,
         updated, moved, deleted, published.
       required: [type, id]
       properties:
@@ -741,6 +756,31 @@ components:
           type: object
           additionalProperties: true
           description: The entity after the change; absent when it was deleted.
+    FlowRun:
+      type: object
+      description: A run of a flow for a card.
+      required: [id, flow_id, flow_version_id, flow_name, card_id, trigger, status, error, started_at, finished_at]
+      properties:
+        id: { type: string, format: uuid }
+        flow_id: { type: string, format: uuid }
+        flow_version_id: { type: string, format: uuid }
+        flow_name: { type: string }
+        card_id: { type: string, format: uuid }
+        trigger:
+          type: string
+          enum: [card_created, card_entered_lane]
+        status:
+          type: string
+          enum: [running, waiting, done, failed, canceled]
+          description: While running or waiting, the card can only be moved by the flow.
+        error:
+          type: string
+          description: Why the run failed; empty otherwise.
+        started_at: { type: string, format: date-time }
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
     FlowSummary:
       type: object
       required: [id, name, enabled, latest_version, created_at, updated_at]

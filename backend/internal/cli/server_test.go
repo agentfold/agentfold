@@ -210,13 +210,18 @@ func waitListening(t *testing.T, stdout *syncBuffer) string {
 
 func post(t *testing.T, url, body string) map[string]any {
 	t.Helper()
+	return postStatus(t, url, body, http.StatusCreated)
+}
+
+func postStatus(t *testing.T, url, body string, status int) map[string]any {
+	t.Helper()
 	resp, err := http.Post(url, "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	data, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusCreated {
+	if resp.StatusCode != status {
 		t.Fatalf("POST %s: %d %s", url, resp.StatusCode, data)
 	}
 	var v map[string]any

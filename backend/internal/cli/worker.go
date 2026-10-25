@@ -11,8 +11,13 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/google/uuid"
+
 	"orquestrator/internal/agent"
 	"orquestrator/internal/crypto"
+	"orquestrator/internal/domain"
+	"orquestrator/internal/engine"
+	"orquestrator/internal/events"
 	"orquestrator/internal/runner"
 	"orquestrator/internal/store"
 	"orquestrator/internal/worker"
@@ -111,24 +116,48 @@ func runWorker(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	defer pool.Close()
 
 	st := store.New(pool)
+	log := slog.New(slog.NewTextHandler(stderr, nil))
 	host, _ := os.Hostname() // empty only on broken systems; jobs then need no host
-	executor := &agent.Executor{
-		Store:      st,
-		Secrets:    box,
-		Workspaces: workspace.Local{DataDir: data},
-		Runner:     run,
-		Binary:     claude,
+	flows := &engine.Engine{
+		Store: st,
+		Agents: &agent.Executor{
+			Store:      st,
+			Secrets:    box,
+			Workspaces: workspace.Local{DataDir: data},
+			Runner:     run,
+			Binary:     claude,
+		},
+		Pub: notifier{store: st, log: log},
 	}
 	w := &worker.Worker{
 		Queue:        st,
 		Listen:       func(ctx context.Context) (worker.Listener, error) { return st.ListenJobs(ctx) },
 		ID:           host + "-" + strconv.Itoa(os.Getpid()),
 		Capabilities: map[string]string{"host": host},
-		Handlers:     map[string]worker.Handler{agent.JobKind: executor.Handle},
-		Lease:        jobLease,
-		Idle:         jobIdle,
-		Log:          slog.New(slog.NewTextHandler(stderr, nil)),
+		Handlers: map[string]worker.Handler{
+			domain.JobFlowTrigger: flows.HandleTrigger,
+			agent.JobKind:         flows.HandleAgent,
+		},
+		Lease: jobLease,
+		Idle:  jobIdle,
+		Log:   log,
 	}
 	_, _ = fmt.Fprintf(stdout, "worker %s running agents with %T in %s\n", w.ID, run, data)
 	return w.Run(ctx)
+}
+
+// notifier announces the changes the engine makes to the server, which
+// streams them to the board. A change that cannot be announced is only
+// logged: clients catch up when they reload.
+type notifier struct {
+	store interface {
+		NotifyChange(ctx context.Context, typ string, id uuid.UUID) error
+	}
+	log *slog.Logger
+}
+
+func (n notifier) Publish(e events.Event) {
+	if err := n.store.NotifyChange(context.Background(), e.Type, e.ID); err != nil {
+		n.log.Error("cannot announce a change", "type", e.Type, "id", e.ID, "error", err)
+	}
 }

@@ -1,14 +1,44 @@
+-- InsertFlowRun starts a run unless the flow is already running for the card.
 -- name: InsertFlowRun :one
-INSERT INTO flow_runs (flow_version_id, card_id, trigger, status) VALUES ($1, $2, $3, $4) RETURNING *;
+INSERT INTO flow_runs (flow_id, flow_version_id, card_id, trigger, status)
+VALUES ($1, $2, $3, $4, 'running')
+ON CONFLICT (card_id, flow_id) WHERE status IN ('running', 'waiting') DO NOTHING
+RETURNING *;
 
 -- name: GetFlowRun :one
-SELECT * FROM flow_runs WHERE id = $1;
+SELECT sqlc.embed(r), f.name AS flow_name
+FROM flow_runs r JOIN flows f ON f.id = r.flow_id
+WHERE r.id = $1;
+
+-- ListLatestFlowRuns returns one run per card: an active one if there is
+-- any, else the last one.
+-- name: ListLatestFlowRuns :many
+SELECT DISTINCT ON (r.card_id) sqlc.embed(r), f.name AS flow_name
+FROM flow_runs r JOIN flows f ON f.id = r.flow_id
+ORDER BY r.card_id, r.status IN ('running', 'waiting') DESC, r.started_at DESC, r.id DESC;
+
+-- name: FinishFlowRun :one
+UPDATE flow_runs SET status = $2, error = $3, finished_at = now()
+WHERE id = $1 AND status IN ('running', 'waiting')
+RETURNING *;
+
+-- name: CardHasActiveRun :one
+SELECT EXISTS (SELECT 1 FROM flow_runs WHERE card_id = $1 AND status IN ('running', 'waiting'));
+
+-- name: ListRunnableFlows :many
+SELECT DISTINCT ON (v.flow_id) sqlc.embed(v), f.name AS flow_name
+FROM flow_versions v JOIN flows f ON f.id = v.flow_id
+WHERE f.enabled
+ORDER BY v.flow_id, v.version DESC;
 
 -- name: InsertNodeRun :one
 INSERT INTO node_runs (flow_run_id, node_key, iteration, status, input) VALUES ($1, $2, $3, $4, $5) RETURNING *;
 
 -- name: GetNodeRun :one
 SELECT * FROM node_runs WHERE id = $1;
+
+-- name: CountNodeRuns :one
+SELECT count(*)::integer FROM node_runs WHERE flow_run_id = $1 AND node_key = $2;
 
 -- name: StartNodeRun :one
 UPDATE node_runs SET status = 'running', started_at = now(), session_id = $2 WHERE id = $1 RETURNING *;
@@ -19,6 +49,12 @@ SET status = $2, output = $3, output_handle = $4, error = $5,
     tokens_in = $6, tokens_out = $7, cache_read = $8, cache_write = $9,
     cost_usd = $10, turns = $11, duration_ms = $12, finished_at = now()
 WHERE id = $1
+RETURNING *;
+
+-- ContinueNodeRun claims the right to follow the output of a finished node run.
+-- name: ContinueNodeRun :one
+UPDATE node_runs SET continued_at = now()
+WHERE id = $1 AND continued_at IS NULL AND status IN ('done', 'failed')
 RETURNING *;
 
 -- name: GetAgentSession :one

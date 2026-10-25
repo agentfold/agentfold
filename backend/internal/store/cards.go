@@ -50,9 +50,23 @@ type (
 	}
 )
 
-func addEvent(ctx context.Context, q sqlcgen.Querier, cardID uuid.UUID, typ domain.CardEventType, payload any) error {
-	data, _ := json.Marshal(payload) // the payload structs above always marshal
-	_, err := q.InsertCardEvent(ctx, sqlcgen.InsertCardEventParams{CardID: cardID, Type: string(typ), Payload: data})
+func addEvent(ctx context.Context, q sqlcgen.Querier, cardID uuid.UUID, typ domain.CardEventType, payload any) (domain.CardEvent, error) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return domain.CardEvent{}, err
+	}
+	row, err := q.InsertCardEvent(ctx, sqlcgen.InsertCardEventParams{CardID: cardID, Type: string(typ), Payload: data})
+	return mapRow(row, err, toCardEvent)
+}
+
+// addTriggerEvent records an event that may start flows, and enqueues the
+// job that starts them.
+func addTriggerEvent(ctx context.Context, q sqlcgen.Querier, cardID uuid.UUID, typ domain.CardEventType, payload any) error {
+	event, err := addEvent(ctx, q, cardID, typ, payload)
+	if err != nil {
+		return err
+	}
+	_, err = insertJob(ctx, q, NewJob{Kind: domain.JobFlowTrigger, Payload: domain.TriggerJob{CardEventID: event.ID}})
 	return err
 }
 
@@ -108,7 +122,7 @@ func (s *Store) CreateCard(ctx context.Context, in domain.NewCard) (domain.Card,
 		if card, err = mapRow(row, err, toCard); err != nil {
 			return err
 		}
-		return addEvent(ctx, q, card.ID, domain.CardCreated, cardCreatedPayload{LaneID: card.LaneID})
+		return addTriggerEvent(ctx, q, card.ID, domain.CardCreated, cardCreatedPayload{LaneID: card.LaneID})
 	})
 	return card, err
 }
@@ -127,7 +141,8 @@ func (s *Store) UpdateCard(ctx context.Context, id uuid.UUID, in domain.CardInpu
 		if card, err = mapRow(row, err, toCard); err != nil {
 			return err
 		}
-		return addEvent(ctx, q, id, domain.CardUpdated, cardUpdatedPayload{})
+		_, err = addEvent(ctx, q, id, domain.CardUpdated, cardUpdatedPayload{})
+		return err
 	})
 	return card, err
 }
@@ -166,11 +181,12 @@ func (s *Store) MoveCard(ctx context.Context, id, laneID uuid.UUID, position int
 			return err
 		}
 		card = toCard(row)
-		return addEvent(ctx, q, id, domain.CardMoved, cardMovedPayload{
-			FromLaneID: from,
-			ToLaneID:   laneID,
-			Position:   int(to),
-		})
+		payload := cardMovedPayload{FromLaneID: from, ToLaneID: laneID, Position: int(to)}
+		if sameLane {
+			_, err = addEvent(ctx, q, id, domain.CardMoved, payload)
+			return err
+		}
+		return addTriggerEvent(ctx, q, id, domain.CardMoved, payload)
 	})
 	return card, err
 }
@@ -201,6 +217,17 @@ func (s *Store) DeleteCard(ctx context.Context, id uuid.UUID) error {
 		}
 		return q.ShiftCards(ctx, sqlcgen.ShiftCardsParams{LaneID: row.LaneID, Delta: -1, FromPos: row.Position + 1, ToPos: last})
 	})
+}
+
+// AddCardEvent adds an entry to the timeline of a card.
+func (s *Store) AddCardEvent(ctx context.Context, cardID uuid.UUID, typ domain.CardEventType, payload any) (domain.CardEvent, error) {
+	return addEvent(ctx, s.q, cardID, typ, payload)
+}
+
+// GetCardEvent returns one entry of a card timeline.
+func (s *Store) GetCardEvent(ctx context.Context, id uuid.UUID) (domain.CardEvent, error) {
+	row, err := s.q.GetCardEvent(ctx, id)
+	return mapRow(row, err, toCardEvent)
 }
 
 // ListCardEvents returns the timeline of a card, oldest first.

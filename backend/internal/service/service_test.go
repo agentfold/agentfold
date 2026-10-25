@@ -26,6 +26,8 @@ type fakeRepo struct {
 	profile domain.AgentProfile
 	mcp     domain.McpServer
 	sealed  []byte
+	// busy is what CardHasActiveRun answers; it is not recorded as a call.
+	busy bool
 }
 
 func (f *fakeRepo) call(name string, in any) error {
@@ -135,6 +137,22 @@ func (f *fakeRepo) DeleteCard(_ context.Context, id uuid.UUID) error {
 
 func (f *fakeRepo) ListCardEvents(_ context.Context, cardID uuid.UUID) ([]domain.CardEvent, error) {
 	return nil, f.call("ListCardEvents", cardID)
+}
+
+func (f *fakeRepo) GetCardEvent(_ context.Context, id uuid.UUID) (domain.CardEvent, error) {
+	return domain.CardEvent{ID: id}, f.call("GetCardEvent", id)
+}
+
+func (f *fakeRepo) CardHasActiveRun(context.Context, uuid.UUID) (bool, error) {
+	return f.busy, f.errs["CardHasActiveRun"]
+}
+
+func (f *fakeRepo) GetFlowRun(_ context.Context, id uuid.UUID) (domain.FlowRun, error) {
+	return domain.FlowRun{ID: id}, f.call("GetFlowRun", id)
+}
+
+func (f *fakeRepo) ListLatestFlowRuns(context.Context) ([]domain.FlowRun, error) {
+	return nil, f.call("ListLatestFlowRuns", nil)
 }
 
 func (f *fakeRepo) ListFlows(context.Context) ([]domain.Flow, error) {
@@ -317,6 +335,8 @@ func TestDelegation(t *testing.T) {
 			domain.CardInput{Title: "t", Description: "d", CardTypeID: id}, "card.updated"},
 		{"MoveCard", func(s *Service) error { _, err := s.MoveCard(ctx, id, id, 0); return err }, 0, "card.moved"},
 		{"DeleteCard", func(s *Service) error { return s.DeleteCard(ctx, id) }, id, "card.deleted"},
+		{"GetFlowRun", func(s *Service) error { _, err := s.GetFlowRun(ctx, id); return err }, id, ""},
+		{"ListLatestFlowRuns", func(s *Service) error { _, err := s.ListLatestFlowRuns(ctx); return err }, nil, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

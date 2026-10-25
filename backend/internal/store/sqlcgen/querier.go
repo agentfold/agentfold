@@ -11,11 +11,15 @@ import (
 )
 
 type Querier interface {
+	CardHasActiveRun(ctx context.Context, cardID uuid.UUID) (bool, error)
 	// ClaimJob takes the oldest job the worker can run: queued, or running with
 	// an expired lease (its worker died) and attempts left.
 	ClaimJob(ctx context.Context, arg ClaimJobParams) (Job, error)
+	// ContinueNodeRun claims the right to follow the output of a finished node run.
+	ContinueNodeRun(ctx context.Context, id uuid.UUID) (NodeRun, error)
 	CountCardsInLane(ctx context.Context, laneID uuid.UUID) (int32, error)
 	CountLanes(ctx context.Context) (int32, error)
+	CountNodeRuns(ctx context.Context, arg CountNodeRunsParams) (int32, error)
 	DeleteAgentProfile(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteCard(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteCardType(ctx context.Context, id uuid.UUID) (int64, error)
@@ -24,17 +28,19 @@ type Querier interface {
 	DeleteMcpServer(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteProject(ctx context.Context, id uuid.UUID) (int64, error)
 	ExtendJobLease(ctx context.Context, arg ExtendJobLeaseParams) (int64, error)
+	FinishFlowRun(ctx context.Context, arg FinishFlowRunParams) (FlowRun, error)
 	FinishJob(ctx context.Context, arg FinishJobParams) (int64, error)
 	FinishNodeRun(ctx context.Context, arg FinishNodeRunParams) (NodeRun, error)
 	GetAgentProfile(ctx context.Context, id uuid.UUID) (AgentProfile, error)
 	GetAgentProfileByName(ctx context.Context, name string) (AgentProfile, error)
 	GetAgentSession(ctx context.Context, arg GetAgentSessionParams) (AgentSession, error)
 	GetCard(ctx context.Context, id uuid.UUID) (Card, error)
+	GetCardEvent(ctx context.Context, id uuid.UUID) (CardEvent, error)
 	GetCardForUpdate(ctx context.Context, id uuid.UUID) (Card, error)
 	GetCardType(ctx context.Context, id uuid.UUID) (CardType, error)
 	GetFlow(ctx context.Context, id uuid.UUID) (GetFlowRow, error)
 	GetFlowForUpdate(ctx context.Context, id uuid.UUID) (Flow, error)
-	GetFlowRun(ctx context.Context, id uuid.UUID) (FlowRun, error)
+	GetFlowRun(ctx context.Context, id uuid.UUID) (GetFlowRunRow, error)
 	GetFlowVersion(ctx context.Context, id uuid.UUID) (FlowVersion, error)
 	GetLane(ctx context.Context, id uuid.UUID) (Lane, error)
 	GetLaneForUpdate(ctx context.Context, id uuid.UUID) (Lane, error)
@@ -47,6 +53,7 @@ type Querier interface {
 	InsertCardEvent(ctx context.Context, arg InsertCardEventParams) (CardEvent, error)
 	InsertCardType(ctx context.Context, arg InsertCardTypeParams) (CardType, error)
 	InsertFlow(ctx context.Context, arg InsertFlowParams) (Flow, error)
+	// InsertFlowRun starts a run unless the flow is already running for the card.
 	InsertFlowRun(ctx context.Context, arg InsertFlowRunParams) (FlowRun, error)
 	InsertFlowVersion(ctx context.Context, arg InsertFlowVersionParams) (FlowVersion, error)
 	InsertJob(ctx context.Context, arg InsertJobParams) (Job, error)
@@ -62,9 +69,14 @@ type Querier interface {
 	ListFlowVersions(ctx context.Context, flowID uuid.UUID) ([]FlowVersion, error)
 	ListFlows(ctx context.Context) ([]ListFlowsRow, error)
 	ListLanes(ctx context.Context) ([]Lane, error)
+	// ListLatestFlowRuns returns one run per card: an active one if there is
+	// any, else the last one.
+	ListLatestFlowRuns(ctx context.Context) ([]ListLatestFlowRunsRow, error)
 	ListMcpServers(ctx context.Context) ([]McpServer, error)
 	ListProjects(ctx context.Context) ([]Project, error)
+	ListRunnableFlows(ctx context.Context) ([]ListRunnableFlowsRow, error)
 	NextFlowVersion(ctx context.Context, flowID uuid.UUID) (int32, error)
+	NotifyChange(ctx context.Context, change string) error
 	NotifyJobs(ctx context.Context) error
 	PlaceCard(ctx context.Context, arg PlaceCardParams) (Card, error)
 	RenameAgentProfile(ctx context.Context, arg RenameAgentProfileParams) (AgentProfile, error)

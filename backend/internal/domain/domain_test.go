@@ -103,10 +103,22 @@ func TestEntityID(t *testing.T) {
 		Project{ID: id}.EntityID(),
 		CardType{ID: id}.EntityID(),
 		Card{ID: id}.EntityID(),
+		CardEvent{ID: id}.EntityID(),
+		FlowRun{ID: id}.EntityID(),
 	}
 	for i, got := range ids {
 		if got != id {
 			t.Errorf("entity %d: got %s", i, got)
+		}
+	}
+}
+
+func TestRunStatusActive(t *testing.T) {
+	for status, want := range map[RunStatus]bool{
+		RunRunning: true, RunWaiting: true, RunDone: false, RunFailed: false, RunCanceled: false,
+	} {
+		if status.Active() != want {
+			t.Errorf("%s: Active() = %v", status, !want)
 		}
 	}
 }

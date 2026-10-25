@@ -18,7 +18,8 @@ describe('useBoardEvents', () => {
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
 
     events.emit('card.moved')
-    expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['cards'] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['cards'] })
+    expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['cardEvents'] })
     events.emit('lane.deleted')
     expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['lanes'] })
     events.emit('project.updated')
@@ -29,6 +30,10 @@ describe('useBoardEvents', () => {
     expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['flows'] })
     events.emit('agent_profile.updated')
     expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['agentProfiles'] })
+    events.emit('flow_run.updated')
+    expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['flowRuns'] })
+    events.emit('card_event.created')
+    expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['cardEvents'] })
   })
 
   it('refreshes everything when the stream (re)connects', () => {

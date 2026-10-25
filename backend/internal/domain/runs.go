@@ -19,15 +19,43 @@ const (
 	RunCanceled RunStatus = "canceled"
 )
 
+// Active reports whether the run has not ended yet.
+func (s RunStatus) Active() bool {
+	return s == RunRunning || s == RunWaiting
+}
+
 // FlowRun is one execution of a flow version for a card.
 type FlowRun struct {
 	ID            uuid.UUID
+	FlowID        uuid.UUID
 	FlowVersionID uuid.UUID
-	CardID        uuid.UUID
-	Trigger       string
-	Status        RunStatus
-	StartedAt     time.Time
-	FinishedAt    *time.Time
+	// FlowName is filled in when reading runs, not when changing them.
+	FlowName   string
+	CardID     uuid.UUID
+	Trigger    string
+	Status     RunStatus
+	Error      string
+	StartedAt  time.Time
+	FinishedAt *time.Time
+}
+
+// EntityID returns the run id.
+func (r FlowRun) EntityID() uuid.UUID { return r.ID }
+
+// RunnableFlow is the version of an enabled flow that new runs use: the
+// last one published.
+type RunnableFlow struct {
+	Name    string
+	Version FlowVersion
+}
+
+// JobFlowTrigger is the queue job that starts the flows a card event
+// triggers. The store enqueues it with the event.
+const JobFlowTrigger = "flow.trigger"
+
+// TriggerJob is the payload of a flow.trigger job.
+type TriggerJob struct {
+	CardEventID uuid.UUID `json:"card_event_id"`
 }
 
 // NodeStatus is the state of a node run.

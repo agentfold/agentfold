@@ -1,17 +1,22 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
-	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"orquestrator/internal/agent"
 	"orquestrator/internal/crypto"
 	"orquestrator/internal/domain"
 	"orquestrator/internal/events"
@@ -183,7 +188,10 @@ func TestWorkerConfigurationErrors(t *testing.T) {
 // TestWorkerEndToEnd runs an agent node through the queue: a worker with the
 // local runner and the fake claude CLI (found in PATH) takes the job and
 // records the run in the database.
-func TestWorkerEndToEnd(t *testing.T) {
+// TestFlowEndToEnd runs the server and a worker on one database: moving a
+// card into a lane starts a flow whose agent (the fake CLI) runs and whose
+// MoveCard node moves the card on, which the event stream shows live.
+func TestFlowEndToEnd(t *testing.T) {
 	ctx := context.Background()
 	bin := t.TempDir()
 	if out, err := exec.Command("go", "build", "-o", filepath.Join(bin, "claude"), "../agent/testdata/fakeclaude").CombinedOutput(); err != nil {
@@ -204,60 +212,107 @@ func TestWorkerEndToEnd(t *testing.T) {
 	box, _ := crypto.NewBox(key)
 	st := store.New(pool)
 	board := service.New(st, gitrepo.Inspector{}, events.NewHub(1), box)
-	nodeRun, host := agentJob(t, board, st)
+	b := newFlowBoard(t, board)
 
+	t.Setenv(envAddr, "127.0.0.1:0")
 	t.Setenv(envRunner, "local")
 	t.Setenv(envClaudeBin, "")
 	t.Setenv(envDataDir, "")
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	wctx, cancel := context.WithCancel(ctx)
-	var stdout, stderr syncBuffer
-	done := make(chan int)
-	go func() { done <- Run(wctx, []string{"worker"}, &stdout, &stderr) }()
+	sctx, stopServer := context.WithCancel(ctx)
+	var serverOut, serverErr syncBuffer
+	serverDone := make(chan int)
+	go func() { serverDone <- Run(sctx, []string{"server"}, &serverOut, &serverErr) }()
+	base := waitListening(t, &serverOut)
+	stream := openEvents(t, base)
 
-	deadline := time.Now().Add(30 * time.Second)
-	var got domain.NodeRun
-	for time.Now().Before(deadline) {
-		if got, err = st.GetNodeRun(ctx, nodeRun); err == nil && got.Status == domain.NodeDone {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
+	wctx, stopWorker := context.WithCancel(ctx)
+	var workerOut, workerErr syncBuffer
+	workerDone := make(chan int)
+	go func() { workerDone <- Run(wctx, []string{"worker"}, &workerOut, &workerErr) }()
+
+	card := post(t, base+"/api/cards", fmt.Sprintf(`{"title":"Add login","lane_id":%q,"card_type_id":%q}`, b.todo, b.cardType))
+	cardID := card["id"].(string)
+	moved := postStatus(t, base+"/api/cards/"+cardID+"/move", fmt.Sprintf(`{"lane_id":%q,"position":0}`, b.doing), http.StatusOK)
+	if moved["lane_id"] != b.doing.String() {
+		t.Fatalf("moved %v", moved)
 	}
-	cancel()
-	if code := <-done; code != ExitOK {
-		t.Fatalf("worker exit %d: %s", code, stderr.String())
+	// The card is created and moved by hand, then the flow starts, its agent
+	// runs, it moves the card to Done and ends. The server and the worker
+	// publish concurrently, so only the flow events keep their order.
+	var seen []string
+	for len(seen) == 0 || seen[len(seen)-1] != "event: flow_run.updated" {
+		seen = append(seen, nextEventOf(t, stream, "card_event.created"))
 	}
-	if got.Status != domain.NodeDone || got.Turns != 3 || got.SessionID == nil {
-		t.Fatalf("node run %+v; worker log: %s", got, stderr.String())
+	slices.Sort(seen)
+	if want := []string{"event: card.created", "event: card.moved", "event: card.moved", "event: flow_run.created", "event: flow_run.updated"}; !slices.Equal(seen, want) {
+		t.Fatalf("events %q, want %q; worker log: %s", seen, want, workerErr.String())
 	}
-	if !strings.HasPrefix(stdout.String(), "worker "+host+"-") || !strings.Contains(stdout.String(), filepath.Join(".local", "share", "orquestrator")) {
-		t.Fatalf("stdout %q", stdout.String())
+	got, err := st.GetCard(ctx, uuid.MustParse(cardID))
+	if err != nil || got.LaneID != b.done {
+		t.Fatalf("card %+v, %v", got, err)
 	}
-	var status string
-	if err := pool.QueryRow(ctx, `SELECT status FROM jobs`).Scan(&status); err != nil || status != "done" {
-		t.Fatalf("job status %q, %v", status, err)
+	runs, err := st.ListLatestFlowRuns(ctx)
+	if err != nil || len(runs) != 1 || runs[0].Status != domain.RunDone || runs[0].FlowName != "dev" {
+		t.Fatalf("runs %+v, %v", runs, err)
+	}
+	timeline, err := st.ListCardEvents(ctx, got.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var types []string
+	for _, e := range timeline {
+		types = append(types, string(e.Type))
+	}
+	want := "card.created card.moved flow.started node.started node.finished node.started card.moved node.finished node.started node.finished flow.finished"
+	if strings.Join(types, " ") != want {
+		t.Fatalf("timeline %q", types)
+	}
+	var turns int
+	if err := pool.QueryRow(ctx, `SELECT turns FROM node_runs WHERE node_key = 'dev'`).Scan(&turns); err != nil || turns != 3 {
+		t.Fatalf("agent turns %d, %v", turns, err)
+	}
+
+	stopWorker()
+	if code := <-workerDone; code != ExitOK {
+		t.Fatalf("worker exit %d: %s", code, workerErr.String())
+	}
+	host, _ := os.Hostname()
+	if out := workerOut.String(); !strings.HasPrefix(out, "worker "+host+"-") || !strings.Contains(out, filepath.Join(".local", "share", "orquestrator")) {
+		t.Fatalf("worker stdout %q", out)
+	}
+	stopServer()
+	if code := <-serverDone; code != ExitOK {
+		t.Fatalf("server exit %d: %s", code, serverErr.String())
 	}
 }
 
-// agentJob builds a card and a published flow with one agent node, starts
-// a run and enqueues the job of the node; it returns the node run id and
-// the host the job requires.
-func agentJob(t *testing.T, board *service.Service, st *store.Store) (nodeRunID [16]byte, host string) {
+type flowBoard struct {
+	todo, doing, done, cardType uuid.UUID
+}
+
+// newFlowBoard creates lanes Todo, Doing and Done and the enabled flow "dev":
+// a card entering Doing is implemented by an agent and moved to Done.
+func newFlowBoard(t *testing.T, board *service.Service) flowBoard {
 	t.Helper()
 	ctx := context.Background()
-	lane, err := board.CreateLane(ctx, domain.LaneInput{Name: "Todo"})
-	if err != nil {
-		t.Fatal(err)
+	var b flowBoard
+	for _, lane := range []struct {
+		name string
+		id   *uuid.UUID
+	}{{"Todo", &b.todo}, {"Doing", &b.doing}, {"Done", &b.done}} {
+		l, err := board.CreateLane(ctx, domain.LaneInput{Name: lane.name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		*lane.id = l.ID
 	}
 	cardType, err := board.CreateCardType(ctx, domain.CardTypeInput{Name: "task"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := board.CreateCard(ctx, domain.NewCard{CardInput: domain.CardInput{Title: "Do it", CardTypeID: cardType.ID}, LaneID: lane.ID})
-	if err != nil {
-		t.Fatal(err)
-	}
+	b.cardType = cardType.ID
 	profile, err := board.LoginAgent(ctx, "dev", "sk-ant-oat01-x")
 	if err != nil {
 		t.Fatal(err)
@@ -268,31 +323,51 @@ func agentJob(t *testing.T, board *service.Service, st *store.Store) (nodeRunID 
 	}
 	graph := domain.Graph{
 		Nodes: []domain.Node{
-			{ID: "t", Type: domain.NodeTrigger, Config: []byte(`{"event":"card_created"}`)},
-			{ID: "dev", Type: domain.NodeAgent, Config: []byte(`{"profile_id":"` + profile.ID.String() + `","prompt":"Implement it"}`)},
+			{ID: "t", Type: domain.NodeTrigger, Config: fmt.Appendf(nil, `{"event":"card_entered_lane","lane_id":%q}`, b.doing)},
+			{ID: "dev", Type: domain.NodeAgent, Config: fmt.Appendf(nil, `{"profile_id":%q,"prompt":"Implement it"}`, profile.ID)},
+			{ID: "move", Type: domain.NodeMoveCard, Config: fmt.Appendf(nil, `{"lane_id":%q}`, b.done)},
+			{ID: "end", Type: domain.NodeEnd, Config: []byte(`{}`)},
 		},
-		Edges: []domain.Edge{{ID: "e", Source: "t", SourceHandle: "next", Target: "dev"}},
+		Edges: []domain.Edge{
+			{ID: "e1", Source: "t", SourceHandle: "next", Target: "dev"},
+			{ID: "e2", Source: "dev", SourceHandle: "done", Target: "move"},
+			{ID: "e3", Source: "move", SourceHandle: "next", Target: "end"},
+		},
 	}
 	if _, err := board.SaveFlowDraft(ctx, flow.ID, graph); err != nil {
 		t.Fatal(err)
 	}
-	version, err := board.PublishFlow(ctx, flow.ID)
-	if err != nil {
+	if _, err := board.PublishFlow(ctx, flow.ID); err != nil {
 		t.Fatal(err)
 	}
-	run, err := st.CreateFlowRun(ctx, version.ID, card.ID, domain.EventCardCreated)
-	if err != nil {
+	if _, err := board.UpdateFlow(ctx, flow.ID, domain.FlowInput{Name: "dev", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	nodeRun, err := st.CreateNodeRun(ctx, run.ID, "dev", 1, nil)
-	if err != nil {
-		t.Fatal(err)
+	return b
+}
+
+// nextEventOf returns the next "event:" line of the stream, skipping the
+// events of type skip.
+func nextEventOf(t *testing.T, lines chan string, skip string) string {
+	t.Helper()
+	for {
+		if line := nextEvent(t, lines); line != "event: "+skip {
+			return line
+		}
 	}
-	host, _ = os.Hostname()
-	if _, err := st.EnqueueJob(ctx, store.NewJob{
-		Kind: agent.JobKind, Payload: agent.Payload{NodeRunID: nodeRun.ID}, Requirements: map[string]string{"host": host},
-	}); err != nil {
-		t.Fatal(err)
+}
+
+type failingNotifier struct{}
+
+func (failingNotifier) NotifyChange(context.Context, string, uuid.UUID) error {
+	return errors.New("database down")
+}
+
+func TestNotifierLogsFailures(t *testing.T) {
+	var log bytes.Buffer
+	n := notifier{store: failingNotifier{}, log: slog.New(slog.NewTextHandler(&log, nil))}
+	n.Publish(events.Event{Type: "card.moved", ID: uuid.New()})
+	if !strings.Contains(log.String(), "cannot announce a change") || !strings.Contains(log.String(), "database down") {
+		t.Fatalf("log %q", log.String())
 	}
-	return nodeRun.ID, host
 }

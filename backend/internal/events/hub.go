@@ -16,8 +16,7 @@ type Event struct {
 }
 
 // Hub delivers every published event to every subscriber. It lives in the
-// server process; changes made by other processes will need Postgres
-// LISTEN/NOTIFY behind the same interface.
+// server process; a Relay publishes in it the changes other processes make.
 type Hub struct {
 	mu     sync.Mutex
 	subs   map[chan Event]struct{}

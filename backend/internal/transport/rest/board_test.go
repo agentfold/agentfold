@@ -17,6 +17,7 @@ type stubBoard struct {
 	cardType  domain.CardType
 	card      domain.Card
 	cardEvent domain.CardEvent
+	run       domain.FlowRun
 	flow      service.FlowDetail
 	version   domain.FlowVersion
 	profile   domain.AgentProfile
@@ -121,6 +122,10 @@ func (b *stubBoard) MoveCard(_ context.Context, id, laneID uuid.UUID, position i
 
 func (b *stubBoard) DeleteCard(_ context.Context, id uuid.UUID) error {
 	return b.record("DeleteCard", id)
+}
+
+func (b *stubBoard) ListLatestFlowRuns(context.Context) ([]domain.FlowRun, error) {
+	return []domain.FlowRun{b.run}, b.record("ListLatestFlowRuns")
 }
 
 func (b *stubBoard) ListCardEvents(_ context.Context, cardID uuid.UUID) ([]domain.CardEvent, error) {

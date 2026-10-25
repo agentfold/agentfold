@@ -29,6 +29,10 @@ export const keys = {
   flow: (id: string) => ['flows', id],
   agentProfiles: ['agentProfiles'],
   mcpServers: ['mcpServers'],
+  latestRuns: ['flowRuns', 'latest'],
+  flowRuns: ['flowRuns'],
+  cardEvents: ['cardEvents'],
+  cardTimeline: (id: string) => ['cardEvents', id],
 } as const
 
 const byId = (id: string) => ({ params: { path: { id } } })
@@ -64,6 +68,23 @@ export function useCards() {
   return useQuery({
     queryKey: keys.cards,
     queryFn: () => unwrap(client.GET('/cards')),
+  })
+}
+
+/** The latest flow run of each card (an active one if there is any). */
+export function useLatestRuns() {
+  const { client } = useApi()
+  return useQuery({
+    queryKey: keys.latestRuns,
+    queryFn: () => unwrap(client.GET('/flow-runs/latest')),
+  })
+}
+
+export function useCardEvents(id: string) {
+  const { client } = useApi()
+  return useQuery({
+    queryKey: keys.cardTimeline(id),
+    queryFn: () => unwrap(client.GET('/cards/{id}/events', byId(id))),
   })
 }
 

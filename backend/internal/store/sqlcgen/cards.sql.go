@@ -56,6 +56,23 @@ func (q *Queries) GetCard(ctx context.Context, id uuid.UUID) (Card, error) {
 	return i, err
 }
 
+const getCardEvent = `-- name: GetCardEvent :one
+SELECT id, card_id, type, payload, created_at FROM card_events WHERE id = $1
+`
+
+func (q *Queries) GetCardEvent(ctx context.Context, id uuid.UUID) (CardEvent, error) {
+	row := q.db.QueryRow(ctx, getCardEvent, id)
+	var i CardEvent
+	err := row.Scan(
+		&i.ID,
+		&i.CardID,
+		&i.Type,
+		&i.Payload,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getCardForUpdate = `-- name: GetCardForUpdate :one
 SELECT id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at FROM cards WHERE id = $1 FOR UPDATE
 `

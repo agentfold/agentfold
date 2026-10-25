@@ -421,3 +421,16 @@ func TestMerge(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+func TestFinishedNodeRunsAreNotRunAgain(t *testing.T) {
+	for _, status := range []domain.NodeStatus{domain.NodeDone, domain.NodeFailed} {
+		s := newSetup(t)
+		s.store.run.Status = status
+		if err := s.handle(t, ""); err != nil {
+			t.Fatal(err)
+		}
+		if s.store.started || s.store.result != nil {
+			t.Fatalf("%s: the node ran again", status)
+		}
+	}
+}

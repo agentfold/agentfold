@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,9 +14,13 @@ import (
 	"orquestrator/internal/store/sqlcgen"
 )
 
-// jobsChannel is the Postgres channel notified when jobs are enqueued (see
-// the NotifyJobs query). A variable only so tests can break LISTEN.
-var jobsChannel = "orq_jobs"
+// Postgres channels notified when jobs are enqueued (the NotifyJobs query)
+// and when another process changes the board (NotifyChange). Variables only
+// so tests can break LISTEN.
+var (
+	jobsChannel    = "orq_jobs"
+	changesChannel = "orq_changes"
+)
 
 // ErrLeaseLost means another worker took the job over (its lease expired).
 var ErrLeaseLost = errors.New("job lease lost")
@@ -40,23 +45,28 @@ type NewJob struct {
 
 // EnqueueJob adds a job and wakes the workers.
 func (s *Store) EnqueueJob(ctx context.Context, j NewJob) (uuid.UUID, error) {
+	var id uuid.UUID
+	err := s.inTx(ctx, func(q sqlcgen.Querier) error {
+		var err error
+		id, err = insertJob(ctx, q, j)
+		return err
+	})
+	return id, err
+}
+
+// insertJob adds a job within a transaction; the workers wake on commit.
+func insertJob(ctx context.Context, q sqlcgen.Querier, j NewJob) (uuid.UUID, error) {
 	payload, err := json.Marshal(j.Payload)
 	if err != nil {
 		return uuid.Nil, err
 	}
-	requirements := jsonObject(j.Requirements)
-	var id uuid.UUID
-	err = s.inTx(ctx, func(q sqlcgen.Querier) error {
-		row, err := q.InsertJob(ctx, sqlcgen.InsertJobParams{
-			Kind: j.Kind, Payload: payload, Requirements: requirements, MaxAttempts: int32(max(j.MaxAttempts, 1)), //nolint:gosec // small
-		})
-		if err != nil {
-			return err
-		}
-		id = row.ID
-		return q.NotifyJobs(ctx) // delivered on commit
+	row, err := q.InsertJob(ctx, sqlcgen.InsertJobParams{
+		Kind: j.Kind, Payload: payload, Requirements: jsonObject(j.Requirements), MaxAttempts: int32(max(j.MaxAttempts, 1)), //nolint:gosec // small
 	})
-	return id, err
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return row.ID, q.NotifyJobs(ctx)
 }
 
 // ClaimJob leases the next job the worker can run for lease; nil when
@@ -109,28 +119,41 @@ func leaseResult(n int64, err error) error {
 	return nil
 }
 
-// JobListener receives the notifications of new jobs on a connection of
-// its own, released by Close.
-type JobListener struct {
+// listener holds a connection of its own listening on a channel, released
+// by Close.
+type listener struct {
 	conn *pgxpool.Conn
+}
+
+func (s *Store) listen(ctx context.Context, channel string) (listener, error) {
+	conn, err := s.db.Acquire(ctx)
+	if err != nil {
+		return listener{}, err
+	}
+	if _, err := conn.Exec(ctx, "LISTEN "+channel); err != nil {
+		conn.Release()
+		return listener{}, err
+	}
+	return listener{conn: conn}, nil
+}
+
+// Close gives the connection back to the pool. No wait must be running.
+func (l listener) Close() {
+	l.conn.Release()
+}
+
+// JobListener receives the notifications of new jobs.
+type JobListener struct {
+	listener
 }
 
 // ListenJobs holds a connection listening for new jobs.
 func (s *Store) ListenJobs(ctx context.Context) (*JobListener, error) {
-	conn, err := s.db.Acquire(ctx)
+	l, err := s.listen(ctx, jobsChannel)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := conn.Exec(ctx, "LISTEN "+jobsChannel); err != nil {
-		conn.Release()
-		return nil, err
-	}
-	return &JobListener{conn: conn}, nil
-}
-
-// Close gives the connection back to the pool. Wait must not be running.
-func (l *JobListener) Close() {
-	l.conn.Release()
+	return &JobListener{l}, nil
 }
 
 // Wait returns when a job is enqueued or after timeout, whichever comes
@@ -143,4 +166,45 @@ func (l *JobListener) Wait(ctx context.Context, timeout time.Duration) error {
 		return nil
 	}
 	return err
+}
+
+// change is the payload of a change notification.
+type change struct {
+	Type string    `json:"type"`
+	ID   uuid.UUID `json:"id"`
+}
+
+// NotifyChange announces a change made outside the server, which streams
+// it to the board. typ is "<entity>.<change>", as in the board events.
+func (s *Store) NotifyChange(ctx context.Context, typ string, id uuid.UUID) error {
+	data, _ := json.Marshal(change{Type: typ, ID: id}) // a string and a uuid
+	return s.q.NotifyChange(ctx, string(data))
+}
+
+// ChangeListener receives the changes announced by NotifyChange.
+type ChangeListener struct {
+	listener
+}
+
+// ListenChanges holds a connection listening for changes.
+func (s *Store) ListenChanges(ctx context.Context) (*ChangeListener, error) {
+	l, err := s.listen(ctx, changesChannel)
+	if err != nil {
+		return nil, err
+	}
+	return &ChangeListener{l}, nil
+}
+
+// Next waits for the next change; it fails when ctx ends, the connection
+// breaks or the notification is not a change.
+func (l *ChangeListener) Next(ctx context.Context) (string, uuid.UUID, error) {
+	n, err := l.conn.Conn().WaitForNotification(ctx)
+	if err != nil {
+		return "", uuid.Nil, err
+	}
+	var c change
+	if err := json.Unmarshal([]byte(n.Payload), &c); err != nil {
+		return "", uuid.Nil, fmt.Errorf("change notification %q: %w", n.Payload, err)
+	}
+	return c.Type, c.ID, nil
 }

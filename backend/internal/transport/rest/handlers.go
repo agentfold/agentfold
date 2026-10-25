@@ -164,3 +164,8 @@ func (h handlers) ListCardEvents(ctx context.Context, req openapi.ListCardEvents
 	events, err := h.board.ListCardEvents(ctx, req.Id)
 	return openapi.ListCardEvents200JSONResponse(mapAll(events, toCardEvent)), err
 }
+
+func (h handlers) ListLatestFlowRuns(ctx context.Context, _ openapi.ListLatestFlowRunsRequestObject) (openapi.ListLatestFlowRunsResponseObject, error) {
+	runs, err := h.board.ListLatestFlowRuns(ctx)
+	return openapi.ListLatestFlowRuns200JSONResponse(mapAll(runs, toFlowRun)), err
+}

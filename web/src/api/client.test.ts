@@ -55,6 +55,10 @@ describe('errorMessage', () => {
   it.each([
     ['in_use', 'Não é possível excluir: ainda está em uso.'],
     ['conflict', 'Já existe um registro com esse nome.'],
+    [
+      'card_busy',
+      'Um fluxo está rodando para este card: só o fluxo pode movê-lo agora.',
+    ],
     ['not_found', 'Registro não encontrado. A tela pode estar desatualizada.'],
     ['internal', 'Erro no servidor.'],
     ['validation', 'detail'],

@@ -108,6 +108,14 @@ orquestrator/
 - Execução de Agent, MoveCard, End; roteamento por saída; regra de reentrada com `--resume`.
 - Eventos na linha do tempo do card.
 - **Pronto quando:** card entra na baia → agente roda → card é movido pelo fluxo.
+- Decidido: um run ativo por card + fluxo (disparo repetido é ignorado e registrado na linha do
+  tempo; fluxos diferentes podem rodar juntos); card com run ativo não pode ser movido à mão
+  (`409 card_busy`, arraste desabilitado); selo do último run no card e linha do tempo simples no
+  modal (o painel completo é a F8); provado por teste de ponta a ponta com o `claude` falso.
+- Detalhes: criar um card numa baia conta como entrar nela; saída sem ligação encerra o run
+  (`failed` se o nó falhou); o nó Review falha o run até a F7; jobs de agente ainda sem
+  `requirements` de host (MVP de host único); `node_runs.continued_at` evita seguir duas vezes a
+  saída de um job repetido.
 
 ### F7 — MCP, perguntas e review
 - Servidor MCP (HTTP streamable) com tools de integração e tools de agente

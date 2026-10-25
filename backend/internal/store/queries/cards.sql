@@ -40,3 +40,6 @@ INSERT INTO card_events (card_id, type, payload) VALUES ($1, $2, $3) RETURNING *
 
 -- name: ListCardEvents :many
 SELECT * FROM card_events WHERE card_id = $1 ORDER BY created_at, id;
+
+-- name: GetCardEvent :one
+SELECT * FROM card_events WHERE id = $1;

@@ -74,6 +74,8 @@ type FlowRun struct {
 	Status        string
 	StartedAt     time.Time
 	FinishedAt    *time.Time
+	FlowID        uuid.UUID
+	Error         *string
 }
 
 type FlowVersion struct {
@@ -139,6 +141,7 @@ type NodeRun struct {
 	CreatedAt    time.Time
 	StartedAt    *time.Time
 	FinishedAt   *time.Time
+	ContinuedAt  *time.Time
 }
 
 type Project struct {

@@ -36,6 +36,7 @@ const defaultAddr = "127.0.0.1:8080"
 const (
 	eventBuffer     = 64
 	sseHeartbeat    = 15 * time.Second
+	relayRetry      = 5 * time.Second
 	shutdownTimeout = 10 * time.Second
 )
 
@@ -108,12 +109,21 @@ func runServer(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	}
 	defer pool.Close()
 
+	log := slog.New(slog.NewTextHandler(stderr, nil))
+	st := store.New(pool)
 	hub := events.NewHub(eventBuffer)
-	board := service.New(store.New(pool), gitrepo.Inspector{}, hub, box)
-	handler := rest.NewHandler(board, hub, rest.Options{
-		Log:       slog.New(slog.NewTextHandler(stderr, nil)),
-		Heartbeat: sseHeartbeat,
-	})
+	board := service.New(st, gitrepo.Inspector{}, hub, box)
+	handler := rest.NewHandler(board, hub, rest.Options{Log: log, Heartbeat: sseHeartbeat})
+	relay := &events.Relay{
+		Listen: func(ctx context.Context) (events.Changes, error) { return st.ListenChanges(ctx) },
+		Load:   board.Entity,
+		Hub:    hub,
+		Retry:  relayRetry,
+		Log:    log,
+	}
+	relayCtx, stopRelay := context.WithCancel(ctx)
+	defer stopRelay()
+	go relay.Run(relayCtx)
 
 	ln, err := new(net.ListenConfig).Listen(ctx, "tcp", addr)
 	if err != nil {

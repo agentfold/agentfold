@@ -18,6 +18,7 @@ import {
   useCards,
   useCardTypes,
   useLanes,
+  useLatestRuns,
   useMoveCard,
   useProjects,
 } from '../api/queries'
@@ -43,6 +44,7 @@ export function Board() {
   const cards = useCards()
   const cardTypes = useCardTypes()
   const projects = useProjects()
+  const runs = useLatestRuns()
   const moveCard = useMoveCard()
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const [draggedId, setDraggedId] = useState<string | null>(null)
@@ -53,9 +55,9 @@ export function Board() {
     }),
   )
 
-  const queries = [lanes, cards, cardTypes, projects]
+  const queries = [lanes, cards, cardTypes, projects, runs]
   const failed = queries.find((q) => q.error)
-  if (failed || !lanes.data || !cards.data) {
+  if (failed || !lanes.data || !cards.data || !runs.data) {
     return <QueryStatus isPending error={failed?.error} />
   }
 
@@ -64,6 +66,7 @@ export function Board() {
     cards: byId(allCards),
     cardTypes: byId(cardTypes.data),
     projects: byId(projects.data),
+    runs: new Map(runs.data.map((run) => [run.card_id, run])),
   }
   const dragged = draggedId === null ? undefined : lookup.cards.get(draggedId)
   const onDragStart = ({ active }: DragStartEvent) => {

@@ -307,6 +307,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/flow-runs/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listLatestFlowRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent-profiles": {
         parameters: {
             query?: never;
@@ -399,7 +415,7 @@ export interface components {
     schemas: {
         Error: {
             /** @enum {string} */
-            code: "bad_request" | "validation" | "not_found" | "conflict" | "in_use" | "invalid_reference" | "invalid_graph" | "internal";
+            code: "bad_request" | "validation" | "not_found" | "conflict" | "in_use" | "invalid_reference" | "invalid_graph" | "card_busy" | "internal";
             message: string;
             /** @description Invalid field, for validation errors. */
             field?: string;
@@ -512,7 +528,7 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
-        /** @description A change to the board. `type` is "<entity>.<change>", with entity one of lane, project, card_type, card, flow, agent_profile, mcp_server and change one of created, updated, moved, deleted, published. */
+        /** @description A change to the board. `type` is "<entity>.<change>", with entity one of lane, project, card_type, card, flow, agent_profile, mcp_server, flow_run, card_event and change one of created, updated, moved, deleted, published. */
         BoardEvent: {
             /** @example card.moved */
             type: string;
@@ -525,6 +541,31 @@ export interface components {
             data?: {
                 [key: string]: unknown;
             };
+        };
+        /** @description A run of a flow for a card. */
+        FlowRun: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            flow_id: string;
+            /** Format: uuid */
+            flow_version_id: string;
+            flow_name: string;
+            /** Format: uuid */
+            card_id: string;
+            /** @enum {string} */
+            trigger: "card_created" | "card_entered_lane";
+            /**
+             * @description While running or waiting, the card can only be moved by the flow.
+             * @enum {string}
+             */
+            status: "running" | "waiting" | "done" | "failed" | "canceled";
+            /** @description Why the run failed; empty otherwise. */
+            error: string;
+            /** Format: date-time */
+            started_at: string;
+            /** Format: date-time */
+            finished_at: string | null;
         };
         FlowSummary: {
             /** Format: uuid */
@@ -1526,6 +1567,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FlowVersion"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listLatestFlowRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One run per card that ever ran a flow: an active one if there is any, else the last one. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowRun"][];
                 };
             };
             default: components["responses"]["Error"];

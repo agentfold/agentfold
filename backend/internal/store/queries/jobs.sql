@@ -35,3 +35,6 @@ WHERE id = sqlc.arg(id) AND locked_by = sqlc.arg(worker) AND status = 'running';
 UPDATE jobs
 SET status = sqlc.arg(status), last_error = sqlc.arg(last_error), lease_until = NULL, updated_at = now()
 WHERE id = sqlc.arg(id) AND locked_by = sqlc.arg(worker) AND status = 'running';
+
+-- name: NotifyChange :exec
+SELECT pg_notify('orq_changes', sqlc.arg(change)::text);

@@ -84,6 +84,7 @@ func (e EndNodeType) Valid() bool {
 // Defines values for ErrorCode.
 const (
 	BadRequest       ErrorCode = "bad_request"
+	CardBusy         ErrorCode = "card_busy"
 	Conflict         ErrorCode = "conflict"
 	InUse            ErrorCode = "in_use"
 	Internal         ErrorCode = "internal"
@@ -98,6 +99,8 @@ func (e ErrorCode) Valid() bool {
 	switch e {
 	case BadRequest:
 		return true
+	case CardBusy:
+		return true
 	case Conflict:
 		return true
 	case InUse:
@@ -111,6 +114,51 @@ func (e ErrorCode) Valid() bool {
 	case NotFound:
 		return true
 	case Validation:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FlowRunStatus.
+const (
+	Canceled FlowRunStatus = "canceled"
+	Done     FlowRunStatus = "done"
+	Failed   FlowRunStatus = "failed"
+	Running  FlowRunStatus = "running"
+	Waiting  FlowRunStatus = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the FlowRunStatus enum.
+func (e FlowRunStatus) Valid() bool {
+	switch e {
+	case Canceled:
+		return true
+	case Done:
+		return true
+	case Failed:
+		return true
+	case Running:
+		return true
+	case Waiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FlowRunTrigger.
+const (
+	FlowRunTriggerCardCreated     FlowRunTrigger = "card_created"
+	FlowRunTriggerCardEnteredLane FlowRunTrigger = "card_entered_lane"
+)
+
+// Valid indicates whether the value is a known member of the FlowRunTrigger enum.
+func (e FlowRunTrigger) Valid() bool {
+	switch e {
+	case FlowRunTriggerCardCreated:
+		return true
+	case FlowRunTriggerCardEnteredLane:
 		return true
 	default:
 		return false
@@ -200,16 +248,16 @@ func (e ReviewNodeType) Valid() bool {
 
 // Defines values for TriggerConfigEvent.
 const (
-	CardCreated     TriggerConfigEvent = "card_created"
-	CardEnteredLane TriggerConfigEvent = "card_entered_lane"
+	TriggerConfigEventCardCreated     TriggerConfigEvent = "card_created"
+	TriggerConfigEventCardEnteredLane TriggerConfigEvent = "card_entered_lane"
 )
 
 // Valid indicates whether the value is a known member of the TriggerConfigEvent enum.
 func (e TriggerConfigEvent) Valid() bool {
 	switch e {
-	case CardCreated:
+	case TriggerConfigEventCardCreated:
 		return true
-	case CardEnteredLane:
+	case TriggerConfigEventCardEnteredLane:
 		return true
 	default:
 		return false
@@ -423,6 +471,30 @@ type FlowInput struct {
 type FlowNode struct {
 	union json.RawMessage
 }
+
+// FlowRun A run of a flow for a card.
+type FlowRun struct {
+	CardId openapi_types.UUID `json:"card_id"`
+
+	// Error Why the run failed; empty otherwise.
+	Error         string             `json:"error"`
+	FinishedAt    *time.Time         `json:"finished_at"`
+	FlowId        openapi_types.UUID `json:"flow_id"`
+	FlowName      string             `json:"flow_name"`
+	FlowVersionId openapi_types.UUID `json:"flow_version_id"`
+	Id            openapi_types.UUID `json:"id"`
+	StartedAt     time.Time          `json:"started_at"`
+
+	// Status While running or waiting, the card can only be moved by the flow.
+	Status  FlowRunStatus  `json:"status"`
+	Trigger FlowRunTrigger `json:"trigger"`
+}
+
+// FlowRunStatus While running or waiting, the card can only be moved by the flow.
+type FlowRunStatus string
+
+// FlowRunTrigger defines model for FlowRun.Trigger.
+type FlowRunTrigger string
 
 // FlowSummary defines model for FlowSummary.
 type FlowSummary struct {
@@ -953,6 +1025,9 @@ type ServerInterface interface {
 	// (POST /cards/{id}/move)
 	MoveCard(w http.ResponseWriter, r *http.Request, id ID)
 
+	// (GET /flow-runs/latest)
+	ListLatestFlowRuns(w http.ResponseWriter, r *http.Request)
+
 	// (GET /flows)
 	ListFlows(w http.ResponseWriter, r *http.Request)
 
@@ -1422,6 +1497,20 @@ func (siw *ServerInterfaceWrapper) MoveCard(w http.ResponseWriter, r *http.Reque
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.MoveCard(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListLatestFlowRuns operation middleware
+func (siw *ServerInterfaceWrapper) ListLatestFlowRuns(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListLatestFlowRuns(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2111,6 +2200,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/flows/{id}/draft", wrapper.SaveFlowDraft)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/flows/{id}/publish", wrapper.PublishFlow)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/flows/{id}/versions", wrapper.ListFlowVersions)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/flow-runs/latest", wrapper.ListLatestFlowRuns)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/agent-profiles", wrapper.ListAgentProfiles)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/agent-profiles", wrapper.CreateAgentProfile)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/agent-profiles/{id}", wrapper.DeleteAgentProfile)
@@ -2801,6 +2891,44 @@ type MoveCarddefaultJSONResponse struct {
 }
 
 func (response MoveCarddefaultJSONResponse) VisitMoveCardResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLatestFlowRunsRequestObject struct {
+}
+
+type ListLatestFlowRunsResponseObject interface {
+	VisitListLatestFlowRunsResponse(w http.ResponseWriter) error
+}
+
+type ListLatestFlowRuns200JSONResponse []FlowRun
+
+func (response ListLatestFlowRuns200JSONResponse) VisitListLatestFlowRunsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLatestFlowRunsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListLatestFlowRunsdefaultJSONResponse) VisitListLatestFlowRunsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -3783,6 +3911,9 @@ type StrictServerInterface interface {
 	// (POST /cards/{id}/move)
 	MoveCard(ctx context.Context, request MoveCardRequestObject) (MoveCardResponseObject, error)
 
+	// (GET /flow-runs/latest)
+	ListLatestFlowRuns(ctx context.Context, request ListLatestFlowRunsRequestObject) (ListLatestFlowRunsResponseObject, error)
+
 	// (GET /flows)
 	ListFlows(ctx context.Context, request ListFlowsRequestObject) (ListFlowsResponseObject, error)
 
@@ -4393,6 +4524,30 @@ func (sh *strictHandler) MoveCard(w http.ResponseWriter, r *http.Request, id ID)
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(MoveCardResponseObject); ok {
 		if err := validResponse.VisitMoveCardResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListLatestFlowRuns operation middleware
+func (sh *strictHandler) ListLatestFlowRuns(w http.ResponseWriter, r *http.Request) {
+	var request ListLatestFlowRunsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListLatestFlowRuns(ctx, request.(ListLatestFlowRunsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListLatestFlowRuns")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListLatestFlowRunsResponseObject); ok {
+		if err := validResponse.VisitListLatestFlowRunsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

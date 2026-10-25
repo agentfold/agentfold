@@ -144,6 +144,15 @@ func (q *Queries) InsertJob(ctx context.Context, arg InsertJobParams) (Job, erro
 	return i, err
 }
 
+const notifyChange = `-- name: NotifyChange :exec
+SELECT pg_notify('orq_changes', $1::text)
+`
+
+func (q *Queries) NotifyChange(ctx context.Context, change string) error {
+	_, err := q.db.Exec(ctx, notifyChange, change)
+	return err
+}
+
 const notifyJobs = `-- name: NotifyJobs :exec
 SELECT pg_notify('orq_jobs', '')
 `

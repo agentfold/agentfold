@@ -6,6 +6,7 @@ import type {
   CardType,
   Flow,
   FlowGraph,
+  FlowRun,
   GraphProblem,
   Lane,
   McpServer,
@@ -20,6 +21,7 @@ interface State {
   cards: Card[]
   events: CardEvent[]
   flows: Flow[]
+  runs: FlowRun[]
   agentProfiles: AgentProfile[]
   mcpServers: McpServer[]
 }
@@ -123,6 +125,34 @@ export function mcpServer(
   }
 }
 
+export function flowRun(
+  cardId: string,
+  status: FlowRun['status'],
+  extra: Partial<FlowRun> = {},
+): FlowRun {
+  return {
+    id: newId(),
+    flow_id: newId(),
+    flow_version_id: newId(),
+    flow_name: 'dev',
+    card_id: cardId,
+    trigger: 'card_entered_lane',
+    status,
+    error: '',
+    started_at: stamp,
+    finished_at: null,
+    ...extra,
+  }
+}
+
+export function cardEvent(
+  cardId: string,
+  type: string,
+  payload: Record<string, unknown> = {},
+): CardEvent {
+  return { id: newId(), card_id: cardId, type, payload, created_at: stamp }
+}
+
 /** A flow whose draft is a lone trigger, as the server creates them. */
 export function flow(name: string, extra: Partial<Flow> = {}): Flow {
   return {
@@ -178,6 +208,7 @@ export function createFakeBackend(initial: Partial<State> = {}): FakeBackend {
     cards: [],
     events: [],
     flows: [],
+    runs: [],
     agentProfiles: [],
     mcpServers: [],
     ...initial,
@@ -271,6 +302,14 @@ export function createFakeBackend(initial: Partial<State> = {}): FakeBackend {
         return update(state.cards, id, { project_id: null, ...body })
       case 'POST /cards/:id/move': {
         if (!state.cards.some((c) => c.id === id)) return notFound
+        const busy = state.runs.some(
+          (r) =>
+            r.card_id === id &&
+            (r.status === 'running' || r.status === 'waiting'),
+        )
+        if (busy) {
+          return [409, { code: 'card_busy', message: 'card busy' }]
+        }
         state.cards = placeCard(
           state.cards,
           str(id),
@@ -285,6 +324,8 @@ export function createFakeBackend(initial: Partial<State> = {}): FakeBackend {
         return [200, state.cards.filter((c) => c.parent_card_id === id)]
       case 'GET /cards/:id/events':
         return [200, state.events.filter((e) => e.card_id === id)]
+      case 'GET /flow-runs/:id':
+        return [200, state.runs]
       case 'GET /agent-profiles':
         return [200, state.agentProfiles]
       case 'POST /agent-profiles': {

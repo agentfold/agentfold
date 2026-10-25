@@ -39,6 +39,11 @@ type Repository interface {
 	MoveCard(ctx context.Context, id, laneID uuid.UUID, position int) (domain.Card, error)
 	DeleteCard(ctx context.Context, id uuid.UUID) error
 	ListCardEvents(ctx context.Context, cardID uuid.UUID) ([]domain.CardEvent, error)
+	GetCardEvent(ctx context.Context, id uuid.UUID) (domain.CardEvent, error)
+
+	CardHasActiveRun(ctx context.Context, cardID uuid.UUID) (bool, error)
+	GetFlowRun(ctx context.Context, id uuid.UUID) (domain.FlowRun, error)
+	ListLatestFlowRuns(ctx context.Context) ([]domain.FlowRun, error)
 
 	ListFlows(ctx context.Context) ([]domain.Flow, error)
 	GetFlow(ctx context.Context, id uuid.UUID) (domain.Flow, error)
@@ -278,10 +283,18 @@ func (s *Service) UpdateCard(ctx context.Context, id uuid.UUID, in domain.CardIn
 	return changed(s, "card.updated", card, err)
 }
 
-// MoveCard places a card at a position of a lane.
+// MoveCard places a card at a position of a lane. A card is held in place
+// while a flow runs for it: only the flow moves it then.
 func (s *Service) MoveCard(ctx context.Context, id, laneID uuid.UUID, position int) (domain.Card, error) {
 	if err := domain.ValidatePosition(position); err != nil {
 		return domain.Card{}, err
+	}
+	busy, err := s.repo.CardHasActiveRun(ctx, id)
+	if err != nil {
+		return domain.Card{}, err
+	}
+	if busy {
+		return domain.Card{}, domain.ErrCardBusy
 	}
 	card, err := s.repo.MoveCard(ctx, id, laneID, position)
 	return changed(s, "card.moved", card, err)

@@ -1,11 +1,14 @@
-import type { Card, CardType, Project } from '../api/client'
+import type { Card, CardType, FlowRun, Project } from '../api/client'
 import { ColorDot } from '../cardTypes/ColorDot'
+import { RunBadge } from './RunBadge'
 
 /** Everything on the board a card refers to, by id. */
 export interface BoardLookup {
   cards: Map<string, Card>
   cardTypes: Map<string, CardType>
   projects: Map<string, Project>
+  /** The latest flow run of each card, by card id. */
+  runs: Map<string, FlowRun>
 }
 
 interface Props {
@@ -13,7 +16,7 @@ interface Props {
   lookup: BoardLookup
 }
 
-/** The face of a card: title, parent, type and project. */
+/** The face of a card: title, parent, type, project and flow run. */
 export function CardContent({ card, lookup }: Props) {
   const cardType = lookup.cardTypes.get(card.card_type_id)
   const project = card.project_id
@@ -22,6 +25,7 @@ export function CardContent({ card, lookup }: Props) {
   const parent = card.parent_card_id
     ? lookup.cards.get(card.parent_card_id)
     : undefined
+  const run = lookup.runs.get(card.id)
 
   return (
     <>
@@ -44,6 +48,11 @@ export function CardContent({ card, lookup }: Props) {
           <span className="font-mono text-slate-500">{project.name}</span>
         )}
       </span>
+      {run && (
+        <span className="mt-2 flex">
+          <RunBadge run={run} />
+        </span>
+      )}
     </>
   )
 }

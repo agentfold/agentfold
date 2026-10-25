@@ -15,6 +15,7 @@ import { QueryStatus } from '../components/Loading'
 import { SelectField, TextArea, TextField } from '../components/Field'
 import { Modal } from '../components/Modal'
 import { pageHref } from '../route'
+import { CardTimeline } from './CardTimeline'
 
 type Props = { onClose: () => void } & (
   { laneId: string; card?: undefined } | { card: Card; laneId?: undefined }
@@ -146,6 +147,7 @@ export function CardForm({ card, laneId, onClose }: Props) {
             </ul>
           </div>
         )}
+        {card && <CardTimeline cardId={card.id} />}
         <ErrorMessage error={save.error ?? remove.error} />
         <div className="flex items-center gap-2">
           {card && (

@@ -21,6 +21,8 @@ var (
 	ErrConflict = errors.New("conflict")
 	// ErrInvalidReference means the change points to an entity that does not exist.
 	ErrInvalidReference = errors.New("invalid reference")
+	// ErrCardBusy means a flow is running for the card, which holds it in place.
+	ErrCardBusy = errors.New("a flow is running for the card")
 )
 
 // ValidationError reports an invalid field value.
@@ -87,6 +89,12 @@ const (
 	CardCreated CardEventType = "card.created"
 	CardUpdated CardEventType = "card.updated"
 	CardMoved   CardEventType = "card.moved"
+
+	FlowStarted  CardEventType = "flow.started"
+	FlowSkipped  CardEventType = "flow.skipped"
+	FlowFinished CardEventType = "flow.finished"
+	NodeStarted  CardEventType = "node.started"
+	NodeFinished CardEventType = "node.finished"
 )
 
 // CardEvent is an entry of the card timeline.
@@ -231,3 +239,6 @@ func (c CardType) EntityID() uuid.UUID { return c.ID }
 
 // EntityID returns the card id.
 func (c Card) EntityID() uuid.UUID { return c.ID }
+
+// EntityID returns the card event id.
+func (e CardEvent) EntityID() uuid.UUID { return e.ID }

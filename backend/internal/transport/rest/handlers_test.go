@@ -33,6 +33,10 @@ func newStub() *stubBoard {
 		cardType:  domain.CardType{ID: id1, Name: "bug", CreatedAt: stamp},
 		card:      domain.Card{ID: id1, Title: "t", CardTypeID: id2, LaneID: id2, ParentCardID: &id2, CreatedAt: stamp, UpdatedAt: stamp},
 		cardEvent: domain.CardEvent{ID: id1, CardID: id2, Type: domain.CardMoved, Payload: []byte(`{"position":1}`), CreatedAt: stamp},
+		run: domain.FlowRun{
+			ID: id1, FlowID: id2, FlowVersionID: id2, FlowName: "dev", CardID: id2, Trigger: domain.EventCardCreated,
+			Status: domain.RunFailed, Error: "boom", StartedAt: stamp, FinishedAt: &stamp,
+		},
 		flow: service.FlowDetail{
 			Flow:     domain.Flow{ID: id1, Name: "dev", LatestVersion: 2, Draft: stubGraph(), CreatedAt: stamp, UpdatedAt: stamp},
 			Problems: []domain.GraphProblem{{NodeID: "t", Message: "on node"}, {EdgeID: "e", Message: "on edge"}},
@@ -106,6 +110,10 @@ const (
 	mcpJSON = `{"id":"00000000-0000-7000-8000-000000000001","name":"sg","transport":"http","url":"https://sg/mcp",` +
 		`"args":[],"env":{},"headers":{},"secret_names":["Authorization"],` +
 		`"created_at":"2026-10-25T12:00:00Z","updated_at":"2026-10-25T12:00:00Z"}`
+	runJSON = `{"id":"00000000-0000-7000-8000-000000000001","flow_id":"00000000-0000-7000-8000-000000000002",` +
+		`"flow_version_id":"00000000-0000-7000-8000-000000000002","flow_name":"dev",` +
+		`"card_id":"00000000-0000-7000-8000-000000000002","trigger":"card_created","status":"failed","error":"boom",` +
+		`"started_at":"2026-10-25T12:00:00Z","finished_at":"2026-10-25T12:00:00Z"}`
 	cardEventJSON = `{"id":"00000000-0000-7000-8000-000000000001","card_id":"00000000-0000-7000-8000-000000000002",` +
 		`"type":"card.moved","payload":{"position":1},"created_at":"2026-10-25T12:00:00Z"}`
 )
@@ -161,6 +169,7 @@ func TestRoutes(t *testing.T) {
 		{"DELETE", "/api/cards" + p1, "", 204, "DeleteCard", []any{id1}, ""},
 		{"GET", "/api/cards" + p1 + "/children", "", 200, "ListChildCards", []any{id1}, "[" + cardJSON + "]"},
 		{"GET", "/api/cards" + p1 + "/events", "", 200, "ListCardEvents", []any{id1}, "[" + cardEventJSON + "]"},
+		{"GET", "/api/flow-runs/latest", "", 200, "ListLatestFlowRuns", nil, "[" + runJSON + "]"},
 
 		{"GET", "/api/flows", "", 200, "ListFlows", nil, "[" + flowSummaryJSON + "]"},
 		{"POST", "/api/flows", `{"name":"dev"}`, 201, "CreateFlow", []any{"dev"}, flowJSON},
@@ -229,6 +238,7 @@ func TestErrors(t *testing.T) {
 		{"conflict", fmt.Errorf("%w: lanes_name_key", domain.ErrConflict), 409,
 			`{"code":"conflict","message":"conflict: lanes_name_key"}`},
 		{"in use", domain.ErrInUse, 409, `{"code":"in_use","message":"in use"}`},
+		{"card busy", domain.ErrCardBusy, 409, `{"code":"card_busy","message":"a flow is running for the card"}`},
 		{"invalid reference", domain.ErrInvalidReference, 422, `{"code":"invalid_reference","message":"invalid reference"}`},
 		{"invalid graph", &domain.GraphError{Problems: []domain.GraphProblem{{Message: "no trigger"}}}, 422,
 			`{"code":"invalid_graph","message":"the draft has problems","problems":[{"message":"no trigger"}]}`},
@@ -309,6 +319,8 @@ func TestToEntity(t *testing.T) {
 		{b.flow.Flow, flowSummaryJSON},
 		{b.profile, profileJSON},
 		{b.mcp, mcpJSON},
+		{b.cardEvent, cardEventJSON},
+		{b.run, runJSON},
 		{nil, "null"},
 	}
 	for _, tt := range tests {

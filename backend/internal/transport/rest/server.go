@@ -46,6 +46,8 @@ type Board interface {
 	DeleteCard(ctx context.Context, id uuid.UUID) error
 	ListCardEvents(ctx context.Context, cardID uuid.UUID) ([]domain.CardEvent, error)
 
+	ListLatestFlowRuns(ctx context.Context) ([]domain.FlowRun, error)
+
 	ListFlows(ctx context.Context) ([]domain.Flow, error)
 	GetFlow(ctx context.Context, id uuid.UUID) (service.FlowDetail, error)
 	CreateFlow(ctx context.Context, name string) (service.FlowDetail, error)

@@ -3,16 +3,19 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"orquestrator/internal/domain"
 	"orquestrator/internal/store/sqlcgen"
 )
 
 func toFlowRun(r sqlcgen.FlowRun) domain.FlowRun {
-	return domain.FlowRun{
+	run := domain.FlowRun{
 		ID:            r.ID,
+		FlowID:        r.FlowID,
 		FlowVersionID: r.FlowVersionID,
 		CardID:        r.CardID,
 		Trigger:       r.Trigger,
@@ -20,6 +23,17 @@ func toFlowRun(r sqlcgen.FlowRun) domain.FlowRun {
 		StartedAt:     r.StartedAt,
 		FinishedAt:    r.FinishedAt,
 	}
+	if r.Error != nil {
+		run.Error = *r.Error
+	}
+	return run
+}
+
+// namedRun converts a run read with the name of its flow.
+func namedRun(r sqlcgen.FlowRun, flowName string) domain.FlowRun {
+	run := toFlowRun(r)
+	run.FlowName = flowName
+	return run
 }
 
 func toNodeRun(r sqlcgen.NodeRun) domain.NodeRun {
@@ -61,18 +75,50 @@ func optional(s string) *string {
 	return &s
 }
 
-// CreateFlowRun starts a run of a flow version for a card.
-func (s *Store) CreateFlowRun(ctx context.Context, versionID, cardID uuid.UUID, trigger string) (domain.FlowRun, error) {
+// StartFlowRun starts a run of a flow version for a card. It reports false,
+// starting nothing, when the flow is already running for the card.
+func (s *Store) StartFlowRun(ctx context.Context, version domain.FlowVersion, cardID uuid.UUID, trigger string) (domain.FlowRun, bool, error) {
 	row, err := s.q.InsertFlowRun(ctx, sqlcgen.InsertFlowRunParams{
-		FlowVersionID: versionID, CardID: cardID, Trigger: trigger, Status: string(domain.RunRunning),
+		FlowID: version.FlowID, FlowVersionID: version.ID, CardID: cardID, Trigger: trigger,
 	})
-	return mapRow(row, err, toFlowRun)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.FlowRun{}, false, nil
+	}
+	run, err := mapRow(row, err, toFlowRun)
+	return run, err == nil, err
 }
 
 // GetFlowRun returns one flow run.
 func (s *Store) GetFlowRun(ctx context.Context, id uuid.UUID) (domain.FlowRun, error) {
 	row, err := s.q.GetFlowRun(ctx, id)
+	return mapRow(row, err, func(r sqlcgen.GetFlowRunRow) domain.FlowRun { return namedRun(r.FlowRun, r.FlowName) })
+}
+
+// ListLatestFlowRuns returns one run per card that ever ran a flow: an
+// active one if there is any, else the last one.
+func (s *Store) ListLatestFlowRuns(ctx context.Context) ([]domain.FlowRun, error) {
+	rows, err := s.q.ListLatestFlowRuns(ctx)
+	return mapRows(rows, err, func(r sqlcgen.ListLatestFlowRunsRow) domain.FlowRun { return namedRun(r.FlowRun, r.FlowName) })
+}
+
+// FinishFlowRun ends an active run; ErrNotFound when it is not active.
+func (s *Store) FinishFlowRun(ctx context.Context, id uuid.UUID, status domain.RunStatus, msg string) (domain.FlowRun, error) {
+	row, err := s.q.FinishFlowRun(ctx, sqlcgen.FinishFlowRunParams{ID: id, Status: string(status), Error: optional(msg)})
 	return mapRow(row, err, toFlowRun)
+}
+
+// CardHasActiveRun reports whether a flow is running for the card.
+func (s *Store) CardHasActiveRun(ctx context.Context, cardID uuid.UUID) (bool, error) {
+	return s.q.CardHasActiveRun(ctx, cardID)
+}
+
+// RunnableFlows returns the last published version of every enabled flow.
+func (s *Store) RunnableFlows(ctx context.Context) ([]domain.RunnableFlow, error) {
+	rows, err := s.q.ListRunnableFlows(ctx)
+	return mapParsed(rows, err, func(r sqlcgen.ListRunnableFlowsRow) (domain.RunnableFlow, error) {
+		version, err := toFlowVersion(r.FlowVersion)
+		return domain.RunnableFlow{Name: r.FlowName, Version: version}, err
+	})
 }
 
 // GetFlowVersion returns one published version.
@@ -100,6 +146,23 @@ func (s *Store) CreateNodeRun(ctx context.Context, flowRunID uuid.UUID, nodeKey 
 func (s *Store) GetNodeRun(ctx context.Context, id uuid.UUID) (domain.NodeRun, error) {
 	row, err := s.q.GetNodeRun(ctx, id)
 	return mapRow(row, err, toNodeRun)
+}
+
+// CountNodeRuns tells how many times a node was entered in a run.
+func (s *Store) CountNodeRuns(ctx context.Context, flowRunID uuid.UUID, nodeKey string) (int, error) {
+	n, err := s.q.CountNodeRuns(ctx, sqlcgen.CountNodeRunsParams{FlowRunID: flowRunID, NodeKey: nodeKey})
+	return int(n), err
+}
+
+// ContinueNodeRun claims the right to follow the output of a finished node
+// run. It reports false when the run is not finished or was followed already.
+func (s *Store) ContinueNodeRun(ctx context.Context, id uuid.UUID) (domain.NodeRun, bool, error) {
+	row, err := s.q.ContinueNodeRun(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.NodeRun{}, false, nil
+	}
+	run, err := mapRow(row, err, toNodeRun)
+	return run, err == nil, err
 }
 
 // StartNodeRun marks a node run as running in an agent session.

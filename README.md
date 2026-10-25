@@ -33,12 +33,18 @@ mise run db:up
 mise run backend:serve   # aplica as migrations e sobe o server
 ```
 
-Para rodar agentes:
+Para rodar fluxos e agentes:
 
 ```bash
 mise run agent:login -- --profile dev   # roda `claude setup-token` e guarda o token criptografado
-mise run backend:worker                 # executa os jobs de agente (isolados com bwrap)
+mise run backend:worker                 # executa os fluxos e os agentes (isolados com bwrap)
 ```
+
+Os fluxos rodam no worker: criar um card ou movê-lo para outra baia enfileira um job que dispara
+os fluxos habilitados cujo gatilho combina (sempre a última versão publicada). Criar um card numa
+baia também conta como entrar nela. Enquanto um fluxo roda para um card, só o fluxo move o card,
+e o mesmo fluxo não é disparado de novo para ele. As mudanças feitas pelo worker chegam ao board
+ao vivo pelo server (`LISTEN/NOTIFY`).
 
 O worker lê `ORQ_DATA_DIR` (padrão `~/.local/share/orquestrator`, onde ficam os worktrees dos
 cards), `ORQ_CLAUDE_BIN` (padrão: o `claude` do PATH, fixado no `mise.toml`) e `ORQ_RUNNER`

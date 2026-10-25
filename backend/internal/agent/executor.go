@@ -70,6 +70,9 @@ func (e *Executor) Handle(ctx context.Context, payload json.RawMessage) error {
 	if err != nil {
 		return err
 	}
+	if run.Status == domain.NodeDone || run.Status == domain.NodeFailed {
+		return nil // a retried job whose node already ran
+	}
 	result, err := e.execute(ctx, run, p.Prompt)
 	if err != nil {
 		result = domain.NodeResult{Status: domain.NodeFailed, OutputHandle: "failed", Error: err.Error()}

@@ -3,6 +3,7 @@ import { CSS } from '@dnd-kit/utilities'
 
 import type { Card } from '../api/client'
 import { CardContent, type BoardLookup } from './CardContent'
+import { isActive } from './runs'
 
 interface Props {
   card: Card
@@ -11,6 +12,8 @@ interface Props {
 }
 
 export function CardTile({ card, lookup, onOpen }: Props) {
+  // A running flow holds the card: only the flow moves it.
+  const busy = isActive(lookup.runs.get(card.id))
   const {
     attributes,
     listeners,
@@ -19,7 +22,7 @@ export function CardTile({ card, lookup, onOpen }: Props) {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: card.id })
+  } = useSortable({ id: card.id, disabled: busy })
 
   // Pointer drags work anywhere on the card; keyboard drags only start from
   // the handle (the activator), so Enter/Space on the card still open it.
@@ -42,9 +45,11 @@ export function CardTile({ card, lookup, onOpen }: Props) {
       </button>
       <button
         type="button"
-        className="cursor-grab rounded px-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+        className="cursor-grab rounded px-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
         ref={setActivatorNodeRef}
         {...attributes}
+        disabled={busy}
+        title={busy ? 'Um fluxo está rodando: só ele move o card' : undefined}
         aria-label={`Arrastar ${card.title}`}
       >
         ⠿

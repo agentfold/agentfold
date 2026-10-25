@@ -6,6 +6,7 @@ import {
   card,
   cardType,
   createFakeBackend,
+  flowRun,
   lane,
   project,
 } from '../test/fakeBackend'
@@ -58,6 +59,37 @@ describe('Board', () => {
     expect(
       within(await laneSection('Done')).getByText('Orphan'),
     ).toBeInTheDocument()
+  })
+
+  it('shows the latest flow run of each card and holds busy cards', async () => {
+    const d = boardData()
+    const backend = createFakeBackend({
+      lanes: [d.todo, d.done],
+      cardTypes: [d.bug],
+      cards: [d.parent, d.child, d.orphan],
+      runs: [
+        flowRun(d.parent.id, 'running'),
+        flowRun(d.child.id, 'waiting', { flow_name: 'review' }),
+        flowRun(d.orphan.id, 'failed', { error: 'sem resultado' }),
+      ],
+    })
+    renderWithApi(<Board />, backend)
+    const running = await screen.findByText('Rodando · dev')
+    expect(running.parentElement).toHaveAttribute('title', 'dev')
+    expect(screen.getByText('Aguardando · review')).toBeInTheDocument()
+    expect(screen.getByText('Falhou · dev').parentElement).toHaveAttribute(
+      'title',
+      'dev: sem resultado',
+    )
+    expect(
+      screen.getByRole('button', { name: 'Arrastar Parent' }),
+    ).toBeDisabled()
+    expect(
+      screen.getByRole('button', { name: 'Arrastar Child' }),
+    ).toBeDisabled()
+    expect(
+      screen.getByRole('button', { name: 'Arrastar Orphan' }),
+    ).toBeEnabled()
   })
 
   it('shows load failures', async () => {

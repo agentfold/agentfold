@@ -142,3 +142,41 @@ func TestJobListener(t *testing.T) {
 		t.Fatal("ListenJobs with a bad channel: expected error")
 	}
 }
+
+func TestChangeListener(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	l, err := s.ListenChanges(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	id := uuid.New()
+	if err := s.NotifyChange(ctx, "card.moved", id); err != nil {
+		t.Fatal(err)
+	}
+	if typ, got, err := l.Next(ctx); err != nil || typ != "card.moved" || got != id {
+		t.Fatalf("Next = %q, %s, %v", typ, got, err)
+	}
+	if _, err := pool.Exec(ctx, "SELECT pg_notify('orq_changes', 'not json')"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := l.Next(ctx); err == nil {
+		t.Fatal("Next with a bad payload: expected error")
+	}
+	if _, _, err := l.Next(cancelled()); err == nil {
+		t.Fatal("Next with an ended context: expected error")
+	}
+	if err := s.NotifyChange(cancelled(), "card.moved", id); err == nil {
+		t.Fatal("NotifyChange: expected error")
+	}
+
+	if _, err := s.ListenChanges(cancelled()); err == nil {
+		t.Fatal("ListenChanges: expected error")
+	}
+	changesChannel = "not a channel"
+	t.Cleanup(func() { changesChannel = "orq_changes" })
+	if _, err := s.ListenChanges(ctx); err == nil {
+		t.Fatal("ListenChanges with a bad channel: expected error")
+	}
+}

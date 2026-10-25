@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"orquestrator/internal/domain"
 )
@@ -323,5 +324,66 @@ func TestCardErrors(t *testing.T) {
 				t.Fatalf("got %v", err)
 			}
 		})
+	}
+}
+
+// triggerJobs returns the card event ids of the queued flow.trigger jobs.
+func triggerJobs(t *testing.T) []uuid.UUID {
+	t.Helper()
+	rows, err := pool.Query(context.Background(), "SELECT (payload->>'card_event_id')::uuid FROM jobs WHERE kind = $1 ORDER BY created_at, id", domain.JobFlowTrigger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ids
+}
+
+func TestCardEventsTriggerFlows(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	f := newFixture(t, s)
+	if _, err := s.MoveCard(ctx, f.card.ID, f.lanes[1].ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	second := f.newCard(t, s, f.lanes[1].ID, "second", nil)
+	// Reordering within a lane enters no lane: no job.
+	if _, err := s.MoveCard(ctx, second.ID, f.lanes[1].ID, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	jobs := triggerJobs(t)
+	if len(jobs) != 3 {
+		t.Fatalf("got %d trigger jobs, want 3", len(jobs))
+	}
+	types := []domain.CardEventType{domain.CardCreated, domain.CardMoved, domain.CardCreated}
+	for i, id := range jobs {
+		event, err := s.GetCardEvent(ctx, id)
+		if err != nil || event.Type != types[i] {
+			t.Fatalf("job %d: event %+v, %v", i, event, err)
+		}
+	}
+	if _, err := s.GetCardEvent(ctx, uuid.New()); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("GetCardEvent unknown: %v", err)
+	}
+
+	failOn(s, "InsertJob", 1)
+	if _, err := s.CreateCard(ctx, domain.NewCard{CardInput: domain.CardInput{Title: "x", CardTypeID: f.cardType.ID}, LaneID: f.lanes[0].ID}); !errors.Is(err, errInjected) {
+		t.Fatalf("CreateCard with a failing job: %v", err)
+	}
+}
+
+func TestAddCardEvent(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	f := newFixture(t, s)
+	event, err := s.AddCardEvent(ctx, f.card.ID, domain.FlowStarted, map[string]string{"flow_name": "dev"})
+	if err != nil || event.Type != domain.FlowStarted || string(event.Payload) != `{"flow_name": "dev"}` {
+		t.Fatalf("AddCardEvent = %+v (%s), %v", event, event.Payload, err)
+	}
+	if _, err := s.AddCardEvent(ctx, f.card.ID, domain.FlowStarted, make(chan int)); err == nil {
+		t.Fatal("AddCardEvent with a payload that is not JSON: expected error")
 	}
 }

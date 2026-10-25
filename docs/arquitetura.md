@@ -73,7 +73,9 @@ Um único binário Go com subcomandos: `server`, `worker`, `agent login`, `migra
 - **runner** — executa o agente (interface `Runner`; implementações plugáveis).
 - **agent** — adaptador por tipo de agente (monta comando do Claude, interpreta `stream-json`).
 - **transport/rest** (inclui o stream SSE, que reaproveita os conversores da API), **transport/mcp**.
-- **events** — hub em memória que distribui as mudanças do board para o SSE.
+- **events** — hub em memória que distribui as mudanças do board para o SSE; um relay repassa ao
+  hub as mudanças feitas pelo worker, anunciadas por `NOTIFY orq_changes` (tipo + id; o server
+  relê a entidade).
 
 Tudo que toca o mundo externo (processos, relógio, filesystem, banco, fila) fica atrás de
 interfaces para viabilizar 100% de cobertura com fakes.
@@ -172,7 +174,10 @@ O agente **não comita nem abre PR** (garantido pelas tools bloqueadas/prompt; o
 - Worker pega job com `SELECT … FOR UPDATE SKIP LOCKED`, grava `locked_by` e `lease_until`.
 - Heartbeat renova o lease durante a execução; job com lease vencido volta para a fila.
 - `LISTEN/NOTIFY` acorda workers sem polling agressivo.
-- Kinds: `agent.start`, `agent.resume`, `engine.advance`.
+- Kinds: `flow.trigger` (enfileirado na mesma transação do evento `card.created`/`card.moved`;
+  dispara os fluxos cujo gatilho combina) e `agent.run` (roda o nó Agent e, em seguida, a engine
+  segue a saída dele). A engine roda no worker; os nós MoveCard e End executam dentro do job que
+  chega até eles.
 - **Afinidade:** cada job tem `requirements` (ex.: `{"host": "x"}`, futuramente `{"runner": "docker"}`);
   cada worker anuncia suas capacidades e só pega jobs compatíveis. Projetos `local` exigem o host
   onde a pasta existe. No MVP o worker anuncia apenas o próprio host.
