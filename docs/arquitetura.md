@@ -72,7 +72,8 @@ Um único binário Go com subcomandos: `server`, `worker`, `agent login`, `migra
 - **queue** — fila sobre Postgres.
 - **runner** — executa o agente (interface `Runner`; implementações plugáveis).
 - **agent** — adaptador por tipo de agente (monta comando do Claude, interpreta `stream-json`).
-- **transport/rest**, **transport/mcp**, **transport/sse**.
+- **transport/rest** (inclui o stream SSE, que reaproveita os conversores da API), **transport/mcp**.
+- **events** — hub em memória que distribui as mudanças do board para o SSE.
 
 Tudo que toca o mundo externo (processos, relógio, filesystem, banco, fila) fica atrás de
 interfaces para viabilizar 100% de cobertura com fakes.

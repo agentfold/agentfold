@@ -1,0 +1,498 @@
+openapi: 3.0.3
+info:
+  title: Orquestrator API
+  version: 0.1.0
+  description: Board, flows and agent orchestration. Source of truth for the Go server and the TS client.
+servers:
+  - url: /api
+paths:
+  /lanes:
+    get:
+      operationId: listLanes
+      tags: [lanes]
+      responses:
+        "200":
+          description: All lanes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Lane" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createLane
+      tags: [lanes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LaneInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lane" }
+        default: { $ref: "#/components/responses/Error" }
+  /lanes/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: getLane
+      tags: [lanes]
+      responses:
+        "200":
+          description: The Lane.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lane" }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      operationId: updateLane
+      tags: [lanes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LaneInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lane" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteLane
+      tags: [lanes]
+      responses:
+        "204":
+          description: Deleted.
+        default: { $ref: "#/components/responses/Error" }
+  /lanes/{id}/move:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      operationId: moveLane
+      tags: [lanes]
+      description: Moves the lane to a position of the board. Positions past the end move it to the end.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LaneMove" }
+      responses:
+        "200":
+          description: Moved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lane" }
+        default: { $ref: "#/components/responses/Error" }
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      responses:
+        "200":
+          description: All projects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Project" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createProject
+      tags: [projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProjectInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        default: { $ref: "#/components/responses/Error" }
+  /projects/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: getProject
+      tags: [projects]
+      responses:
+        "200":
+          description: The Project.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      operationId: updateProject
+      tags: [projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProjectInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      responses:
+        "204":
+          description: Deleted.
+        default: { $ref: "#/components/responses/Error" }
+  /card-types:
+    get:
+      operationId: listCardTypes
+      tags: [card-types]
+      responses:
+        "200":
+          description: All card-types.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CardType" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createCardType
+      tags: [card-types]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CardTypeInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CardType" }
+        default: { $ref: "#/components/responses/Error" }
+  /card-types/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: getCardType
+      tags: [card-types]
+      responses:
+        "200":
+          description: The CardType.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CardType" }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      operationId: updateCardType
+      tags: [card-types]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CardTypeInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CardType" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteCardType
+      tags: [card-types]
+      responses:
+        "204":
+          description: Deleted.
+        default: { $ref: "#/components/responses/Error" }
+  /cards:
+    get:
+      operationId: listCards
+      tags: [cards]
+      responses:
+        "200":
+          description: All cards.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Card" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createCard
+      tags: [cards]
+      description: Adds the card to the end of a lane.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NewCard" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Card" }
+        default: { $ref: "#/components/responses/Error" }
+  /cards/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: getCard
+      tags: [cards]
+      responses:
+        "200":
+          description: The Card.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Card" }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      operationId: updateCard
+      tags: [cards]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CardInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Card" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteCard
+      tags: [cards]
+      responses:
+        "204":
+          description: Deleted.
+        default: { $ref: "#/components/responses/Error" }
+  /cards/{id}/move:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      operationId: moveCard
+      tags: [cards]
+      description: Places the card at a position of a lane. Positions past the end place it at the end.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CardMove" }
+      responses:
+        "200":
+          description: Moved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Card" }
+        default: { $ref: "#/components/responses/Error" }
+  /cards/{id}/children:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: listChildCards
+      tags: [cards]
+      responses:
+        "200":
+          description: The children of the card.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Card" }
+        default: { $ref: "#/components/responses/Error" }
+  /cards/{id}/events:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: listCardEvents
+      tags: [cards]
+      responses:
+        "200":
+          description: The card timeline, oldest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CardEvent" }
+        default: { $ref: "#/components/responses/Error" }
+  /events:
+    get:
+      operationId: streamEvents
+      tags: [events]
+      description: >
+        Server-Sent Events with every change to the board. Each message has the
+        event type as `event` and a BoardEvent as `data`. Implemented by hand
+        (excluded from code generation).
+      responses:
+        "200":
+          description: Event stream.
+          content:
+            text/event-stream:
+              schema: { $ref: "#/components/schemas/BoardEvent" }
+
+components:
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    Error:
+      description: Error.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [bad_request, validation, not_found, conflict, in_use, invalid_reference, internal]
+        message: { type: string }
+        field:
+          type: string
+          description: Invalid field, for validation errors.
+    Color:
+      type: string
+      description: Empty or "#rrggbb".
+      example: "#3b82f6"
+    Lane:
+      type: object
+      required: [id, name, color, position, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        color: { $ref: "#/components/schemas/Color" }
+        position: { type: integer }
+        created_at: { type: string, format: date-time }
+    LaneInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        color: { $ref: "#/components/schemas/Color" }
+    LaneMove:
+      type: object
+      required: [position]
+      properties:
+        position: { type: integer, minimum: 0 }
+    Project:
+      type: object
+      required: [id, name, source_kind, local_path, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        source_kind:
+          type: string
+          enum: [local]
+        local_path:
+          type: string
+          description: Root of a git repository on the worker host.
+        created_at: { type: string, format: date-time }
+    ProjectInput:
+      type: object
+      required: [name, local_path]
+      properties:
+        name: { type: string }
+        local_path:
+          type: string
+          description: Absolute path inside a git repository; stored as the repository root.
+    CardType:
+      type: object
+      required: [id, name, color, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        color: { $ref: "#/components/schemas/Color" }
+        created_at: { type: string, format: date-time }
+    CardTypeInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        color: { $ref: "#/components/schemas/Color" }
+    Card:
+      type: object
+      required: [id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string }
+        card_type_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid, nullable: true }
+        parent_card_id: { type: string, format: uuid, nullable: true }
+        lane_id: { type: string, format: uuid }
+        position: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    CardInput:
+      type: object
+      required: [title, card_type_id]
+      properties:
+        title: { type: string }
+        description: { type: string }
+        card_type_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid, nullable: true }
+    NewCard:
+      type: object
+      required: [title, card_type_id, lane_id]
+      properties:
+        title: { type: string }
+        description: { type: string }
+        card_type_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid, nullable: true }
+        lane_id: { type: string, format: uuid }
+        parent_card_id: { type: string, format: uuid, nullable: true }
+    CardMove:
+      type: object
+      required: [lane_id, position]
+      properties:
+        lane_id: { type: string, format: uuid }
+        position: { type: integer, minimum: 0 }
+    CardEvent:
+      type: object
+      required: [id, card_id, type, payload, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        card_id: { type: string, format: uuid }
+        type:
+          type: string
+          example: card.moved
+        payload:
+          type: object
+          additionalProperties: true
+        created_at: { type: string, format: date-time }
+    BoardEvent:
+      type: object
+      description: >
+        A change to the board. `type` is "<entity>.<change>", with entity one of
+        lane, project, card_type, card and change one of created, updated,
+        moved, deleted.
+      required: [type, id]
+      properties:
+        type:
+          type: string
+          example: card.moved
+        id:
+          type: string
+          format: uuid
+          description: Id of the changed entity.
+        data:
+          type: object
+          additionalProperties: true
+          description: The entity after the change; absent when it was deleted.

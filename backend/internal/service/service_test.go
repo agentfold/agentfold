@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"orquestrator/internal/domain"
+	"orquestrator/internal/events"
 )
 
 // fakeRepo records the calls it receives and fails them with err.
@@ -133,9 +134,14 @@ var (
 	errRepo = errors.New("repo failed")
 )
 
-func newService() (*Service, *fakeRepo) {
-	repo := &fakeRepo{}
-	return New(repo, fakeGit{root: "/repo"}), repo
+// fakePub records the published events.
+type fakePub struct{ events []events.Event }
+
+func (p *fakePub) Publish(e events.Event) { p.events = append(p.events, e) }
+
+func newService() (*Service, *fakeRepo, *fakePub) {
+	repo, pub := &fakeRepo{}, &fakePub{}
+	return New(repo, fakeGit{root: "/repo"}, pub), repo, pub
 }
 
 func validCard() domain.CardInput {
@@ -149,55 +155,64 @@ func TestDelegation(t *testing.T) {
 		name   string
 		call   func(*Service) error
 		wantIn any
+		event  string // published on success; empty for reads
 	}{
-		{"ListLanes", func(s *Service) error { _, err := s.ListLanes(ctx); return err }, nil},
-		{"GetLane", func(s *Service) error { _, err := s.GetLane(ctx, id); return err }, id},
+		{"ListLanes", func(s *Service) error { _, err := s.ListLanes(ctx); return err }, nil, ""},
+		{"GetLane", func(s *Service) error { _, err := s.GetLane(ctx, id); return err }, id, ""},
 		{"CreateLane", func(s *Service) error {
 			_, err := s.CreateLane(ctx, domain.LaneInput{Name: " A ", Color: "#ABCDEF"})
 			return err
-		}, domain.LaneInput{Name: "A", Color: "#abcdef"}},
+		}, domain.LaneInput{Name: "A", Color: "#abcdef"}, "lane.created"},
 		{"UpdateLane", func(s *Service) error {
 			_, err := s.UpdateLane(ctx, id, domain.LaneInput{Name: "B"})
 			return err
-		}, domain.LaneInput{Name: "B"}},
-		{"MoveLane", func(s *Service) error { _, err := s.MoveLane(ctx, id, 2); return err }, 2},
-		{"DeleteLane", func(s *Service) error { return s.DeleteLane(ctx, id) }, id},
-		{"ListProjects", func(s *Service) error { _, err := s.ListProjects(ctx); return err }, nil},
-		{"GetProject", func(s *Service) error { _, err := s.GetProject(ctx, id); return err }, id},
+		}, domain.LaneInput{Name: "B"}, "lane.updated"},
+		{"MoveLane", func(s *Service) error { _, err := s.MoveLane(ctx, id, 2); return err }, 2, "lane.moved"},
+		{"DeleteLane", func(s *Service) error { return s.DeleteLane(ctx, id) }, id, "lane.deleted"},
+		{"ListProjects", func(s *Service) error { _, err := s.ListProjects(ctx); return err }, nil, ""},
+		{"GetProject", func(s *Service) error { _, err := s.GetProject(ctx, id); return err }, id, ""},
 		{"CreateProject", func(s *Service) error {
 			_, err := s.CreateProject(ctx, domain.ProjectInput{Name: " p ", LocalPath: "/repo/sub"})
 			return err
-		}, domain.ProjectInput{Name: "p", LocalPath: "/repo"}},
+		}, domain.ProjectInput{Name: "p", LocalPath: "/repo"}, "project.created"},
 		{"UpdateProject", func(s *Service) error {
 			_, err := s.UpdateProject(ctx, id, domain.ProjectInput{Name: "p", LocalPath: "/repo"})
 			return err
-		}, domain.ProjectInput{Name: "p", LocalPath: "/repo"}},
-		{"DeleteProject", func(s *Service) error { return s.DeleteProject(ctx, id) }, id},
-		{"ListCardTypes", func(s *Service) error { _, err := s.ListCardTypes(ctx); return err }, nil},
-		{"GetCardType", func(s *Service) error { _, err := s.GetCardType(ctx, id); return err }, id},
+		}, domain.ProjectInput{Name: "p", LocalPath: "/repo"}, "project.updated"},
+		{"DeleteProject", func(s *Service) error { return s.DeleteProject(ctx, id) }, id, "project.deleted"},
+		{"ListCardTypes", func(s *Service) error { _, err := s.ListCardTypes(ctx); return err }, nil, ""},
+		{"GetCardType", func(s *Service) error { _, err := s.GetCardType(ctx, id); return err }, id, ""},
 		{"CreateCardType", func(s *Service) error {
 			_, err := s.CreateCardType(ctx, domain.CardTypeInput{Name: " bug "})
 			return err
-		}, domain.CardTypeInput{Name: "bug"}},
+		}, domain.CardTypeInput{Name: "bug"}, "card_type.created"},
 		{"UpdateCardType", func(s *Service) error {
 			_, err := s.UpdateCardType(ctx, id, domain.CardTypeInput{Name: "bug"})
 			return err
-		}, domain.CardTypeInput{Name: "bug"}},
-		{"DeleteCardType", func(s *Service) error { return s.DeleteCardType(ctx, id) }, id},
-		{"ListCards", func(s *Service) error { _, err := s.ListCards(ctx); return err }, nil},
-		{"GetCard", func(s *Service) error { _, err := s.GetCard(ctx, id); return err }, id},
+		}, domain.CardTypeInput{Name: "bug"}, "card_type.updated"},
+		{"DeleteCardType", func(s *Service) error { return s.DeleteCardType(ctx, id) }, id, "card_type.deleted"},
+		{"ListCards", func(s *Service) error { _, err := s.ListCards(ctx); return err }, nil, ""},
+		{"GetCard", func(s *Service) error { _, err := s.GetCard(ctx, id); return err }, id, ""},
 		{"CreateCard", func(s *Service) error {
 			_, err := s.CreateCard(ctx, domain.NewCard{CardInput: validCard(), LaneID: id})
 			return err
-		}, domain.NewCard{CardInput: domain.CardInput{Title: "t", Description: "d", CardTypeID: id}, LaneID: id}},
+		}, domain.NewCard{CardInput: domain.CardInput{Title: "t", Description: "d", CardTypeID: id}, LaneID: id}, "card.created"},
 		{"UpdateCard", func(s *Service) error { _, err := s.UpdateCard(ctx, id, validCard()); return err },
-			domain.CardInput{Title: "t", Description: "d", CardTypeID: id}},
-		{"MoveCard", func(s *Service) error { _, err := s.MoveCard(ctx, id, id, 0); return err }, 0},
-		{"DeleteCard", func(s *Service) error { return s.DeleteCard(ctx, id) }, id},
+			domain.CardInput{Title: "t", Description: "d", CardTypeID: id}, "card.updated"},
+		{"MoveCard", func(s *Service) error { _, err := s.MoveCard(ctx, id, id, 0); return err }, 0, "card.moved"},
+		{"DeleteCard", func(s *Service) error { return s.DeleteCard(ctx, id) }, id, "card.deleted"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, repo := newService()
+			s, _, pub := newService()
+			if err := tt.call(s); err != nil {
+				t.Fatal(err)
+			}
+			if tt.event == "" && len(pub.events) != 0 || tt.event != "" && (len(pub.events) != 1 || pub.events[0].Type != tt.event) {
+				t.Fatalf("published %+v, want %q", pub.events, tt.event)
+			}
+
+			s, repo, pub := newService()
 			repo.err = errRepo
 			if err := tt.call(s); !errors.Is(err, errRepo) {
 				t.Fatalf("got %v, want the repository error", err)
@@ -207,6 +222,9 @@ func TestDelegation(t *testing.T) {
 			}
 			if repo.in != tt.wantIn {
 				t.Fatalf("repository got %+v, want %+v", repo.in, tt.wantIn)
+			}
+			if len(pub.events) != 0 {
+				t.Fatalf("failed call published %+v", pub.events)
 			}
 		})
 	}
@@ -253,7 +271,7 @@ func TestValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, repo := newService()
+			s, repo, _ := newService()
 			var verr *domain.ValidationError
 			if err := tt.call(s); !errors.As(err, &verr) || verr.Field != tt.field {
 				t.Fatalf("got %v, want a validation error on %s", err, tt.field)
@@ -267,7 +285,7 @@ func TestValidation(t *testing.T) {
 
 func TestProjectMustBeGitRepository(t *testing.T) {
 	repo := &fakeRepo{}
-	s := New(repo, fakeGit{err: errors.New("not a repo")})
+	s := New(repo, fakeGit{err: errors.New("not a repo")}, &fakePub{})
 	var verr *domain.ValidationError
 	_, err := s.CreateProject(ctx, domain.ProjectInput{Name: "p", LocalPath: "/tmp/x"})
 	if !errors.As(err, &verr) || verr.Field != "local_path" {
@@ -287,7 +305,7 @@ func TestCardListsCheckTheCard(t *testing.T) {
 	}
 	for name, call := range calls {
 		t.Run(name, func(t *testing.T) {
-			s, repo := newService()
+			s, repo, _ := newService()
 			repo.err = domain.ErrNotFound
 			if err := call(s); !errors.Is(err, domain.ErrNotFound) {
 				t.Fatalf("got %v", err)
@@ -296,7 +314,7 @@ func TestCardListsCheckTheCard(t *testing.T) {
 				t.Fatalf("calls = %v", repo.calls)
 			}
 
-			s, repo = newService()
+			s, repo, _ = newService()
 			if err := call(s); err != nil {
 				t.Fatal(err)
 			}

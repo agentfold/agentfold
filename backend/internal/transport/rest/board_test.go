@@ -1,0 +1,123 @@
+package rest
+
+import (
+	"context"
+
+	"github.com/google/uuid"
+
+	"orquestrator/internal/domain"
+)
+
+// stubBoard returns its fields from every use case and records the last call.
+type stubBoard struct {
+	err       error
+	lane      domain.Lane
+	project   domain.Project
+	cardType  domain.CardType
+	card      domain.Card
+	cardEvent domain.CardEvent
+
+	call string
+	args []any
+}
+
+func (b *stubBoard) record(call string, args ...any) error {
+	b.call, b.args = call, args
+	return b.err
+}
+
+func (b *stubBoard) ListLanes(context.Context) ([]domain.Lane, error) {
+	return []domain.Lane{b.lane}, b.record("ListLanes")
+}
+
+func (b *stubBoard) GetLane(_ context.Context, id uuid.UUID) (domain.Lane, error) {
+	return b.lane, b.record("GetLane", id)
+}
+
+func (b *stubBoard) CreateLane(_ context.Context, in domain.LaneInput) (domain.Lane, error) {
+	return b.lane, b.record("CreateLane", in)
+}
+
+func (b *stubBoard) UpdateLane(_ context.Context, id uuid.UUID, in domain.LaneInput) (domain.Lane, error) {
+	return b.lane, b.record("UpdateLane", id, in)
+}
+
+func (b *stubBoard) MoveLane(_ context.Context, id uuid.UUID, position int) (domain.Lane, error) {
+	return b.lane, b.record("MoveLane", id, position)
+}
+
+func (b *stubBoard) DeleteLane(_ context.Context, id uuid.UUID) error {
+	return b.record("DeleteLane", id)
+}
+
+func (b *stubBoard) ListProjects(context.Context) ([]domain.Project, error) {
+	return []domain.Project{b.project}, b.record("ListProjects")
+}
+
+func (b *stubBoard) GetProject(_ context.Context, id uuid.UUID) (domain.Project, error) {
+	return b.project, b.record("GetProject", id)
+}
+
+func (b *stubBoard) CreateProject(_ context.Context, in domain.ProjectInput) (domain.Project, error) {
+	return b.project, b.record("CreateProject", in)
+}
+
+func (b *stubBoard) UpdateProject(_ context.Context, id uuid.UUID, in domain.ProjectInput) (domain.Project, error) {
+	return b.project, b.record("UpdateProject", id, in)
+}
+
+func (b *stubBoard) DeleteProject(_ context.Context, id uuid.UUID) error {
+	return b.record("DeleteProject", id)
+}
+
+func (b *stubBoard) ListCardTypes(context.Context) ([]domain.CardType, error) {
+	return []domain.CardType{b.cardType}, b.record("ListCardTypes")
+}
+
+func (b *stubBoard) GetCardType(_ context.Context, id uuid.UUID) (domain.CardType, error) {
+	return b.cardType, b.record("GetCardType", id)
+}
+
+func (b *stubBoard) CreateCardType(_ context.Context, in domain.CardTypeInput) (domain.CardType, error) {
+	return b.cardType, b.record("CreateCardType", in)
+}
+
+func (b *stubBoard) UpdateCardType(_ context.Context, id uuid.UUID, in domain.CardTypeInput) (domain.CardType, error) {
+	return b.cardType, b.record("UpdateCardType", id, in)
+}
+
+func (b *stubBoard) DeleteCardType(_ context.Context, id uuid.UUID) error {
+	return b.record("DeleteCardType", id)
+}
+
+func (b *stubBoard) ListCards(context.Context) ([]domain.Card, error) {
+	return []domain.Card{b.card}, b.record("ListCards")
+}
+
+func (b *stubBoard) ListChildCards(_ context.Context, parentID uuid.UUID) ([]domain.Card, error) {
+	return []domain.Card{b.card}, b.record("ListChildCards", parentID)
+}
+
+func (b *stubBoard) GetCard(_ context.Context, id uuid.UUID) (domain.Card, error) {
+	return b.card, b.record("GetCard", id)
+}
+
+func (b *stubBoard) CreateCard(_ context.Context, in domain.NewCard) (domain.Card, error) {
+	return b.card, b.record("CreateCard", in)
+}
+
+func (b *stubBoard) UpdateCard(_ context.Context, id uuid.UUID, in domain.CardInput) (domain.Card, error) {
+	return b.card, b.record("UpdateCard", id, in)
+}
+
+func (b *stubBoard) MoveCard(_ context.Context, id, laneID uuid.UUID, position int) (domain.Card, error) {
+	return b.card, b.record("MoveCard", id, laneID, position)
+}
+
+func (b *stubBoard) DeleteCard(_ context.Context, id uuid.UUID) error {
+	return b.record("DeleteCard", id)
+}
+
+func (b *stubBoard) ListCardEvents(_ context.Context, cardID uuid.UUID) ([]domain.CardEvent, error) {
+	return []domain.CardEvent{b.cardEvent}, b.record("ListCardEvents", cardID)
+}

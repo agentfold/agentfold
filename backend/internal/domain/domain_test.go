@@ -95,3 +95,18 @@ func TestValidatePosition(t *testing.T) {
 		t.Fatal("negative position accepted")
 	}
 }
+
+func TestEntityID(t *testing.T) {
+	id := uuid.New()
+	ids := []uuid.UUID{
+		Lane{ID: id}.EntityID(),
+		Project{ID: id}.EntityID(),
+		CardType{ID: id}.EntityID(),
+		Card{ID: id}.EntityID(),
+	}
+	for i, got := range ids {
+		if got != id {
+			t.Errorf("entity %d: got %s", i, got)
+		}
+	}
+}

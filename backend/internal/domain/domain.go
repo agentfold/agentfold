@@ -219,3 +219,15 @@ func requireText(field, value string) (string, error) {
 	}
 	return value, nil
 }
+
+// EntityID returns the lane id.
+func (l Lane) EntityID() uuid.UUID { return l.ID }
+
+// EntityID returns the project id.
+func (p Project) EntityID() uuid.UUID { return p.ID }
+
+// EntityID returns the card type id.
+func (c CardType) EntityID() uuid.UUID { return c.ID }
+
+// EntityID returns the card id.
+func (c Card) EntityID() uuid.UUID { return c.ID }

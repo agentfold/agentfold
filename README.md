@@ -25,9 +25,20 @@ mise run db:up        # Postgres de desenvolvimento (docker compose)
 mise run check        # lint + testes com gate de 100% de cobertura
 ```
 
-Os testes do store sobem um Postgres efêmero com testcontainers, então precisam de Docker.
-Após mudar `backend/migrations` ou `backend/internal/store/queries`, rode `mise run generate`
-(o lint falha se o código do sqlc estiver desatualizado).
+Para subir a API em `http://127.0.0.1:8080/api` (contrato em [api/openapi.yaml](api/openapi.yaml)):
+
+```bash
+mise run db:up
+mise run backend:serve   # aplica as migrations e sobe o server
+```
+
+O binário lê `ORQ_DATABASE_URL` (obrigatória) e `ORQ_ADDR` (padrão `127.0.0.1:8080`; a API ainda
+não tem autenticação, por isso escuta só em loopback). Eventos do board em tempo real:
+`GET /api/events` (Server-Sent Events).
+
+Os testes do store e do CLI sobem um Postgres efêmero com testcontainers, então precisam de Docker.
+Após mudar `backend/migrations`, `backend/internal/store/queries` ou `api/openapi.yaml`, rode
+`mise run generate` (o lint falha se o código gerado estiver desatualizado).
 
 Outras tarefas: `mise tasks`.
 

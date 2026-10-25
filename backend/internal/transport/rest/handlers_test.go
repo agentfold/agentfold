@@ -1,0 +1,227 @@
+package rest
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+
+	"orquestrator/internal/domain"
+	"orquestrator/internal/events"
+)
+
+var (
+	id1   = uuid.MustParse("00000000-0000-7000-8000-000000000001")
+	id2   = uuid.MustParse("00000000-0000-7000-8000-000000000002")
+	stamp = time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+)
+
+func newStub() *stubBoard {
+	return &stubBoard{
+		lane:      domain.Lane{ID: id1, Name: "Todo", Color: "#000000", Position: 0, CreatedAt: stamp},
+		project:   domain.Project{ID: id1, Name: "web", SourceKind: domain.SourceLocal, LocalPath: "/src/web", CreatedAt: stamp},
+		cardType:  domain.CardType{ID: id1, Name: "bug", CreatedAt: stamp},
+		card:      domain.Card{ID: id1, Title: "t", CardTypeID: id2, LaneID: id2, ParentCardID: &id2, CreatedAt: stamp, UpdatedAt: stamp},
+		cardEvent: domain.CardEvent{ID: id1, CardID: id2, Type: domain.CardMoved, Payload: []byte(`{"position":1}`), CreatedAt: stamp},
+	}
+}
+
+func newHandler(b Board, log *bytes.Buffer) http.Handler {
+	return NewHandler(b, events.NewHub(1), Options{
+		Log:       slog.New(slog.NewTextHandler(log, nil)),
+		Heartbeat: time.Hour,
+	})
+}
+
+func do(t *testing.T, h http.Handler, method, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+// decode parses a JSON response into a generic value for comparisons.
+func decode(t *testing.T, data []byte) any {
+	t.Helper()
+	var v any
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatalf("invalid JSON %q: %v", data, err)
+	}
+	return v
+}
+
+const (
+	laneJSON     = `{"id":"00000000-0000-7000-8000-000000000001","name":"Todo","color":"#000000","position":0,"created_at":"2026-10-25T12:00:00Z"}`
+	projectJSON  = `{"id":"00000000-0000-7000-8000-000000000001","name":"web","source_kind":"local","local_path":"/src/web","created_at":"2026-10-25T12:00:00Z"}`
+	cardTypeJSON = `{"id":"00000000-0000-7000-8000-000000000001","name":"bug","color":"","created_at":"2026-10-25T12:00:00Z"}`
+	cardJSON     = `{"id":"00000000-0000-7000-8000-000000000001","title":"t","description":"",` +
+		`"card_type_id":"00000000-0000-7000-8000-000000000002","project_id":null,` +
+		`"parent_card_id":"00000000-0000-7000-8000-000000000002","lane_id":"00000000-0000-7000-8000-000000000002",` +
+		`"position":0,"created_at":"2026-10-25T12:00:00Z","updated_at":"2026-10-25T12:00:00Z"}`
+	cardEventJSON = `{"id":"00000000-0000-7000-8000-000000000001","card_id":"00000000-0000-7000-8000-000000000002",` +
+		`"type":"card.moved","payload":{"position":1},"created_at":"2026-10-25T12:00:00Z"}`
+)
+
+func TestRoutes(t *testing.T) {
+	p1 := "/" + id1.String()
+	tests := []struct {
+		method, path, body string
+		status             int
+		call               string
+		args               []any
+		response           string
+	}{
+		{"GET", "/api/lanes", "", 200, "ListLanes", nil, "[" + laneJSON + "]"},
+		{"POST", "/api/lanes", `{"name":"Todo","color":"#000000"}`, 201, "CreateLane",
+			[]any{domain.LaneInput{Name: "Todo", Color: "#000000"}}, laneJSON},
+		{"GET", "/api/lanes" + p1, "", 200, "GetLane", []any{id1}, laneJSON},
+		{"PUT", "/api/lanes" + p1, `{"name":"Doing"}`, 200, "UpdateLane",
+			[]any{id1, domain.LaneInput{Name: "Doing"}}, laneJSON},
+		{"POST", "/api/lanes" + p1 + "/move", `{"position":3}`, 200, "MoveLane", []any{id1, 3}, laneJSON},
+		{"DELETE", "/api/lanes" + p1, "", 204, "DeleteLane", []any{id1}, ""},
+
+		{"GET", "/api/projects", "", 200, "ListProjects", nil, "[" + projectJSON + "]"},
+		{"POST", "/api/projects", `{"name":"web","local_path":"/src/web"}`, 201, "CreateProject",
+			[]any{domain.ProjectInput{Name: "web", LocalPath: "/src/web"}}, projectJSON},
+		{"GET", "/api/projects" + p1, "", 200, "GetProject", []any{id1}, projectJSON},
+		{"PUT", "/api/projects" + p1, `{"name":"api","local_path":"/src/api"}`, 200, "UpdateProject",
+			[]any{id1, domain.ProjectInput{Name: "api", LocalPath: "/src/api"}}, projectJSON},
+		{"DELETE", "/api/projects" + p1, "", 204, "DeleteProject", []any{id1}, ""},
+
+		{"GET", "/api/card-types", "", 200, "ListCardTypes", nil, "[" + cardTypeJSON + "]"},
+		{"POST", "/api/card-types", `{"name":"bug"}`, 201, "CreateCardType",
+			[]any{domain.CardTypeInput{Name: "bug"}}, cardTypeJSON},
+		{"GET", "/api/card-types" + p1, "", 200, "GetCardType", []any{id1}, cardTypeJSON},
+		{"PUT", "/api/card-types" + p1, `{"name":"bug","color":"#ffffff"}`, 200, "UpdateCardType",
+			[]any{id1, domain.CardTypeInput{Name: "bug", Color: "#ffffff"}}, cardTypeJSON},
+		{"DELETE", "/api/card-types" + p1, "", 204, "DeleteCardType", []any{id1}, ""},
+
+		{"GET", "/api/cards", "", 200, "ListCards", nil, "[" + cardJSON + "]"},
+		{"POST", "/api/cards",
+			fmt.Sprintf(`{"title":"t","description":"d","card_type_id":%q,"project_id":%q,"lane_id":%q,"parent_card_id":%q}`, id2, id1, id2, id1),
+			201, "CreateCard",
+			[]any{domain.NewCard{
+				CardInput:    domain.CardInput{Title: "t", Description: "d", CardTypeID: id2, ProjectID: &id1},
+				LaneID:       id2,
+				ParentCardID: &id1,
+			}}, cardJSON},
+		{"GET", "/api/cards" + p1, "", 200, "GetCard", []any{id1}, cardJSON},
+		{"PUT", "/api/cards" + p1, fmt.Sprintf(`{"title":"t","card_type_id":%q}`, id2), 200, "UpdateCard",
+			[]any{id1, domain.CardInput{Title: "t", CardTypeID: id2}}, cardJSON},
+		{"POST", "/api/cards" + p1 + "/move", fmt.Sprintf(`{"lane_id":%q,"position":2}`, id2), 200, "MoveCard",
+			[]any{id1, id2, 2}, cardJSON},
+		{"DELETE", "/api/cards" + p1, "", 204, "DeleteCard", []any{id1}, ""},
+		{"GET", "/api/cards" + p1 + "/children", "", 200, "ListChildCards", []any{id1}, "[" + cardJSON + "]"},
+		{"GET", "/api/cards" + p1 + "/events", "", 200, "ListCardEvents", []any{id1}, "[" + cardEventJSON + "]"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
+			b := newStub()
+			rec := do(t, newHandler(b, &bytes.Buffer{}), tt.method, tt.path, tt.body)
+			if rec.Code != tt.status {
+				t.Fatalf("status %d, want %d: %s", rec.Code, tt.status, rec.Body)
+			}
+			if b.call != tt.call || !reflect.DeepEqual(b.args, tt.args) {
+				t.Fatalf("called %s%+v, want %s%+v", b.call, b.args, tt.call, tt.args)
+			}
+			if tt.response == "" {
+				if rec.Body.Len() != 0 {
+					t.Fatalf("unexpected body %s", rec.Body)
+				}
+				return
+			}
+			if got, want := decode(t, rec.Body.Bytes()), decode(t, []byte(tt.response)); !reflect.DeepEqual(got, want) {
+				t.Fatalf("body %s\nwant %s", rec.Body, tt.response)
+			}
+		})
+	}
+}
+
+func TestErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		status int
+		body   string
+	}{
+		{"validation", &domain.ValidationError{Field: "name", Message: "is required"}, 422,
+			`{"code":"validation","message":"name: is required","field":"name"}`},
+		{"not found", domain.ErrNotFound, 404, `{"code":"not_found","message":"not found"}`},
+		{"conflict", fmt.Errorf("%w: lanes_name_key", domain.ErrConflict), 409,
+			`{"code":"conflict","message":"conflict: lanes_name_key"}`},
+		{"in use", domain.ErrInUse, 409, `{"code":"in_use","message":"in use"}`},
+		{"invalid reference", domain.ErrInvalidReference, 422, `{"code":"invalid_reference","message":"invalid reference"}`},
+		{"internal", errors.New("db down"), 500, `{"code":"internal","message":"internal error"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := newStub()
+			b.err = tt.err
+			var log bytes.Buffer
+			rec := do(t, newHandler(b, &log), "GET", "/api/lanes", "")
+			if rec.Code != tt.status {
+				t.Fatalf("status %d, want %d", rec.Code, tt.status)
+			}
+			if got, want := decode(t, rec.Body.Bytes()), decode(t, []byte(tt.body)); !reflect.DeepEqual(got, want) {
+				t.Fatalf("body %s, want %s", rec.Body, tt.body)
+			}
+			if logged := strings.Contains(log.String(), "db down"); logged != (tt.status == 500) {
+				t.Fatalf("log = %q", log.String())
+			}
+		})
+	}
+}
+
+func TestBadRequests(t *testing.T) {
+	tests := map[string][3]string{
+		"malformed body": {"POST", "/api/lanes", `{"name":`},
+		"malformed id":   {"GET", "/api/lanes/not-a-uuid", ""},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			b := newStub()
+			rec := do(t, newHandler(b, &bytes.Buffer{}), tt[0], tt[1], tt[2])
+			if rec.Code != http.StatusBadRequest || b.call != "" {
+				t.Fatalf("status %d, call %q", rec.Code, b.call)
+			}
+			var body struct{ Code string }
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body.Code != "bad_request" {
+				t.Fatalf("body %s", rec.Body)
+			}
+		})
+	}
+}
+
+func TestToEntity(t *testing.T) {
+	b := newStub()
+	tests := []struct {
+		in   any
+		want string
+	}{
+		{b.lane, laneJSON},
+		{b.project, projectJSON},
+		{b.cardType, cardTypeJSON},
+		{b.card, cardJSON},
+		{nil, "null"},
+	}
+	for _, tt := range tests {
+		data, err := json.Marshal(toEntity(tt.in))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := decode(t, data), decode(t, []byte(tt.want)); !reflect.DeepEqual(got, want) {
+			t.Errorf("toEntity(%T) = %s, want %s", tt.in, data, tt.want)
+		}
+	}
+}

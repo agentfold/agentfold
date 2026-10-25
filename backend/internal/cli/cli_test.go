@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"strings"
 	"testing"
@@ -20,9 +21,7 @@ func TestRun(t *testing.T) {
 		{name: "short help flag", args: []string{"-h"}, wantCode: ExitOK, wantStdout: "server"},
 		{name: "long help flag", args: []string{"--help"}, wantCode: ExitOK, wantStdout: "worker"},
 		{name: "unknown command", args: []string{"nope"}, wantCode: ExitUsage, wantStderr: `unknown command "nope"`},
-		{name: "server not implemented", args: []string{"server"}, wantCode: ExitError, wantStderr: "orquestrator server: not implemented yet"},
-		{name: "worker not implemented", args: []string{"worker"}, wantCode: ExitError, wantStderr: "not implemented yet"},
-		{name: "migrate not implemented", args: []string{"migrate"}, wantCode: ExitError, wantStderr: "not implemented yet"},
+		{name: "worker not implemented", args: []string{"worker"}, wantCode: ExitError, wantStderr: "orquestrator worker: not implemented yet"},
 		{name: "agent not implemented", args: []string{"agent", "login", "claude"}, wantCode: ExitError, wantStderr: "not implemented yet"},
 	}
 
@@ -30,7 +29,7 @@ func TestRun(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 
-			code := Run(tt.args, &stdout, &stderr)
+			code := Run(context.Background(), tt.args, &stdout, &stderr)
 
 			if code != tt.wantCode {
 				t.Errorf("exit code = %d, want %d", code, tt.wantCode)
@@ -50,13 +49,13 @@ func TestRunSuccessfulCommand(t *testing.T) {
 	t.Cleanup(func() { commands = original })
 
 	var gotArgs []string
-	commands = []command{{name: "ok", run: func(args []string, _ io.Writer) error {
+	commands = []command{{name: "ok", run: func(_ context.Context, args []string, _, _ io.Writer) error {
 		gotArgs = args
 		return nil
 	}}}
 
 	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"ok", "a", "b"}, &stdout, &stderr); code != ExitOK {
+	if code := Run(context.Background(), []string{"ok", "a", "b"}, &stdout, &stderr); code != ExitOK {
 		t.Fatalf("exit code = %d, want %d", code, ExitOK)
 	}
 	if strings.Join(gotArgs, " ") != "a b" {

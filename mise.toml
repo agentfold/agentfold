@@ -1,5 +1,6 @@
 [tools]
 go = "1.27.3"
+"go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen" = "2.8.1"
 golangci-lint = "2.15.0"
 node = "24.22.1"
 pnpm = "12.15.0"
@@ -9,9 +10,9 @@ sqlc = "1.31.1"
 # --- backend -------------------------------------------------------------
 
 [tasks."backend:generate"]
-description = "Regenerate sqlc code"
+description = "Regenerate sqlc and oapi-codegen code"
 dir = "{{config_root}}/backend"
-run = "sqlc generate"
+run = ["sqlc generate", "oapi-codegen -config oapi-codegen.yaml ../api/openapi.yaml"]
 
 [tasks."backend:build"]
 description = "Build the orquestrator binary into backend/bin"
@@ -26,12 +27,22 @@ run = "go test -race ./..."
 [tasks."backend:lint"]
 description = "Lint Go code and scripts"
 dir = "{{config_root}}/backend"
-run = ["sqlc diff", "golangci-lint run ./...", "shellcheck scripts/*.sh"]
+run = ["./scripts/check-generated.sh", "golangci-lint run ./...", "shellcheck scripts/*.sh"]
 
 [tasks."backend:cover"]
 description = "Run Go tests and fail below 100% coverage"
 dir = "{{config_root}}/backend"
 run = "./scripts/coverage.sh"
+
+[tasks."backend:serve"]
+description = "Migrate the dev database and run the API server on 127.0.0.1:8080"
+dir = "{{config_root}}/backend"
+env = { ORQ_DATABASE_URL = "postgres://orquestrator:orquestrator@127.0.0.1:5432/orquestrator?sslmode=disable" }
+run = [
+  "go build -o bin/orquestrator ./cmd/orquestrator",
+  "bin/orquestrator migrate",
+  "bin/orquestrator server",
+]
 
 # --- web -----------------------------------------------------------------
 
@@ -78,7 +89,7 @@ run = "docker compose down"
 # --- aggregates ----------------------------------------------------------
 
 [tasks.generate]
-description = "Regenerate code from SQL (and, later, the API contract)"
+description = "Regenerate code from SQL and the API contract"
 depends = ["backend:generate"]
 
 [tasks.build]

@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -21,20 +22,21 @@ var ErrNotImplemented = errors.New("not implemented yet")
 type command struct {
 	name    string
 	summary string
-	run     func(args []string, stdout io.Writer) error
+	run     func(ctx context.Context, args []string, stdout, stderr io.Writer) error
 }
 
-func notImplemented([]string, io.Writer) error { return ErrNotImplemented }
+func notImplemented(context.Context, []string, io.Writer, io.Writer) error { return ErrNotImplemented }
 
 var commands = []command{
-	{name: "server", summary: "run the API, MCP server and flow engine", run: notImplemented},
+	{name: "server", summary: "run the API, MCP server and flow engine", run: runServer},
 	{name: "worker", summary: "run a worker that executes agent jobs", run: notImplemented},
-	{name: "migrate", summary: "apply database migrations", run: notImplemented},
+	{name: "migrate", summary: "apply database migrations", run: runMigrate},
 	{name: "agent", summary: "manage agent profiles (agent login claude)", run: notImplemented},
 }
 
-// Run executes the subcommand named by args[0] and returns the process exit code.
-func Run(args []string, stdout, stderr io.Writer) int {
+// Run executes the subcommand named by args[0] and returns the process exit
+// code. Long-running subcommands stop when ctx is cancelled.
+func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		writeUsage(stderr)
 		return ExitUsage
@@ -50,7 +52,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		if c.name != name {
 			continue
 		}
-		if err := c.run(args[1:], stdout); err != nil {
+		if err := c.run(ctx, args[1:], stdout, stderr); err != nil {
 			_, _ = fmt.Fprintf(stderr, "orquestrator %s: %v\n", name, err)
 			return ExitError
 		}

@@ -1,0 +1,10 @@
+# Generates the REST server types and interface from ../api/openapi.yaml.
+package: openapi
+output: internal/transport/rest/openapi/openapi.gen.go
+generate:
+  models: true
+  std-http-server: true
+  strict-server: true
+output-options:
+  exclude-operation-ids:
+    - streamEvents

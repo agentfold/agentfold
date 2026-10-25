@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"orquestrator/internal/domain"
+	"orquestrator/internal/events"
 )
 
 // Repository persists the board. *store.Store implements it.
@@ -46,15 +47,43 @@ type GitInspector interface {
 	Root(ctx context.Context, path string) (string, error)
 }
 
+// Publisher receives every change made through the service. *events.Hub
+// implements it.
+type Publisher interface {
+	Publish(e events.Event)
+}
+
 // Service implements the board use cases.
 type Service struct {
 	repo Repository
 	git  GitInspector
+	pub  Publisher
 }
 
 // New returns a Service.
-func New(repo Repository, git GitInspector) *Service {
-	return &Service{repo: repo, git: git}
+func New(repo Repository, git GitInspector, pub Publisher) *Service {
+	return &Service{repo: repo, git: git, pub: pub}
+}
+
+// entity is a domain value that board events can refer to.
+type entity interface {
+	EntityID() uuid.UUID
+}
+
+// changed publishes the change of v unless the operation failed.
+func changed[T entity](s *Service, typ string, v T, err error) (T, error) {
+	if err == nil {
+		s.pub.Publish(events.Event{Type: typ, ID: v.EntityID(), Data: v})
+	}
+	return v, err
+}
+
+// deleted publishes the deletion of id unless the operation failed.
+func (s *Service) deleted(typ string, id uuid.UUID, err error) error {
+	if err == nil {
+		s.pub.Publish(events.Event{Type: typ, ID: id})
+	}
+	return err
 }
 
 // ListLanes returns the lanes in board order.
@@ -73,7 +102,8 @@ func (s *Service) CreateLane(ctx context.Context, in domain.LaneInput) (domain.L
 	if err != nil {
 		return domain.Lane{}, err
 	}
-	return s.repo.CreateLane(ctx, in)
+	lane, err := s.repo.CreateLane(ctx, in)
+	return changed(s, "lane.created", lane, err)
 }
 
 // UpdateLane changes the name and color of a lane.
@@ -82,7 +112,8 @@ func (s *Service) UpdateLane(ctx context.Context, id uuid.UUID, in domain.LaneIn
 	if err != nil {
 		return domain.Lane{}, err
 	}
-	return s.repo.UpdateLane(ctx, id, in)
+	lane, err := s.repo.UpdateLane(ctx, id, in)
+	return changed(s, "lane.updated", lane, err)
 }
 
 // MoveLane moves a lane to another position of the board.
@@ -90,12 +121,13 @@ func (s *Service) MoveLane(ctx context.Context, id uuid.UUID, position int) (dom
 	if err := domain.ValidatePosition(position); err != nil {
 		return domain.Lane{}, err
 	}
-	return s.repo.MoveLane(ctx, id, position)
+	lane, err := s.repo.MoveLane(ctx, id, position)
+	return changed(s, "lane.moved", lane, err)
 }
 
 // DeleteLane removes an empty lane.
 func (s *Service) DeleteLane(ctx context.Context, id uuid.UUID) error {
-	return s.repo.DeleteLane(ctx, id)
+	return s.deleted("lane.deleted", id, s.repo.DeleteLane(ctx, id))
 }
 
 // ListProjects returns the projects ordered by name.
@@ -114,7 +146,8 @@ func (s *Service) CreateProject(ctx context.Context, in domain.ProjectInput) (do
 	if err != nil {
 		return domain.Project{}, err
 	}
-	return s.repo.CreateProject(ctx, in)
+	project, err := s.repo.CreateProject(ctx, in)
+	return changed(s, "project.created", project, err)
 }
 
 // UpdateProject changes the name and path of a project.
@@ -123,7 +156,8 @@ func (s *Service) UpdateProject(ctx context.Context, id uuid.UUID, in domain.Pro
 	if err != nil {
 		return domain.Project{}, err
 	}
-	return s.repo.UpdateProject(ctx, id, in)
+	project, err := s.repo.UpdateProject(ctx, id, in)
+	return changed(s, "project.updated", project, err)
 }
 
 // normalizeProject validates the input and replaces the path by the root of
@@ -143,7 +177,7 @@ func (s *Service) normalizeProject(ctx context.Context, in domain.ProjectInput) 
 
 // DeleteProject removes a project no card refers to.
 func (s *Service) DeleteProject(ctx context.Context, id uuid.UUID) error {
-	return s.repo.DeleteProject(ctx, id)
+	return s.deleted("project.deleted", id, s.repo.DeleteProject(ctx, id))
 }
 
 // ListCardTypes returns the card types ordered by name.
@@ -162,7 +196,8 @@ func (s *Service) CreateCardType(ctx context.Context, in domain.CardTypeInput) (
 	if err != nil {
 		return domain.CardType{}, err
 	}
-	return s.repo.CreateCardType(ctx, in)
+	cardType, err := s.repo.CreateCardType(ctx, in)
+	return changed(s, "card_type.created", cardType, err)
 }
 
 // UpdateCardType changes the name and color of a card type.
@@ -171,12 +206,13 @@ func (s *Service) UpdateCardType(ctx context.Context, id uuid.UUID, in domain.Ca
 	if err != nil {
 		return domain.CardType{}, err
 	}
-	return s.repo.UpdateCardType(ctx, id, in)
+	cardType, err := s.repo.UpdateCardType(ctx, id, in)
+	return changed(s, "card_type.updated", cardType, err)
 }
 
 // DeleteCardType removes a card type no card uses.
 func (s *Service) DeleteCardType(ctx context.Context, id uuid.UUID) error {
-	return s.repo.DeleteCardType(ctx, id)
+	return s.deleted("card_type.deleted", id, s.repo.DeleteCardType(ctx, id))
 }
 
 // ListCards returns every card, grouped by lane in board order.
@@ -203,7 +239,8 @@ func (s *Service) CreateCard(ctx context.Context, in domain.NewCard) (domain.Car
 	if err != nil {
 		return domain.Card{}, err
 	}
-	return s.repo.CreateCard(ctx, in)
+	card, err := s.repo.CreateCard(ctx, in)
+	return changed(s, "card.created", card, err)
 }
 
 // UpdateCard changes the editable fields of a card.
@@ -212,7 +249,8 @@ func (s *Service) UpdateCard(ctx context.Context, id uuid.UUID, in domain.CardIn
 	if err != nil {
 		return domain.Card{}, err
 	}
-	return s.repo.UpdateCard(ctx, id, in)
+	card, err := s.repo.UpdateCard(ctx, id, in)
+	return changed(s, "card.updated", card, err)
 }
 
 // MoveCard places a card at a position of a lane.
@@ -220,12 +258,13 @@ func (s *Service) MoveCard(ctx context.Context, id, laneID uuid.UUID, position i
 	if err := domain.ValidatePosition(position); err != nil {
 		return domain.Card{}, err
 	}
-	return s.repo.MoveCard(ctx, id, laneID, position)
+	card, err := s.repo.MoveCard(ctx, id, laneID, position)
+	return changed(s, "card.moved", card, err)
 }
 
 // DeleteCard removes a card without children.
 func (s *Service) DeleteCard(ctx context.Context, id uuid.UUID) error {
-	return s.repo.DeleteCard(ctx, id)
+	return s.deleted("card.deleted", id, s.repo.DeleteCard(ctx, id))
 }
 
 // ListCardEvents returns the timeline of a card, oldest first.
