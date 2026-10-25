@@ -10,6 +10,8 @@ import {
   type Card,
   type CardInput,
   type CardTypeInput,
+  type FlowGraph,
+  type FlowInput,
   type LaneInput,
   type NewCard,
   type ProjectInput,
@@ -22,6 +24,8 @@ export const keys = {
   projects: ['projects'],
   cardTypes: ['cardTypes'],
   cards: ['cards'],
+  flows: ['flows'],
+  flow: (id: string) => ['flows', id],
 } as const
 
 const byId = (id: string) => ({ params: { path: { id } } })
@@ -57,6 +61,22 @@ export function useCards() {
   return useQuery({
     queryKey: keys.cards,
     queryFn: () => unwrap(client.GET('/cards')),
+  })
+}
+
+export function useFlows() {
+  const { client } = useApi()
+  return useQuery({
+    queryKey: keys.flows,
+    queryFn: () => unwrap(client.GET('/flows')),
+  })
+}
+
+export function useFlow(id: string) {
+  const { client } = useApi()
+  return useQuery({
+    queryKey: keys.flow(id),
+    queryFn: () => unwrap(client.GET('/flows/{id}', byId(id))),
   })
 }
 
@@ -167,6 +187,41 @@ export function useDeleteCard() {
   const { client } = useApi()
   return useChange(keys.cards, (id: string) =>
     unwrap(client.DELETE('/cards/{id}', byId(id))),
+  )
+}
+
+export function useCreateFlow() {
+  const { client } = useApi()
+  return useChange(keys.flows, (name: string) =>
+    unwrap(client.POST('/flows', { body: { name } })),
+  )
+}
+
+export function useUpdateFlow() {
+  const { client } = useApi()
+  return useChange(keys.flows, ({ id, ...body }: FlowInput & { id: string }) =>
+    unwrap(client.PUT('/flows/{id}', { ...byId(id), body })),
+  )
+}
+
+export function useDeleteFlow() {
+  const { client } = useApi()
+  return useChange(keys.flows, (id: string) =>
+    unwrap(client.DELETE('/flows/{id}', byId(id))),
+  )
+}
+
+export function useSaveFlowDraft(id: string) {
+  const { client } = useApi()
+  return useChange(keys.flows, (body: FlowGraph) =>
+    unwrap(client.PUT('/flows/{id}/draft', { ...byId(id), body })),
+  )
+}
+
+export function usePublishFlow(id: string) {
+  const { client } = useApi()
+  return useChange(keys.flows, () =>
+    unwrap(client.POST('/flows/{id}/publish', byId(id))),
   )
 }
 

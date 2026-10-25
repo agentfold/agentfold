@@ -39,6 +39,15 @@ type Repository interface {
 	MoveCard(ctx context.Context, id, laneID uuid.UUID, position int) (domain.Card, error)
 	DeleteCard(ctx context.Context, id uuid.UUID) error
 	ListCardEvents(ctx context.Context, cardID uuid.UUID) ([]domain.CardEvent, error)
+
+	ListFlows(ctx context.Context) ([]domain.Flow, error)
+	GetFlow(ctx context.Context, id uuid.UUID) (domain.Flow, error)
+	CreateFlow(ctx context.Context, name string, draft domain.Graph) (domain.Flow, error)
+	UpdateFlow(ctx context.Context, id uuid.UUID, in domain.FlowInput) (domain.Flow, error)
+	SaveFlowDraft(ctx context.Context, id uuid.UUID, draft domain.Graph) (domain.Flow, error)
+	DeleteFlow(ctx context.Context, id uuid.UUID) error
+	PublishFlow(ctx context.Context, id uuid.UUID, graph domain.Graph) (domain.FlowVersion, error)
+	ListFlowVersions(ctx context.Context, flowID uuid.UUID) ([]domain.FlowVersion, error)
 }
 
 // GitInspector finds the repository that contains a path. *gitrepo.Inspector

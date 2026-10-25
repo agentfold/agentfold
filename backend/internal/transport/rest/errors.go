@@ -26,7 +26,13 @@ func badRequest(w http.ResponseWriter, _ *http.Request, err error) {
 func errorWriter(log *slog.Logger) func(http.ResponseWriter, *http.Request, error) {
 	return func(w http.ResponseWriter, r *http.Request, err error) {
 		var verr *domain.ValidationError
+		var gerr *domain.GraphError
 		switch {
+		case errors.As(err, &gerr):
+			problems := toProblems(gerr.Problems)
+			writeJSON(w, http.StatusUnprocessableEntity, openapi.Error{
+				Code: openapi.InvalidGraph, Message: "the draft has problems", Problems: &problems,
+			})
 		case errors.As(err, &verr):
 			writeJSON(w, http.StatusUnprocessableEntity, openapi.Error{
 				Code: openapi.Validation, Message: verr.Error(), Field: &verr.Field,

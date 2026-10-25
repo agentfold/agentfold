@@ -57,6 +57,8 @@ func toEntity(v any) any {
 		return toCardType(v)
 	case domain.Card:
 		return toCard(v)
+	case domain.Flow:
+		return toFlowSummary(v)
 	}
 	return nil
 }

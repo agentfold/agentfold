@@ -62,7 +62,7 @@ func run(m *testing.M) (int, error) {
 // newStore returns a Store over an empty database.
 func newStore(t *testing.T) *Store {
 	t.Helper()
-	_, err := pool.Exec(context.Background(), "TRUNCATE card_events, cards, card_types, projects, lanes")
+	_, err := pool.Exec(context.Background(), "TRUNCATE flow_versions, flows, card_events, cards, card_types, projects, lanes")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,4 +164,18 @@ func (f *failing) PlaceCard(ctx context.Context, arg sqlcgen.PlaceCardParams) (s
 		return sqlcgen.Card{}, err
 	}
 	return f.Querier.PlaceCard(ctx, arg)
+}
+
+func (f *failing) NextFlowVersion(ctx context.Context, flowID uuid.UUID) (int32, error) {
+	if err := f.hit("NextFlowVersion"); err != nil {
+		return 0, err
+	}
+	return f.Querier.NextFlowVersion(ctx, flowID)
+}
+
+func (f *failing) InsertFlowVersion(ctx context.Context, arg sqlcgen.InsertFlowVersionParams) (sqlcgen.FlowVersion, error) {
+	if err := f.hit("InsertFlowVersion"); err != nil {
+		return sqlcgen.FlowVersion{}, err
+	}
+	return f.Querier.InsertFlowVersion(ctx, arg)
 }

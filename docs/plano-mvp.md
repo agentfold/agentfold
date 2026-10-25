@@ -69,11 +69,14 @@ orquestrator/
 - **Pronto quando:** board funcional contra a API real, 100% de cobertura.
 
 ### F4 — Fluxos
-- Migrations `flows`, `flow_versions` e `lanes.scope`/`lanes.flow_id` (baias do fluxo); endpoints de fluxo; validação do grafo no backend
+- Migrations `flows`, `flow_versions`; endpoints de fluxo; validação do grafo no backend
   (um Trigger, arestas válidas por tipo de saída, nós alcançáveis).
 - Editor ReactFlow: paleta (Trigger, Agent, Review, MoveCard, End), painel de configuração por nó
-  (filtro por tipo no Trigger; MCPs externos e schema de saída no Agent), salvar rascunho,
+  (filtro por tipo no Trigger; schema de saída no Agent), salvar rascunho,
   publicar versão.
+- Decidido: um rascunho por fluxo + versões imutáveis ao publicar; o grafo só é validado ao
+  publicar (o rascunho aceita grafo incompleto e devolve os problemas); baias continuam só
+  globais (baias do fluxo adiadas até haver caso de uso).
 - **Pronto quando:** fluxo desenhado, validado e publicado com versão.
 
 ### F5 — Perfis de agente, fila, worker e runner
@@ -81,6 +84,7 @@ orquestrator/
 - `orquestrator agent login claude`: abre o CLI num perfil isolado, guia o `setup-token`, grava token criptografado.
 - Cadastro de MCPs externos (API + tela), segredos criptografados; montagem do `--mcp-config`
   com o MCP do board + MCPs do nó.
+- Nó Agent e Review ganham os seletores de perfil e (Agent) de MCPs externos no editor.
 - Card sem projeto: workspace vazio em vez de worktree.
 - Fila Postgres (SKIP LOCKED, lease/heartbeat, LISTEN/NOTIFY, filtro por `requirements`) e
   subcomando `worker` anunciando o próprio host.

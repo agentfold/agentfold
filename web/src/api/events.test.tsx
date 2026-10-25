@@ -25,6 +25,8 @@ describe('useBoardEvents', () => {
     expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['projects'] })
     events.emit('card_type.created')
     expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['cardTypes'] })
+    events.emit('flow.published')
+    expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['flows'] })
   })
 
   it('refreshes everything when the stream (re)connects', () => {

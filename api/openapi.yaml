@@ -327,6 +327,119 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/CardEvent" }
         default: { $ref: "#/components/responses/Error" }
+  /flows:
+    get:
+      operationId: listFlows
+      tags: [flows]
+      responses:
+        "200":
+          description: All flows, without their drafts.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/FlowSummary" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createFlow
+      tags: [flows]
+      description: Creates a disabled flow whose draft holds a single trigger.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NewFlow" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Flow" }
+        default: { $ref: "#/components/responses/Error" }
+  /flows/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: getFlow
+      tags: [flows]
+      responses:
+        "200":
+          description: The flow, its draft and the problems of the draft.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Flow" }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      operationId: updateFlow
+      tags: [flows]
+      description: Renames the flow and turns it on or off. Only published flows can be enabled.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FlowInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Flow" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteFlow
+      tags: [flows]
+      responses:
+        "204":
+          description: Deleted, with its versions.
+        default: { $ref: "#/components/responses/Error" }
+  /flows/{id}/draft:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    put:
+      operationId: saveFlowDraft
+      tags: [flows]
+      description: Replaces the draft. Drafts may be incomplete; their problems come back in the response.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FlowGraph" }
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Flow" }
+        default: { $ref: "#/components/responses/Error" }
+  /flows/{id}/publish:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      operationId: publishFlow
+      tags: [flows]
+      description: Freezes the draft into the next version. Fails with invalid_graph when the draft has problems.
+      responses:
+        "201":
+          description: Published.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FlowVersion" }
+        default: { $ref: "#/components/responses/Error" }
+  /flows/{id}/versions:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: listFlowVersions
+      tags: [flows]
+      responses:
+        "200":
+          description: The published versions, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/FlowVersion" }
+        default: { $ref: "#/components/responses/Error" }
   /events:
     get:
       operationId: streamEvents
@@ -362,11 +475,15 @@ components:
       properties:
         code:
           type: string
-          enum: [bad_request, validation, not_found, conflict, in_use, invalid_reference, internal]
+          enum: [bad_request, validation, not_found, conflict, in_use, invalid_reference, invalid_graph, internal]
         message: { type: string }
         field:
           type: string
           description: Invalid field, for validation errors.
+        problems:
+          type: array
+          description: What prevents publishing, for invalid_graph errors.
+          items: { $ref: "#/components/schemas/GraphProblem" }
     Color:
       type: string
       description: Empty or "#rrggbb".
@@ -481,8 +598,8 @@ components:
       type: object
       description: >
         A change to the board. `type` is "<entity>.<change>", with entity one of
-        lane, project, card_type, card and change one of created, updated,
-        moved, deleted.
+        lane, project, card_type, card, flow and change one of created,
+        updated, moved, deleted, published.
       required: [type, id]
       properties:
         type:
@@ -496,3 +613,208 @@ components:
           type: object
           additionalProperties: true
           description: The entity after the change; absent when it was deleted.
+    FlowSummary:
+      type: object
+      required: [id, name, enabled, latest_version, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        enabled:
+          type: boolean
+          description: Whether the latest version starts runs for cards.
+        latest_version:
+          type: integer
+          description: Number of the last published version; 0 if never published.
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Flow:
+      allOf:
+        - $ref: "#/components/schemas/FlowSummary"
+        - type: object
+          required: [draft, problems]
+          properties:
+            draft: { $ref: "#/components/schemas/FlowGraph" }
+            problems:
+              type: array
+              description: What prevents publishing the draft; empty when it can be published.
+              items: { $ref: "#/components/schemas/GraphProblem" }
+    NewFlow:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+    FlowInput:
+      type: object
+      required: [name, enabled]
+      properties:
+        name: { type: string }
+        enabled: { type: boolean }
+    FlowVersion:
+      type: object
+      required: [id, flow_id, version, graph, published_at]
+      properties:
+        id: { type: string, format: uuid }
+        flow_id: { type: string, format: uuid }
+        version: { type: integer }
+        graph: { $ref: "#/components/schemas/FlowGraph" }
+        published_at: { type: string, format: date-time }
+    GraphProblem:
+      type: object
+      required: [message]
+      properties:
+        node_id: { type: string }
+        edge_id: { type: string }
+        message: { type: string }
+    FlowGraph:
+      type: object
+      required: [nodes, edges]
+      properties:
+        nodes:
+          type: array
+          items: { $ref: "#/components/schemas/FlowNode" }
+        edges:
+          type: array
+          items: { $ref: "#/components/schemas/FlowEdge" }
+    FlowEdge:
+      type: object
+      description: Connects an output (source_handle) of a node to another node.
+      required: [id, source, source_handle, target]
+      properties:
+        id: { type: string }
+        source: { type: string }
+        source_handle:
+          type: string
+          description: >
+            Output of the source node: trigger and move_card have "next";
+            agent has "done" and "failed"; review has "approved",
+            "changes_requested" and "max_rounds_exceeded"; end has none.
+        target: { type: string }
+    Position:
+      type: object
+      required: [x, y]
+      properties:
+        x: { type: number }
+        y: { type: number }
+    FlowNode:
+      description: >
+        A step of the flow. Configs may be incomplete in drafts; publishing
+        reports what is missing.
+      oneOf:
+        - $ref: "#/components/schemas/TriggerNode"
+        - $ref: "#/components/schemas/AgentNode"
+        - $ref: "#/components/schemas/ReviewNode"
+        - $ref: "#/components/schemas/MoveCardNode"
+        - $ref: "#/components/schemas/EndNode"
+      discriminator:
+        propertyName: type
+        mapping:
+          trigger: "#/components/schemas/TriggerNode"
+          agent: "#/components/schemas/AgentNode"
+          review: "#/components/schemas/ReviewNode"
+          move_card: "#/components/schemas/MoveCardNode"
+          end: "#/components/schemas/EndNode"
+    TriggerNode:
+      type: object
+      required: [id, type, position, config]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [trigger] }
+        position: { $ref: "#/components/schemas/Position" }
+        config: { $ref: "#/components/schemas/TriggerConfig" }
+    AgentNode:
+      type: object
+      required: [id, type, position, config]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [agent] }
+        position: { $ref: "#/components/schemas/Position" }
+        config: { $ref: "#/components/schemas/AgentConfig" }
+    ReviewNode:
+      type: object
+      required: [id, type, position, config]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [review] }
+        position: { $ref: "#/components/schemas/Position" }
+        config: { $ref: "#/components/schemas/ReviewConfig" }
+    MoveCardNode:
+      type: object
+      required: [id, type, position, config]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [move_card] }
+        position: { $ref: "#/components/schemas/Position" }
+        config: { $ref: "#/components/schemas/MoveCardConfig" }
+    EndNode:
+      type: object
+      required: [id, type, position, config]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [end] }
+        position: { $ref: "#/components/schemas/Position" }
+        config:
+          type: object
+          additionalProperties: false
+    TriggerConfig:
+      type: object
+      description: Starts the flow when a card is created or enters a lane, optionally only for some card types.
+      properties:
+        event:
+          type: string
+          enum: [card_created, card_entered_lane]
+        lane_id:
+          type: string
+          format: uuid
+          description: Required for card_entered_lane.
+        card_type_ids:
+          type: array
+          description: Card types that start the flow; empty or absent means all.
+          items: { type: string, format: uuid }
+    AgentConfig:
+      type: object
+      description: Runs an agent session on the card's workspace.
+      properties:
+        prompt:
+          type: string
+          description: Initial prompt. Required to publish.
+        allowed_tools:
+          type: array
+          items: { type: string }
+        disallowed_tools:
+          type: array
+          items: { type: string }
+        output_schema:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: JSON Schema the agent's structured output must satisfy.
+        max_turns:
+          type: integer
+          minimum: 1
+        model:
+          type: string
+    ReviewConfig:
+      type: object
+      description: Runs a reviewer on the work of the previous agent.
+      properties:
+        prompt:
+          type: string
+          description: Review prompt. Required to publish.
+        allowed_tools:
+          type: array
+          items: { type: string }
+        disallowed_tools:
+          type: array
+          items: { type: string }
+        max_rounds:
+          type: integer
+          minimum: 1
+          description: Rounds of changes before the max_rounds_exceeded output. Required to publish.
+    MoveCardConfig:
+      type: object
+      description: Moves the card to a lane.
+      properties:
+        lane_id:
+          type: string
+          format: uuid
+          description: Required to publish.

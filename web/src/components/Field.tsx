@@ -31,6 +31,7 @@ interface TextFieldProps {
   hint?: string
   placeholder?: string
   autoFocus?: boolean
+  type?: 'text' | 'number'
 }
 
 export function TextField({
@@ -40,12 +41,14 @@ export function TextField({
   hint,
   placeholder,
   autoFocus,
+  type = 'text',
 }: TextFieldProps) {
   return (
     <Field label={label} hint={hint}>
       {(id) => (
         <input
           id={id}
+          type={type}
           className={inputClass}
           value={value}
           placeholder={placeholder}
@@ -59,18 +62,30 @@ export function TextField({
   )
 }
 
+interface TextAreaProps {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  hint?: string
+  rows?: number
+  mono?: boolean
+}
+
 export function TextArea({
   label,
   value,
   onChange,
-}: Omit<TextFieldProps, 'hint'>) {
+  hint,
+  rows = 4,
+  mono = false,
+}: TextAreaProps) {
   return (
-    <Field label={label}>
+    <Field label={label} hint={hint}>
       {(id) => (
         <textarea
           id={id}
-          rows={4}
-          className={inputClass}
+          rows={rows}
+          className={`${inputClass} ${mono ? 'font-mono text-xs' : ''}`}
           value={value}
           onChange={(e) => {
             onChange(e.target.value)

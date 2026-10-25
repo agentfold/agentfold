@@ -13,6 +13,18 @@ export type Card = Schemas['Card']
 export type CardInput = Schemas['CardInput']
 export type NewCard = Schemas['NewCard']
 export type CardEvent = Schemas['CardEvent']
+export type FlowSummary = Schemas['FlowSummary']
+export type Flow = Schemas['Flow']
+export type FlowInput = Schemas['FlowInput']
+export type FlowVersion = Schemas['FlowVersion']
+export type FlowGraph = Schemas['FlowGraph']
+export type FlowNode = Schemas['FlowNode']
+export type FlowEdge = Schemas['FlowEdge']
+export type GraphProblem = Schemas['GraphProblem']
+export type TriggerConfig = Schemas['TriggerConfig']
+export type AgentConfig = Schemas['AgentConfig']
+export type ReviewConfig = Schemas['ReviewConfig']
+export type MoveCardConfig = Schemas['MoveCardConfig']
 type ErrorBody = Schemas['Error']
 
 export type ApiClient = ReturnType<typeof createClient<paths>>
@@ -77,6 +89,8 @@ export function errorMessage(error: unknown): string {
       return 'Já existe um registro com esse nome.'
     case 'not_found':
       return 'Registro não encontrado. A tela pode estar desatualizada.'
+    case 'invalid_graph':
+      return 'O rascunho tem problemas: corrija-os antes de publicar.'
     case 'internal':
       return 'Erro no servidor.'
     default:

@@ -17,6 +17,7 @@ import (
 
 	"orquestrator/internal/domain"
 	"orquestrator/internal/events"
+	"orquestrator/internal/service"
 )
 
 var (
@@ -32,6 +33,22 @@ func newStub() *stubBoard {
 		cardType:  domain.CardType{ID: id1, Name: "bug", CreatedAt: stamp},
 		card:      domain.Card{ID: id1, Title: "t", CardTypeID: id2, LaneID: id2, ParentCardID: &id2, CreatedAt: stamp, UpdatedAt: stamp},
 		cardEvent: domain.CardEvent{ID: id1, CardID: id2, Type: domain.CardMoved, Payload: []byte(`{"position":1}`), CreatedAt: stamp},
+		flow: service.FlowDetail{
+			Flow:     domain.Flow{ID: id1, Name: "dev", LatestVersion: 2, Draft: stubGraph(), CreatedAt: stamp, UpdatedAt: stamp},
+			Problems: []domain.GraphProblem{{NodeID: "t", Message: "on node"}, {EdgeID: "e", Message: "on edge"}},
+		},
+		version: domain.FlowVersion{ID: id2, FlowID: id1, Version: 2, Graph: stubGraph(), PublishedAt: stamp},
+	}
+}
+
+// stubGraph is trigger -> end, as sent by graphJSON.
+func stubGraph() domain.Graph {
+	return domain.Graph{
+		Nodes: []domain.Node{
+			{ID: "t", Type: domain.NodeTrigger, Position: domain.Position{X: 1, Y: 2}, Config: []byte(`{"event":"card_created"}`)},
+			{ID: "x", Type: domain.NodeEnd, Config: []byte(`{}`)},
+		},
+		Edges: []domain.Edge{{ID: "e", Source: "t", SourceHandle: "next", Target: "x"}},
 	}
 }
 
@@ -69,6 +86,16 @@ const (
 		`"card_type_id":"00000000-0000-7000-8000-000000000002","project_id":null,` +
 		`"parent_card_id":"00000000-0000-7000-8000-000000000002","lane_id":"00000000-0000-7000-8000-000000000002",` +
 		`"position":0,"created_at":"2026-10-25T12:00:00Z","updated_at":"2026-10-25T12:00:00Z"}`
+	graphJSON = `{"nodes":[{"id":"t","type":"trigger","position":{"x":1,"y":2},"config":{"event":"card_created"}},` +
+		`{"id":"x","type":"end","position":{"x":0,"y":0},"config":{}}],` +
+		`"edges":[{"id":"e","source":"t","source_handle":"next","target":"x"}]}`
+	flowSummaryJSON = `{"id":"00000000-0000-7000-8000-000000000001","name":"dev","enabled":false,"latest_version":2,` +
+		`"created_at":"2026-10-25T12:00:00Z","updated_at":"2026-10-25T12:00:00Z"}`
+	flowJSON = `{"id":"00000000-0000-7000-8000-000000000001","name":"dev","enabled":false,"latest_version":2,` +
+		`"created_at":"2026-10-25T12:00:00Z","updated_at":"2026-10-25T12:00:00Z","draft":` + graphJSON + `,` +
+		`"problems":[{"node_id":"t","message":"on node"},{"edge_id":"e","message":"on edge"}]}`
+	versionJSON = `{"id":"00000000-0000-7000-8000-000000000002","flow_id":"00000000-0000-7000-8000-000000000001",` +
+		`"version":2,"graph":` + graphJSON + `,"published_at":"2026-10-25T12:00:00Z"}`
 	cardEventJSON = `{"id":"00000000-0000-7000-8000-000000000001","card_id":"00000000-0000-7000-8000-000000000002",` +
 		`"type":"card.moved","payload":{"position":1},"created_at":"2026-10-25T12:00:00Z"}`
 )
@@ -124,6 +151,16 @@ func TestRoutes(t *testing.T) {
 		{"DELETE", "/api/cards" + p1, "", 204, "DeleteCard", []any{id1}, ""},
 		{"GET", "/api/cards" + p1 + "/children", "", 200, "ListChildCards", []any{id1}, "[" + cardJSON + "]"},
 		{"GET", "/api/cards" + p1 + "/events", "", 200, "ListCardEvents", []any{id1}, "[" + cardEventJSON + "]"},
+
+		{"GET", "/api/flows", "", 200, "ListFlows", nil, "[" + flowSummaryJSON + "]"},
+		{"POST", "/api/flows", `{"name":"dev"}`, 201, "CreateFlow", []any{"dev"}, flowJSON},
+		{"GET", "/api/flows" + p1, "", 200, "GetFlow", []any{id1}, flowJSON},
+		{"PUT", "/api/flows" + p1, `{"name":"dev","enabled":true}`, 200, "UpdateFlow",
+			[]any{id1, domain.FlowInput{Name: "dev", Enabled: true}}, flowJSON},
+		{"DELETE", "/api/flows" + p1, "", 204, "DeleteFlow", []any{id1}, ""},
+		{"PUT", "/api/flows" + p1 + "/draft", graphJSON, 200, "SaveFlowDraft", []any{id1, stubGraph()}, flowJSON},
+		{"POST", "/api/flows" + p1 + "/publish", "", 201, "PublishFlow", []any{id1}, versionJSON},
+		{"GET", "/api/flows" + p1 + "/versions", "", 200, "ListFlowVersions", []any{id1}, "[" + versionJSON + "]"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
@@ -162,6 +199,8 @@ func TestErrors(t *testing.T) {
 			`{"code":"conflict","message":"conflict: lanes_name_key"}`},
 		{"in use", domain.ErrInUse, 409, `{"code":"in_use","message":"in use"}`},
 		{"invalid reference", domain.ErrInvalidReference, 422, `{"code":"invalid_reference","message":"invalid reference"}`},
+		{"invalid graph", &domain.GraphError{Problems: []domain.GraphProblem{{Message: "no trigger"}}}, 422,
+			`{"code":"invalid_graph","message":"the draft has problems","problems":[{"message":"no trigger"}]}`},
 		{"internal", errors.New("db down"), 500, `{"code":"internal","message":"internal error"}`},
 	}
 	for _, tt := range tests {
@@ -203,6 +242,18 @@ func TestBadRequests(t *testing.T) {
 	}
 }
 
+func TestMalformedGraphNode(t *testing.T) {
+	b := newStub()
+	rec := do(t, newHandler(b, &bytes.Buffer{}), "PUT", "/api/flows/"+id1.String()+"/draft", `{"nodes":[5],"edges":[]}`)
+	if rec.Code != http.StatusUnprocessableEntity || b.call != "" {
+		t.Fatalf("status %d, call %q, body %s", rec.Code, b.call, rec.Body)
+	}
+	var body struct{ Code, Field string }
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body.Code != "validation" || body.Field != "nodes" {
+		t.Fatalf("body %s", rec.Body)
+	}
+}
+
 func TestToEntity(t *testing.T) {
 	b := newStub()
 	tests := []struct {
@@ -213,6 +264,7 @@ func TestToEntity(t *testing.T) {
 		{b.project, projectJSON},
 		{b.cardType, cardTypeJSON},
 		{b.card, cardJSON},
+		{b.flow.Flow, flowSummaryJSON},
 		{nil, "null"},
 	}
 	for _, tt := range tests {

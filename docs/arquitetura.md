@@ -84,15 +84,15 @@ interfaces para viabilizar 100% de cobertura com fakes.
 
 | Tabela | Campos principais |
 |---|---|
-| `lanes` | id, name, scope (`global`/`flow`), flow_id?, position, color |
+| `lanes` | id, name, position, color (baias do fluxo — `scope`/`flow_id` — adiadas) |
 | `projects` | id, name, source_kind (`local`; futuro `git`), local_path (repo git), remote_url? e credential_id? (futuro) |
 | `card_types` | id, name, color |
 | `cards` | id, title, description, card_type_id, project_id?, parent_card_id?, lane_id, position, created_at |
 | `mcp_servers` | id, name, transport (`stdio`/`http`), config jsonb, secrets (criptografados) |
 | `card_events` | id, card_id, type, payload jsonb, created_at — linha do tempo do card |
 | `agent_profiles` | id, kind (`claude`), name, credential (criptografada), status |
-| `flows` | id, name, enabled |
-| `flow_versions` | id, flow_id, version, graph jsonb (formato ReactFlow + config dos nós), published_at |
+| `flows` | id, name, enabled, draft jsonb (rascunho editável) |
+| `flow_versions` | id, flow_id, version, graph jsonb (nós com config + arestas por saída), published_at |
 | `flow_runs` | id, flow_version_id, card_id, trigger, status, started_at, finished_at |
 | `node_runs` | id, flow_run_id, node_key, status, iteration, input jsonb, output jsonb, session_id?, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error |
 | `agent_sessions` | id, flow_run_id, node_key, profile_id, claude_session_id, config_dir |

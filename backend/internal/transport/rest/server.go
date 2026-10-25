@@ -12,6 +12,7 @@ import (
 
 	"orquestrator/internal/domain"
 	"orquestrator/internal/events"
+	"orquestrator/internal/service"
 	"orquestrator/internal/transport/rest/openapi"
 )
 
@@ -44,6 +45,15 @@ type Board interface {
 	MoveCard(ctx context.Context, id, laneID uuid.UUID, position int) (domain.Card, error)
 	DeleteCard(ctx context.Context, id uuid.UUID) error
 	ListCardEvents(ctx context.Context, cardID uuid.UUID) ([]domain.CardEvent, error)
+
+	ListFlows(ctx context.Context) ([]domain.Flow, error)
+	GetFlow(ctx context.Context, id uuid.UUID) (service.FlowDetail, error)
+	CreateFlow(ctx context.Context, name string) (service.FlowDetail, error)
+	UpdateFlow(ctx context.Context, id uuid.UUID, in domain.FlowInput) (service.FlowDetail, error)
+	SaveFlowDraft(ctx context.Context, id uuid.UUID, draft domain.Graph) (service.FlowDetail, error)
+	PublishFlow(ctx context.Context, id uuid.UUID) (domain.FlowVersion, error)
+	DeleteFlow(ctx context.Context, id uuid.UUID) error
+	ListFlowVersions(ctx context.Context, id uuid.UUID) ([]domain.FlowVersion, error)
 }
 
 // Subscriber gives access to the live board events. *events.Hub implements it.

@@ -1,17 +1,20 @@
 import { useBoardEvents } from './api/events'
 import { Board } from './board/Board'
 import { CardTypesPage } from './cardTypes/CardTypesPage'
+import { FlowEditor } from './flows/FlowEditor'
+import { FlowsPage } from './flows/FlowsPage'
 import { ProjectsPage } from './projects/ProjectsPage'
-import { pageHref, usePage, type Page } from './route'
+import { pageHref, useRoute, type Page } from './route'
 
 const tabs: { page: Page; label: string }[] = [
   { page: 'board', label: 'Board' },
   { page: 'projects', label: 'Projetos' },
+  { page: 'flows', label: 'Fluxos' },
   { page: 'card-types', label: 'Tipos de card' },
 ]
 
 function App() {
-  const page = usePage()
+  const { page, id } = useRoute()
   useBoardEvents()
 
   return (
@@ -39,6 +42,8 @@ function App() {
         {page === 'board' && <Board />}
         {page === 'projects' && <ProjectsPage />}
         {page === 'card-types' && <CardTypesPage />}
+        {page === 'flows' && !id && <FlowsPage />}
+        {page === 'flows' && id && <FlowEditor key={id} flowId={id} />}
       </main>
     </div>
   )

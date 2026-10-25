@@ -1,5 +1,14 @@
 // An in-memory implementation of the REST API, used as `fetch` in tests.
-import type { Card, CardEvent, CardType, Lane, Project } from '../api/client'
+import type {
+  Card,
+  CardEvent,
+  CardType,
+  Flow,
+  FlowGraph,
+  GraphProblem,
+  Lane,
+  Project,
+} from '../api/client'
 import { laneCards, placeCard } from '../api/placement'
 
 interface State {
@@ -8,6 +17,7 @@ interface State {
   cardTypes: CardType[]
   cards: Card[]
   events: CardEvent[]
+  flows: Flow[]
 }
 
 type Body = Record<string, unknown>
@@ -74,6 +84,44 @@ function invalid(field: string): Reply {
   return [422, { code: 'validation', message: `${field}: is required`, field }]
 }
 
+/** A flow whose draft is a lone trigger, as the server creates them. */
+export function flow(name: string, extra: Partial<Flow> = {}): Flow {
+  return {
+    id: newId(),
+    name,
+    enabled: false,
+    latest_version: 0,
+    created_at: stamp,
+    updated_at: stamp,
+    draft: {
+      nodes: [
+        {
+          id: 'trigger',
+          type: 'trigger',
+          position: { x: 0, y: 0 },
+          config: { event: 'card_created' },
+        },
+      ],
+      edges: [],
+    },
+    problems: [
+      { node_id: 'trigger', message: 'o gatilho precisa estar ligado a um nó' },
+    ],
+    ...extra,
+  }
+}
+
+/**
+ * The fake's stand-in for graph validation: a draft can be published when
+ * every node is connected; otherwise each unconnected node is a problem.
+ */
+function draftProblems(graph: FlowGraph): GraphProblem[] {
+  const linked = new Set(graph.edges.flatMap((e) => [e.source, e.target]))
+  return graph.nodes
+    .filter((n) => !linked.has(n.id))
+    .map((n) => ({ node_id: n.id, message: 'nó solto' }))
+}
+
 export interface FakeBackend {
   state: State
   fetch: typeof fetch
@@ -90,6 +138,7 @@ export function createFakeBackend(initial: Partial<State> = {}): FakeBackend {
     cardTypes: [],
     cards: [],
     events: [],
+    flows: [],
     ...initial,
   }
   const requests: string[] = []
@@ -195,6 +244,62 @@ export function createFakeBackend(initial: Partial<State> = {}): FakeBackend {
         return [200, state.cards.filter((c) => c.parent_card_id === id)]
       case 'GET /cards/:id/events':
         return [200, state.events.filter((e) => e.card_id === id)]
+      case 'GET /flows':
+        return [
+          200,
+          state.flows.map((f) => ({
+            id: f.id,
+            name: f.name,
+            enabled: f.enabled,
+            latest_version: f.latest_version,
+            created_at: f.created_at,
+            updated_at: f.updated_at,
+          })),
+        ]
+      case 'POST /flows': {
+        if (!body.name) return invalid('name')
+        const f = flow(str(body.name))
+        state.flows.push(f)
+        return [201, f]
+      }
+      case 'GET /flows/:id':
+        return find(state.flows, id)
+      case 'PUT /flows/:id':
+        return update(state.flows, id, body)
+      case 'DELETE /flows/:id':
+        return remove(state.flows, id)
+      case 'PUT /flows/:id/draft': {
+        const f = state.flows.find((x) => x.id === id)
+        if (!f) return notFound
+        f.draft = body as unknown as FlowGraph
+        f.problems = draftProblems(f.draft)
+        return [200, f]
+      }
+      case 'POST /flows/:id/publish': {
+        const f = state.flows.find((x) => x.id === id)
+        if (!f) return notFound
+        if (f.problems.length > 0) {
+          return [
+            422,
+            {
+              code: 'invalid_graph',
+              message: 'the draft has problems',
+              problems: f.problems,
+            },
+          ]
+        }
+        f.latest_version++
+        return [
+          201,
+          {
+            id: newId(),
+            flow_id: f.id,
+            version: f.latest_version,
+            graph: f.draft,
+            published_at: stamp,
+          },
+        ]
+      }
     }
     throw new Error(`fake backend: no route for ${key}`)
   }

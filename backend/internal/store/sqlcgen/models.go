@@ -38,6 +38,23 @@ type CardType struct {
 	CreatedAt time.Time
 }
 
+type Flow struct {
+	ID        uuid.UUID
+	Name      string
+	Enabled   bool
+	Draft     []byte
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type FlowVersion struct {
+	ID          uuid.UUID
+	FlowID      uuid.UUID
+	Version     int32
+	Graph       []byte
+	PublishedAt time.Time
+}
+
 type Lane struct {
 	ID        uuid.UUID
 	Name      string

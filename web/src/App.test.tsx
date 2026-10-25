@@ -44,6 +44,12 @@ describe('App', () => {
       screen.getByRole('heading', { name: 'Tipos de card' }),
     ).toBeInTheDocument()
 
+    goTo('#/flows')
+    expect(screen.getByRole('heading', { name: 'Fluxos' })).toBeInTheDocument()
+
+    goTo('#/flows/some-id')
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+
     goTo('#/unknown')
     expect(screen.getByRole('link', { name: 'Board' })).toHaveAttribute(
       'aria-current',

@@ -215,6 +215,98 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/flows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listFlows"];
+        put?: never;
+        /** @description Creates a disabled flow whose draft holds a single trigger. */
+        post: operations["createFlow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flows/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getFlow"];
+        /** @description Renames the flow and turns it on or off. Only published flows can be enabled. */
+        put: operations["updateFlow"];
+        post?: never;
+        delete: operations["deleteFlow"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flows/{id}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Replaces the draft. Drafts may be incomplete; their problems come back in the response. */
+        put: operations["saveFlowDraft"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flows/{id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Freezes the draft into the next version. Fails with invalid_graph when the draft has problems. */
+        post: operations["publishFlow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/flows/{id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["listFlowVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/events": {
         parameters: {
             query?: never;
@@ -238,10 +330,12 @@ export interface components {
     schemas: {
         Error: {
             /** @enum {string} */
-            code: "bad_request" | "validation" | "not_found" | "conflict" | "in_use" | "invalid_reference" | "internal";
+            code: "bad_request" | "validation" | "not_found" | "conflict" | "in_use" | "invalid_reference" | "invalid_graph" | "internal";
             message: string;
             /** @description Invalid field, for validation errors. */
             field?: string;
+            /** @description What prevents publishing, for invalid_graph errors. */
+            problems?: components["schemas"]["GraphProblem"][];
         };
         /**
          * @description Empty or "#rrggbb".
@@ -349,7 +443,7 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
-        /** @description A change to the board. `type` is "<entity>.<change>", with entity one of lane, project, card_type, card and change one of created, updated, moved, deleted. */
+        /** @description A change to the board. `type` is "<entity>.<change>", with entity one of lane, project, card_type, card, flow and change one of created, updated, moved, deleted, published. */
         BoardEvent: {
             /** @example card.moved */
             type: string;
@@ -362,6 +456,156 @@ export interface components {
             data?: {
                 [key: string]: unknown;
             };
+        };
+        FlowSummary: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @description Whether the latest version starts runs for cards. */
+            enabled: boolean;
+            /** @description Number of the last published version; 0 if never published. */
+            latest_version: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        Flow: components["schemas"]["FlowSummary"] & {
+            draft: components["schemas"]["FlowGraph"];
+            /** @description What prevents publishing the draft; empty when it can be published. */
+            problems: components["schemas"]["GraphProblem"][];
+        };
+        NewFlow: {
+            name: string;
+        };
+        FlowInput: {
+            name: string;
+            enabled: boolean;
+        };
+        FlowVersion: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            flow_id: string;
+            version: number;
+            graph: components["schemas"]["FlowGraph"];
+            /** Format: date-time */
+            published_at: string;
+        };
+        GraphProblem: {
+            node_id?: string;
+            edge_id?: string;
+            message: string;
+        };
+        FlowGraph: {
+            nodes: components["schemas"]["FlowNode"][];
+            edges: components["schemas"]["FlowEdge"][];
+        };
+        /** @description Connects an output (source_handle) of a node to another node. */
+        FlowEdge: {
+            id: string;
+            source: string;
+            /** @description Output of the source node: trigger and move_card have "next"; agent has "done" and "failed"; review has "approved", "changes_requested" and "max_rounds_exceeded"; end has none. */
+            source_handle: string;
+            target: string;
+        };
+        Position: {
+            x: number;
+            y: number;
+        };
+        /** @description A step of the flow. Configs may be incomplete in drafts; publishing reports what is missing. */
+        FlowNode: components["schemas"]["TriggerNode"] | components["schemas"]["AgentNode"] | components["schemas"]["ReviewNode"] | components["schemas"]["MoveCardNode"] | components["schemas"]["EndNode"];
+        TriggerNode: {
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "trigger";
+            position: components["schemas"]["Position"];
+            config: components["schemas"]["TriggerConfig"];
+        };
+        AgentNode: {
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "agent";
+            position: components["schemas"]["Position"];
+            config: components["schemas"]["AgentConfig"];
+        };
+        ReviewNode: {
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "review";
+            position: components["schemas"]["Position"];
+            config: components["schemas"]["ReviewConfig"];
+        };
+        MoveCardNode: {
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "move_card";
+            position: components["schemas"]["Position"];
+            config: components["schemas"]["MoveCardConfig"];
+        };
+        EndNode: {
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "end";
+            position: components["schemas"]["Position"];
+            config: Record<string, never>;
+        };
+        /** @description Starts the flow when a card is created or enters a lane, optionally only for some card types. */
+        TriggerConfig: {
+            /** @enum {string} */
+            event?: "card_created" | "card_entered_lane";
+            /**
+             * Format: uuid
+             * @description Required for card_entered_lane.
+             */
+            lane_id?: string;
+            /** @description Card types that start the flow; empty or absent means all. */
+            card_type_ids?: string[];
+        };
+        /** @description Runs an agent session on the card's workspace. */
+        AgentConfig: {
+            /** @description Initial prompt. Required to publish. */
+            prompt?: string;
+            allowed_tools?: string[];
+            disallowed_tools?: string[];
+            /** @description JSON Schema the agent's structured output must satisfy. */
+            output_schema?: {
+                [key: string]: unknown;
+            } | null;
+            max_turns?: number;
+            model?: string;
+        };
+        /** @description Runs a reviewer on the work of the previous agent. */
+        ReviewConfig: {
+            /** @description Review prompt. Required to publish. */
+            prompt?: string;
+            allowed_tools?: string[];
+            disallowed_tools?: string[];
+            /** @description Rounds of changes before the max_rounds_exceeded output. Required to publish. */
+            max_rounds?: number;
+        };
+        /** @description Moves the card to a lane. */
+        MoveCardConfig: {
+            /**
+             * Format: uuid
+             * @description Required to publish.
+             */
+            lane_id?: string;
         };
     };
     responses: {
@@ -947,6 +1191,196 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CardEvent"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listFlows: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All flows, without their drafts. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowSummary"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createFlow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewFlow"];
+            };
+        };
+        responses: {
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Flow"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getFlow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The flow, its draft and the problems of the draft. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Flow"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    updateFlow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlowInput"];
+            };
+        };
+        responses: {
+            /** @description Updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Flow"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteFlow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted, with its versions. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    saveFlowDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlowGraph"];
+            };
+        };
+        responses: {
+            /** @description Saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Flow"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    publishFlow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Published. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowVersion"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listFlowVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The published versions, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowVersion"][];
                 };
             };
             default: components["responses"]["Error"];

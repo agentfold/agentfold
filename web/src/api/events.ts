@@ -10,9 +10,10 @@ const affected: Record<string, QueryKey> = {
   project: keys.projects,
   card_type: keys.cardTypes,
   card: keys.cards,
+  flow: keys.flows,
 }
 
-const changes = ['created', 'updated', 'moved', 'deleted']
+const changes = ['created', 'updated', 'moved', 'deleted', 'published']
 
 /**
  * Keeps the cached board in sync with the server: every board event refreshes

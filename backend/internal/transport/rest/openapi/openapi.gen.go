@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -17,12 +18,43 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AgentNodeType.
+const (
+	Agent AgentNodeType = "agent"
+)
+
+// Valid indicates whether the value is a known member of the AgentNodeType enum.
+func (e AgentNodeType) Valid() bool {
+	switch e {
+	case Agent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EndNodeType.
+const (
+	End EndNodeType = "end"
+)
+
+// Valid indicates whether the value is a known member of the EndNodeType enum.
+func (e EndNodeType) Valid() bool {
+	switch e {
+	case End:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ErrorCode.
 const (
 	BadRequest       ErrorCode = "bad_request"
 	Conflict         ErrorCode = "conflict"
 	InUse            ErrorCode = "in_use"
 	Internal         ErrorCode = "internal"
+	InvalidGraph     ErrorCode = "invalid_graph"
 	InvalidReference ErrorCode = "invalid_reference"
 	NotFound         ErrorCode = "not_found"
 	Validation       ErrorCode = "validation"
@@ -39,11 +71,28 @@ func (e ErrorCode) Valid() bool {
 		return true
 	case Internal:
 		return true
+	case InvalidGraph:
+		return true
 	case InvalidReference:
 		return true
 	case NotFound:
 		return true
 	case Validation:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MoveCardNodeType.
+const (
+	MoveCard MoveCardNodeType = "move_card"
+)
+
+// Valid indicates whether the value is a known member of the MoveCardNodeType enum.
+func (e MoveCardNodeType) Valid() bool {
+	switch e {
+	case MoveCard:
 		return true
 	default:
 		return false
@@ -64,6 +113,80 @@ func (e ProjectSourceKind) Valid() bool {
 		return false
 	}
 }
+
+// Defines values for ReviewNodeType.
+const (
+	Review ReviewNodeType = "review"
+)
+
+// Valid indicates whether the value is a known member of the ReviewNodeType enum.
+func (e ReviewNodeType) Valid() bool {
+	switch e {
+	case Review:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TriggerConfigEvent.
+const (
+	CardCreated     TriggerConfigEvent = "card_created"
+	CardEnteredLane TriggerConfigEvent = "card_entered_lane"
+)
+
+// Valid indicates whether the value is a known member of the TriggerConfigEvent enum.
+func (e TriggerConfigEvent) Valid() bool {
+	switch e {
+	case CardCreated:
+		return true
+	case CardEnteredLane:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TriggerNodeType.
+const (
+	Trigger TriggerNodeType = "trigger"
+)
+
+// Valid indicates whether the value is a known member of the TriggerNodeType enum.
+func (e TriggerNodeType) Valid() bool {
+	switch e {
+	case Trigger:
+		return true
+	default:
+		return false
+	}
+}
+
+// AgentConfig Runs an agent session on the card's workspace.
+type AgentConfig struct {
+	AllowedTools    *[]string `json:"allowed_tools,omitempty"`
+	DisallowedTools *[]string `json:"disallowed_tools,omitempty"`
+	MaxTurns        *int      `json:"max_turns,omitempty"`
+	Model           *string   `json:"model,omitempty"`
+
+	// OutputSchema JSON Schema the agent's structured output must satisfy.
+	OutputSchema *map[string]interface{} `json:"output_schema,omitempty"`
+
+	// Prompt Initial prompt. Required to publish.
+	Prompt *string `json:"prompt,omitempty"`
+}
+
+// AgentNode defines model for AgentNode.
+type AgentNode struct {
+	// Config Runs an agent session on the card's workspace.
+	Config   AgentConfig   `json:"config"`
+	Id       string        `json:"id"`
+	Position Position      `json:"position"`
+	Type     AgentNodeType `json:"type"`
+}
+
+// AgentNodeType defines model for AgentNode.Type.
+type AgentNodeType string
 
 // Card defines model for Card.
 type Card struct {
@@ -129,6 +252,17 @@ type CardTypeInput struct {
 // Example: #3b82f6
 type Color = string
 
+// EndNode defines model for EndNode.
+type EndNode struct {
+	Config   map[string]interface{} `json:"config"`
+	Id       string                 `json:"id"`
+	Position Position               `json:"position"`
+	Type     EndNodeType            `json:"type"`
+}
+
+// EndNodeType defines model for EndNode.Type.
+type EndNodeType string
+
 // Error defines model for Error.
 type Error struct {
 	Code ErrorCode `json:"code"`
@@ -136,10 +270,88 @@ type Error struct {
 	// Field Invalid field, for validation errors.
 	Field   *string `json:"field,omitempty"`
 	Message string  `json:"message"`
+
+	// Problems What prevents publishing, for invalid_graph errors.
+	Problems *[]GraphProblem `json:"problems,omitempty"`
 }
 
 // ErrorCode defines model for Error.Code.
 type ErrorCode string
+
+// Flow defines model for Flow.
+type Flow struct {
+	CreatedAt time.Time `json:"created_at"`
+	Draft     FlowGraph `json:"draft"`
+
+	// Enabled Whether the latest version starts runs for cards.
+	Enabled bool               `json:"enabled"`
+	Id      openapi_types.UUID `json:"id"`
+
+	// LatestVersion Number of the last published version; 0 if never published.
+	LatestVersion int    `json:"latest_version"`
+	Name          string `json:"name"`
+
+	// Problems What prevents publishing the draft; empty when it can be published.
+	Problems  []GraphProblem `json:"problems"`
+	UpdatedAt time.Time      `json:"updated_at"`
+}
+
+// FlowEdge Connects an output (source_handle) of a node to another node.
+type FlowEdge struct {
+	Id     string `json:"id"`
+	Source string `json:"source"`
+
+	// SourceHandle Output of the source node: trigger and move_card have "next"; agent has "done" and "failed"; review has "approved", "changes_requested" and "max_rounds_exceeded"; end has none.
+	SourceHandle string `json:"source_handle"`
+	Target       string `json:"target"`
+}
+
+// FlowGraph defines model for FlowGraph.
+type FlowGraph struct {
+	Edges []FlowEdge `json:"edges"`
+	Nodes []FlowNode `json:"nodes"`
+}
+
+// FlowInput defines model for FlowInput.
+type FlowInput struct {
+	Enabled bool   `json:"enabled"`
+	Name    string `json:"name"`
+}
+
+// FlowNode A step of the flow. Configs may be incomplete in drafts; publishing reports what is missing.
+type FlowNode struct {
+	union json.RawMessage
+}
+
+// FlowSummary defines model for FlowSummary.
+type FlowSummary struct {
+	CreatedAt time.Time `json:"created_at"`
+
+	// Enabled Whether the latest version starts runs for cards.
+	Enabled bool               `json:"enabled"`
+	Id      openapi_types.UUID `json:"id"`
+
+	// LatestVersion Number of the last published version; 0 if never published.
+	LatestVersion int       `json:"latest_version"`
+	Name          string    `json:"name"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+// FlowVersion defines model for FlowVersion.
+type FlowVersion struct {
+	FlowId      openapi_types.UUID `json:"flow_id"`
+	Graph       FlowGraph          `json:"graph"`
+	Id          openapi_types.UUID `json:"id"`
+	PublishedAt time.Time          `json:"published_at"`
+	Version     int                `json:"version"`
+}
+
+// GraphProblem defines model for GraphProblem.
+type GraphProblem struct {
+	EdgeId  *string `json:"edge_id,omitempty"`
+	Message string  `json:"message"`
+	NodeId  *string `json:"node_id,omitempty"`
+}
 
 // Lane defines model for Lane.
 type Lane struct {
@@ -167,6 +379,24 @@ type LaneMove struct {
 	Position int `json:"position"`
 }
 
+// MoveCardConfig Moves the card to a lane.
+type MoveCardConfig struct {
+	// LaneId Required to publish.
+	LaneId *openapi_types.UUID `json:"lane_id,omitempty"`
+}
+
+// MoveCardNode defines model for MoveCardNode.
+type MoveCardNode struct {
+	// Config Moves the card to a lane.
+	Config   MoveCardConfig   `json:"config"`
+	Id       string           `json:"id"`
+	Position Position         `json:"position"`
+	Type     MoveCardNodeType `json:"type"`
+}
+
+// MoveCardNodeType defines model for MoveCardNode.Type.
+type MoveCardNodeType string
+
 // NewCard defines model for NewCard.
 type NewCard struct {
 	CardTypeId   openapi_types.UUID  `json:"card_type_id"`
@@ -175,6 +405,17 @@ type NewCard struct {
 	ParentCardId *openapi_types.UUID `json:"parent_card_id,omitempty"`
 	ProjectId    *openapi_types.UUID `json:"project_id,omitempty"`
 	Title        string              `json:"title"`
+}
+
+// NewFlow defines model for NewFlow.
+type NewFlow struct {
+	Name string `json:"name"`
+}
+
+// Position defines model for Position.
+type Position struct {
+	X float32 `json:"x"`
+	Y float32 `json:"y"`
 }
 
 // Project defines model for Project.
@@ -198,6 +439,55 @@ type ProjectInput struct {
 	Name      string `json:"name"`
 }
 
+// ReviewConfig Runs a reviewer on the work of the previous agent.
+type ReviewConfig struct {
+	AllowedTools    *[]string `json:"allowed_tools,omitempty"`
+	DisallowedTools *[]string `json:"disallowed_tools,omitempty"`
+
+	// MaxRounds Rounds of changes before the max_rounds_exceeded output. Required to publish.
+	MaxRounds *int `json:"max_rounds,omitempty"`
+
+	// Prompt Review prompt. Required to publish.
+	Prompt *string `json:"prompt,omitempty"`
+}
+
+// ReviewNode defines model for ReviewNode.
+type ReviewNode struct {
+	// Config Runs a reviewer on the work of the previous agent.
+	Config   ReviewConfig   `json:"config"`
+	Id       string         `json:"id"`
+	Position Position       `json:"position"`
+	Type     ReviewNodeType `json:"type"`
+}
+
+// ReviewNodeType defines model for ReviewNode.Type.
+type ReviewNodeType string
+
+// TriggerConfig Starts the flow when a card is created or enters a lane, optionally only for some card types.
+type TriggerConfig struct {
+	// CardTypeIds Card types that start the flow; empty or absent means all.
+	CardTypeIds *[]openapi_types.UUID `json:"card_type_ids,omitempty"`
+	Event       *TriggerConfigEvent   `json:"event,omitempty"`
+
+	// LaneId Required for card_entered_lane.
+	LaneId *openapi_types.UUID `json:"lane_id,omitempty"`
+}
+
+// TriggerConfigEvent defines model for TriggerConfig.Event.
+type TriggerConfigEvent string
+
+// TriggerNode defines model for TriggerNode.
+type TriggerNode struct {
+	// Config Starts the flow when a card is created or enters a lane, optionally only for some card types.
+	Config   TriggerConfig   `json:"config"`
+	Id       string          `json:"id"`
+	Position Position        `json:"position"`
+	Type     TriggerNodeType `json:"type"`
+}
+
+// TriggerNodeType defines model for TriggerNode.Type.
+type TriggerNodeType string
+
 // ID defines model for ID.
 type ID = openapi_types.UUID
 
@@ -216,6 +506,15 @@ type UpdateCardJSONRequestBody = CardInput
 // MoveCardJSONRequestBody defines body for MoveCard for application/json ContentType.
 type MoveCardJSONRequestBody = CardMove
 
+// CreateFlowJSONRequestBody defines body for CreateFlow for application/json ContentType.
+type CreateFlowJSONRequestBody = NewFlow
+
+// UpdateFlowJSONRequestBody defines body for UpdateFlow for application/json ContentType.
+type UpdateFlowJSONRequestBody = FlowInput
+
+// SaveFlowDraftJSONRequestBody defines body for SaveFlowDraft for application/json ContentType.
+type SaveFlowDraftJSONRequestBody = FlowGraph
+
 // CreateLaneJSONRequestBody defines body for CreateLane for application/json ContentType.
 type CreateLaneJSONRequestBody = LaneInput
 
@@ -230,6 +529,215 @@ type CreateProjectJSONRequestBody = ProjectInput
 
 // UpdateProjectJSONRequestBody defines body for UpdateProject for application/json ContentType.
 type UpdateProjectJSONRequestBody = ProjectInput
+
+// AsTriggerNode returns the union data inside the FlowNode as a TriggerNode
+func (t FlowNode) AsTriggerNode() (TriggerNode, error) {
+	var body TriggerNode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTriggerNode overwrites any union data inside the FlowNode as the provided TriggerNode
+func (t *FlowNode) FromTriggerNode(v TriggerNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"trigger"}`))
+	t.union = b
+	return err
+}
+
+// MergeTriggerNode performs a merge with any union data inside the FlowNode, using the provided TriggerNode
+func (t *FlowNode) MergeTriggerNode(v TriggerNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"trigger"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsAgentNode returns the union data inside the FlowNode as a AgentNode
+func (t FlowNode) AsAgentNode() (AgentNode, error) {
+	var body AgentNode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromAgentNode overwrites any union data inside the FlowNode as the provided AgentNode
+func (t *FlowNode) FromAgentNode(v AgentNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"agent"}`))
+	t.union = b
+	return err
+}
+
+// MergeAgentNode performs a merge with any union data inside the FlowNode, using the provided AgentNode
+func (t *FlowNode) MergeAgentNode(v AgentNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"agent"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsReviewNode returns the union data inside the FlowNode as a ReviewNode
+func (t FlowNode) AsReviewNode() (ReviewNode, error) {
+	var body ReviewNode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromReviewNode overwrites any union data inside the FlowNode as the provided ReviewNode
+func (t *FlowNode) FromReviewNode(v ReviewNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"review"}`))
+	t.union = b
+	return err
+}
+
+// MergeReviewNode performs a merge with any union data inside the FlowNode, using the provided ReviewNode
+func (t *FlowNode) MergeReviewNode(v ReviewNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"review"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsMoveCardNode returns the union data inside the FlowNode as a MoveCardNode
+func (t FlowNode) AsMoveCardNode() (MoveCardNode, error) {
+	var body MoveCardNode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromMoveCardNode overwrites any union data inside the FlowNode as the provided MoveCardNode
+func (t *FlowNode) FromMoveCardNode(v MoveCardNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"move_card"}`))
+	t.union = b
+	return err
+}
+
+// MergeMoveCardNode performs a merge with any union data inside the FlowNode, using the provided MoveCardNode
+func (t *FlowNode) MergeMoveCardNode(v MoveCardNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"move_card"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsEndNode returns the union data inside the FlowNode as a EndNode
+func (t FlowNode) AsEndNode() (EndNode, error) {
+	var body EndNode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromEndNode overwrites any union data inside the FlowNode as the provided EndNode
+func (t *FlowNode) FromEndNode(v EndNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"end"}`))
+	t.union = b
+	return err
+}
+
+// MergeEndNode performs a merge with any union data inside the FlowNode, using the provided EndNode
+func (t *FlowNode) MergeEndNode(v EndNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"end"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t FlowNode) Discriminator() (string, error) {
+	var discriminator struct {
+		Discriminator string `json:"type"`
+	}
+	err := json.Unmarshal(t.union, &discriminator)
+	return discriminator.Discriminator, err
+}
+
+func (t FlowNode) ValueByDiscriminator() (interface{}, error) {
+	discriminator, err := t.Discriminator()
+	if err != nil {
+		return nil, err
+	}
+	switch discriminator {
+	case "agent":
+		return t.AsAgentNode()
+	case "end":
+		return t.AsEndNode()
+	case "move_card":
+		return t.AsMoveCardNode()
+	case "review":
+		return t.AsReviewNode()
+	case "trigger":
+		return t.AsTriggerNode()
+	default:
+		return nil, errors.New("unknown discriminator value: " + discriminator)
+	}
+}
+
+func (t FlowNode) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *FlowNode) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -272,6 +780,30 @@ type ServerInterface interface {
 
 	// (POST /cards/{id}/move)
 	MoveCard(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /flows)
+	ListFlows(w http.ResponseWriter, r *http.Request)
+
+	// (POST /flows)
+	CreateFlow(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /flows/{id})
+	DeleteFlow(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /flows/{id})
+	GetFlow(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PUT /flows/{id})
+	UpdateFlow(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PUT /flows/{id}/draft)
+	SaveFlowDraft(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /flows/{id}/publish)
+	PublishFlow(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /flows/{id}/versions)
+	ListFlowVersions(w http.ResponseWriter, r *http.Request, id ID)
 
 	// (GET /lanes)
 	ListLanes(w http.ResponseWriter, r *http.Request)
@@ -597,6 +1129,190 @@ func (siw *ServerInterfaceWrapper) MoveCard(w http.ResponseWriter, r *http.Reque
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.MoveCard(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListFlows operation middleware
+func (siw *ServerInterfaceWrapper) ListFlows(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFlows(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateFlow operation middleware
+func (siw *ServerInterfaceWrapper) CreateFlow(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateFlow(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteFlow operation middleware
+func (siw *ServerInterfaceWrapper) DeleteFlow(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteFlow(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetFlow operation middleware
+func (siw *ServerInterfaceWrapper) GetFlow(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFlow(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateFlow operation middleware
+func (siw *ServerInterfaceWrapper) UpdateFlow(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateFlow(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SaveFlowDraft operation middleware
+func (siw *ServerInterfaceWrapper) SaveFlowDraft(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SaveFlowDraft(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PublishFlow operation middleware
+func (siw *ServerInterfaceWrapper) PublishFlow(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PublishFlow(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListFlowVersions operation middleware
+func (siw *ServerInterfaceWrapper) ListFlowVersions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFlowVersions(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -988,6 +1704,14 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/cards/{id}/move", wrapper.MoveCard)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/cards/{id}/children", wrapper.ListChildCards)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/cards/{id}/events", wrapper.ListCardEvents)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/flows", wrapper.ListFlows)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/flows", wrapper.CreateFlow)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/flows/{id}", wrapper.DeleteFlow)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/flows/{id}", wrapper.GetFlow)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/flows/{id}", wrapper.UpdateFlow)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/flows/{id}/draft", wrapper.SaveFlowDraft)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/flows/{id}/publish", wrapper.PublishFlow)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/flows/{id}/versions", wrapper.ListFlowVersions)
 
 	return m
 }
@@ -1490,6 +2214,313 @@ func (response MoveCarddefaultJSONResponse) VisitMoveCardResponse(w http.Respons
 	return err
 }
 
+type ListFlowsRequestObject struct {
+}
+
+type ListFlowsResponseObject interface {
+	VisitListFlowsResponse(w http.ResponseWriter) error
+}
+
+type ListFlows200JSONResponse []FlowSummary
+
+func (response ListFlows200JSONResponse) VisitListFlowsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFlowsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListFlowsdefaultJSONResponse) VisitListFlowsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateFlowRequestObject struct {
+	Body *CreateFlowJSONRequestBody
+}
+
+type CreateFlowResponseObject interface {
+	VisitCreateFlowResponse(w http.ResponseWriter) error
+}
+
+type CreateFlow201JSONResponse Flow
+
+func (response CreateFlow201JSONResponse) VisitCreateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateFlowdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateFlowdefaultJSONResponse) VisitCreateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteFlowRequestObject struct {
+	Id ID `json:"id"`
+}
+
+type DeleteFlowResponseObject interface {
+	VisitDeleteFlowResponse(w http.ResponseWriter) error
+}
+
+type DeleteFlow204Response struct {
+}
+
+func (response DeleteFlow204Response) VisitDeleteFlowResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteFlowdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeleteFlowdefaultJSONResponse) VisitDeleteFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetFlowRequestObject struct {
+	Id ID `json:"id"`
+}
+
+type GetFlowResponseObject interface {
+	VisitGetFlowResponse(w http.ResponseWriter) error
+}
+
+type GetFlow200JSONResponse Flow
+
+func (response GetFlow200JSONResponse) VisitGetFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetFlowdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetFlowdefaultJSONResponse) VisitGetFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateFlowRequestObject struct {
+	Id   ID `json:"id"`
+	Body *UpdateFlowJSONRequestBody
+}
+
+type UpdateFlowResponseObject interface {
+	VisitUpdateFlowResponse(w http.ResponseWriter) error
+}
+
+type UpdateFlow200JSONResponse Flow
+
+func (response UpdateFlow200JSONResponse) VisitUpdateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateFlowdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response UpdateFlowdefaultJSONResponse) VisitUpdateFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveFlowDraftRequestObject struct {
+	Id   ID `json:"id"`
+	Body *SaveFlowDraftJSONRequestBody
+}
+
+type SaveFlowDraftResponseObject interface {
+	VisitSaveFlowDraftResponse(w http.ResponseWriter) error
+}
+
+type SaveFlowDraft200JSONResponse Flow
+
+func (response SaveFlowDraft200JSONResponse) VisitSaveFlowDraftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveFlowDraftdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SaveFlowDraftdefaultJSONResponse) VisitSaveFlowDraftResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PublishFlowRequestObject struct {
+	Id ID `json:"id"`
+}
+
+type PublishFlowResponseObject interface {
+	VisitPublishFlowResponse(w http.ResponseWriter) error
+}
+
+type PublishFlow201JSONResponse FlowVersion
+
+func (response PublishFlow201JSONResponse) VisitPublishFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PublishFlowdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response PublishFlowdefaultJSONResponse) VisitPublishFlowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFlowVersionsRequestObject struct {
+	Id ID `json:"id"`
+}
+
+type ListFlowVersionsResponseObject interface {
+	VisitListFlowVersionsResponse(w http.ResponseWriter) error
+}
+
+type ListFlowVersions200JSONResponse []FlowVersion
+
+func (response ListFlowVersions200JSONResponse) VisitListFlowVersionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFlowVersionsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListFlowVersionsdefaultJSONResponse) VisitListFlowVersionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListLanesRequestObject struct {
 }
 
@@ -1950,6 +2981,30 @@ type StrictServerInterface interface {
 	// (POST /cards/{id}/move)
 	MoveCard(ctx context.Context, request MoveCardRequestObject) (MoveCardResponseObject, error)
 
+	// (GET /flows)
+	ListFlows(ctx context.Context, request ListFlowsRequestObject) (ListFlowsResponseObject, error)
+
+	// (POST /flows)
+	CreateFlow(ctx context.Context, request CreateFlowRequestObject) (CreateFlowResponseObject, error)
+
+	// (DELETE /flows/{id})
+	DeleteFlow(ctx context.Context, request DeleteFlowRequestObject) (DeleteFlowResponseObject, error)
+
+	// (GET /flows/{id})
+	GetFlow(ctx context.Context, request GetFlowRequestObject) (GetFlowResponseObject, error)
+
+	// (PUT /flows/{id})
+	UpdateFlow(ctx context.Context, request UpdateFlowRequestObject) (UpdateFlowResponseObject, error)
+
+	// (PUT /flows/{id}/draft)
+	SaveFlowDraft(ctx context.Context, request SaveFlowDraftRequestObject) (SaveFlowDraftResponseObject, error)
+
+	// (POST /flows/{id}/publish)
+	PublishFlow(ctx context.Context, request PublishFlowRequestObject) (PublishFlowResponseObject, error)
+
+	// (GET /flows/{id}/versions)
+	ListFlowVersions(ctx context.Context, request ListFlowVersionsRequestObject) (ListFlowVersionsResponseObject, error)
+
 	// (GET /lanes)
 	ListLanes(ctx context.Context, request ListLanesRequestObject) (ListLanesResponseObject, error)
 
@@ -2381,6 +3436,231 @@ func (sh *strictHandler) MoveCard(w http.ResponseWriter, r *http.Request, id ID)
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(MoveCardResponseObject); ok {
 		if err := validResponse.VisitMoveCardResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListFlows operation middleware
+func (sh *strictHandler) ListFlows(w http.ResponseWriter, r *http.Request) {
+	var request ListFlowsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListFlows(ctx, request.(ListFlowsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListFlows")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListFlowsResponseObject); ok {
+		if err := validResponse.VisitListFlowsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateFlow operation middleware
+func (sh *strictHandler) CreateFlow(w http.ResponseWriter, r *http.Request) {
+	var request CreateFlowRequestObject
+
+	var body CreateFlowJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateFlow(ctx, request.(CreateFlowRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateFlow")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateFlowResponseObject); ok {
+		if err := validResponse.VisitCreateFlowResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteFlow operation middleware
+func (sh *strictHandler) DeleteFlow(w http.ResponseWriter, r *http.Request, id ID) {
+	var request DeleteFlowRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteFlow(ctx, request.(DeleteFlowRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteFlow")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteFlowResponseObject); ok {
+		if err := validResponse.VisitDeleteFlowResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetFlow operation middleware
+func (sh *strictHandler) GetFlow(w http.ResponseWriter, r *http.Request, id ID) {
+	var request GetFlowRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetFlow(ctx, request.(GetFlowRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetFlow")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetFlowResponseObject); ok {
+		if err := validResponse.VisitGetFlowResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateFlow operation middleware
+func (sh *strictHandler) UpdateFlow(w http.ResponseWriter, r *http.Request, id ID) {
+	var request UpdateFlowRequestObject
+
+	request.Id = id
+
+	var body UpdateFlowJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateFlow(ctx, request.(UpdateFlowRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateFlow")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateFlowResponseObject); ok {
+		if err := validResponse.VisitUpdateFlowResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SaveFlowDraft operation middleware
+func (sh *strictHandler) SaveFlowDraft(w http.ResponseWriter, r *http.Request, id ID) {
+	var request SaveFlowDraftRequestObject
+
+	request.Id = id
+
+	var body SaveFlowDraftJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SaveFlowDraft(ctx, request.(SaveFlowDraftRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SaveFlowDraft")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SaveFlowDraftResponseObject); ok {
+		if err := validResponse.VisitSaveFlowDraftResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PublishFlow operation middleware
+func (sh *strictHandler) PublishFlow(w http.ResponseWriter, r *http.Request, id ID) {
+	var request PublishFlowRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PublishFlow(ctx, request.(PublishFlowRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PublishFlow")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PublishFlowResponseObject); ok {
+		if err := validResponse.VisitPublishFlowResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListFlowVersions operation middleware
+func (sh *strictHandler) ListFlowVersions(w http.ResponseWriter, r *http.Request, id ID) {
+	var request ListFlowVersionsRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListFlowVersions(ctx, request.(ListFlowVersionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListFlowVersions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListFlowVersionsResponseObject); ok {
+		if err := validResponse.VisitListFlowVersionsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

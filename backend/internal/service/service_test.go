@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
@@ -11,21 +12,32 @@ import (
 	"orquestrator/internal/events"
 )
 
-// fakeRepo records the calls it receives and fails them with err.
+// fakeRepo records the calls it receives and fails them with err, or with
+// errs[method] when set. Flow methods return flow.
 type fakeRepo struct {
 	err   error
+	errs  map[string]error
 	calls []string
-	in    any
+	in    any            // input of the last call
+	ins   map[string]any // input of the last call of each method
+	flow  domain.Flow
 }
 
 func (f *fakeRepo) call(name string, in any) error {
 	f.calls = append(f.calls, name)
 	f.in = in
+	if f.ins == nil {
+		f.ins = map[string]any{}
+	}
+	f.ins[name] = in
+	if err, ok := f.errs[name]; ok {
+		return err
+	}
 	return f.err
 }
 
 func (f *fakeRepo) ListLanes(context.Context) ([]domain.Lane, error) {
-	return nil, f.call("ListLanes", nil)
+	return []domain.Lane{{ID: laneID}}, f.call("ListLanes", nil)
 }
 
 func (f *fakeRepo) GetLane(_ context.Context, id uuid.UUID) (domain.Lane, error) {
@@ -69,7 +81,7 @@ func (f *fakeRepo) DeleteProject(_ context.Context, id uuid.UUID) error {
 }
 
 func (f *fakeRepo) ListCardTypes(context.Context) ([]domain.CardType, error) {
-	return nil, f.call("ListCardTypes", nil)
+	return []domain.CardType{{ID: typeID}}, f.call("ListCardTypes", nil)
 }
 
 func (f *fakeRepo) GetCardType(_ context.Context, id uuid.UUID) (domain.CardType, error) {
@@ -120,6 +132,38 @@ func (f *fakeRepo) ListCardEvents(_ context.Context, cardID uuid.UUID) ([]domain
 	return nil, f.call("ListCardEvents", cardID)
 }
 
+func (f *fakeRepo) ListFlows(context.Context) ([]domain.Flow, error) {
+	return nil, f.call("ListFlows", nil)
+}
+
+func (f *fakeRepo) GetFlow(_ context.Context, id uuid.UUID) (domain.Flow, error) {
+	return f.flow, f.call("GetFlow", id)
+}
+
+func (f *fakeRepo) CreateFlow(_ context.Context, name string, draft domain.Graph) (domain.Flow, error) {
+	return f.flow, f.call("CreateFlow", fmt.Sprintf("%s %d", name, len(draft.Nodes)))
+}
+
+func (f *fakeRepo) UpdateFlow(_ context.Context, _ uuid.UUID, in domain.FlowInput) (domain.Flow, error) {
+	return f.flow, f.call("UpdateFlow", in)
+}
+
+func (f *fakeRepo) SaveFlowDraft(_ context.Context, _ uuid.UUID, draft domain.Graph) (domain.Flow, error) {
+	return f.flow, f.call("SaveFlowDraft", draft.Nodes != nil && draft.Edges != nil)
+}
+
+func (f *fakeRepo) DeleteFlow(_ context.Context, id uuid.UUID) error {
+	return f.call("DeleteFlow", id)
+}
+
+func (f *fakeRepo) PublishFlow(_ context.Context, _ uuid.UUID, graph domain.Graph) (domain.FlowVersion, error) {
+	return domain.FlowVersion{Version: 1}, f.call("PublishFlow", len(graph.Nodes))
+}
+
+func (f *fakeRepo) ListFlowVersions(_ context.Context, flowID uuid.UUID) ([]domain.FlowVersion, error) {
+	return nil, f.call("ListFlowVersions", flowID)
+}
+
 // fakeGit answers Root with root, or fails with err.
 type fakeGit struct {
 	root string
@@ -131,6 +175,8 @@ func (g fakeGit) Root(context.Context, string) (string, error) { return g.root, 
 var (
 	ctx     = context.Background()
 	id      = uuid.New()
+	laneID  = uuid.New()
+	typeID  = uuid.New()
 	errRepo = errors.New("repo failed")
 )
 

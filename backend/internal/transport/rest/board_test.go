@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 
 	"orquestrator/internal/domain"
+	"orquestrator/internal/service"
 )
 
 // stubBoard returns its fields from every use case and records the last call.
@@ -16,6 +17,8 @@ type stubBoard struct {
 	cardType  domain.CardType
 	card      domain.Card
 	cardEvent domain.CardEvent
+	flow      service.FlowDetail
+	version   domain.FlowVersion
 
 	call string
 	args []any
@@ -120,4 +123,36 @@ func (b *stubBoard) DeleteCard(_ context.Context, id uuid.UUID) error {
 
 func (b *stubBoard) ListCardEvents(_ context.Context, cardID uuid.UUID) ([]domain.CardEvent, error) {
 	return []domain.CardEvent{b.cardEvent}, b.record("ListCardEvents", cardID)
+}
+
+func (b *stubBoard) ListFlows(context.Context) ([]domain.Flow, error) {
+	return []domain.Flow{b.flow.Flow}, b.record("ListFlows")
+}
+
+func (b *stubBoard) GetFlow(_ context.Context, id uuid.UUID) (service.FlowDetail, error) {
+	return b.flow, b.record("GetFlow", id)
+}
+
+func (b *stubBoard) CreateFlow(_ context.Context, name string) (service.FlowDetail, error) {
+	return b.flow, b.record("CreateFlow", name)
+}
+
+func (b *stubBoard) UpdateFlow(_ context.Context, id uuid.UUID, in domain.FlowInput) (service.FlowDetail, error) {
+	return b.flow, b.record("UpdateFlow", id, in)
+}
+
+func (b *stubBoard) SaveFlowDraft(_ context.Context, id uuid.UUID, draft domain.Graph) (service.FlowDetail, error) {
+	return b.flow, b.record("SaveFlowDraft", id, draft)
+}
+
+func (b *stubBoard) PublishFlow(_ context.Context, id uuid.UUID) (domain.FlowVersion, error) {
+	return b.version, b.record("PublishFlow", id)
+}
+
+func (b *stubBoard) DeleteFlow(_ context.Context, id uuid.UUID) error {
+	return b.record("DeleteFlow", id)
+}
+
+func (b *stubBoard) ListFlowVersions(_ context.Context, id uuid.UUID) ([]domain.FlowVersion, error) {
+	return []domain.FlowVersion{b.version}, b.record("ListFlowVersions", id)
 }
