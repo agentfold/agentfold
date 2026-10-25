@@ -1,0 +1,18 @@
+# Backend
+backend/bin/
+backend/coverage/
+
+# Web (see also web/.gitignore)
+web/node_modules/
+web/dist/
+web/coverage/
+
+# Local env
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store

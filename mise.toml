@@ -1,0 +1,82 @@
+[tools]
+go = "1.27.3"
+golangci-lint = "2.15.0"
+node = "24.22.1"
+pnpm = "12.15.0"
+shellcheck = "0.11.0"
+
+# --- backend -------------------------------------------------------------
+
+[tasks."backend:build"]
+description = "Build the orquestrator binary into backend/bin"
+dir = "{{config_root}}/backend"
+run = "go build -o bin/orquestrator ./cmd/orquestrator"
+
+[tasks."backend:test"]
+description = "Run Go tests with the race detector"
+dir = "{{config_root}}/backend"
+run = "go test -race ./..."
+
+[tasks."backend:lint"]
+description = "Lint Go code and scripts"
+dir = "{{config_root}}/backend"
+run = ["golangci-lint run ./...", "shellcheck scripts/*.sh"]
+
+[tasks."backend:cover"]
+description = "Run Go tests and fail below 100% coverage"
+dir = "{{config_root}}/backend"
+run = "./scripts/coverage.sh"
+
+# --- web -----------------------------------------------------------------
+
+[tasks."web:install"]
+description = "Install web dependencies"
+dir = "{{config_root}}/web"
+run = "pnpm install --frozen-lockfile"
+
+[tasks."web:dev"]
+description = "Start the Vite dev server"
+dir = "{{config_root}}/web"
+run = "pnpm dev"
+
+[tasks."web:build"]
+description = "Type-check and build the web app"
+dir = "{{config_root}}/web"
+run = "pnpm build"
+
+[tasks."web:test"]
+description = "Run web unit tests"
+dir = "{{config_root}}/web"
+run = "pnpm test"
+
+[tasks."web:lint"]
+description = "ESLint, Prettier check and type-check"
+dir = "{{config_root}}/web"
+run = "pnpm lint"
+
+[tasks."web:cover"]
+description = "Run web tests and fail below 100% coverage"
+dir = "{{config_root}}/web"
+run = "pnpm cover"
+
+# --- aggregates ----------------------------------------------------------
+
+[tasks.build]
+description = "Build backend and web"
+depends = ["backend:build", "web:build"]
+
+[tasks.test]
+description = "Run all unit tests"
+depends = ["backend:test", "web:test"]
+
+[tasks.lint]
+description = "Lint backend and web"
+depends = ["backend:lint", "web:lint"]
+
+[tasks."cover:check"]
+description = "Enforce 100% coverage on backend and web"
+depends = ["backend:cover", "web:cover"]
+
+[tasks.check]
+description = "Everything that must pass before a commit"
+depends = ["lint", "cover:check"]
