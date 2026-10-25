@@ -125,8 +125,10 @@ export function Board() {
             </Button>
           </div>
         </div>
-        {/* Drawn above the lanes, so the card is not clipped by its lane. */}
-        <DragOverlay>
+        {/* Drawn above the lanes, so the card is not clipped by its lane.
+            No drop animation: it would fly back to the card's old place,
+            measured before the move is applied. */}
+        <DragOverlay dropAnimation={null}>
           {dragged && <CardPreview card={dragged} lookup={lookup} />}
         </DragOverlay>
       </DndContext>
