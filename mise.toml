@@ -51,6 +51,11 @@ description = "Install web dependencies"
 dir = "{{config_root}}/web"
 run = "pnpm install --frozen-lockfile"
 
+[tasks."web:generate"]
+description = "Regenerate the TS API types from api/openapi.yaml"
+dir = "{{config_root}}/web"
+run = "pnpm generate"
+
 [tasks."web:dev"]
 description = "Start the Vite dev server"
 dir = "{{config_root}}/web"
@@ -90,7 +95,7 @@ run = "docker compose down"
 
 [tasks.generate]
 description = "Regenerate code from SQL and the API contract"
-depends = ["backend:generate"]
+depends = ["backend:generate", "web:generate"]
 
 [tasks.build]
 description = "Build backend and web"

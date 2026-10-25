@@ -32,6 +32,9 @@ mise run db:up
 mise run backend:serve   # aplica as migrations e sobe o server
 ```
 
+Em outro terminal, `mise run web:dev` sobe o board em `http://localhost:5173` (o Vite repassa
+`/api` para o server).
+
 O binário lê `ORQ_DATABASE_URL` (obrigatória) e `ORQ_ADDR` (padrão `127.0.0.1:8080`; a API ainda
 não tem autenticação, por isso escuta só em loopback). Eventos do board em tempo real:
 `GET /api/events` (Server-Sent Events).

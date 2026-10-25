@@ -5,6 +5,10 @@ import { defineConfig } from 'vitest/config'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  server: {
+    // `mise run backend:serve` listens here.
+    proxy: { '/api': 'http://127.0.0.1:8080' },
+  },
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
