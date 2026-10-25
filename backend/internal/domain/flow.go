@@ -113,9 +113,11 @@ type TriggerConfig struct {
 	CardTypeIDs []uuid.UUID `json:"card_type_ids,omitempty"`
 }
 
-// AgentConfig runs an agent session on the card. Its profile and external
-// MCP servers come with the agent profiles (F5).
+// AgentConfig runs an agent session on the card as a profile, with optional
+// external MCP servers.
 type AgentConfig struct {
+	ProfileID       *uuid.UUID      `json:"profile_id,omitempty"`
+	McpServerIDs    []uuid.UUID     `json:"mcp_server_ids,omitempty"`
 	Prompt          string          `json:"prompt"`
 	AllowedTools    []string        `json:"allowed_tools,omitempty"`
 	DisallowedTools []string        `json:"disallowed_tools,omitempty"`
@@ -126,10 +128,11 @@ type AgentConfig struct {
 
 // ReviewConfig runs a reviewer agent on the work of the previous agent.
 type ReviewConfig struct {
-	Prompt          string   `json:"prompt"`
-	AllowedTools    []string `json:"allowed_tools,omitempty"`
-	DisallowedTools []string `json:"disallowed_tools,omitempty"`
-	MaxRounds       int      `json:"max_rounds"`
+	ProfileID       *uuid.UUID `json:"profile_id,omitempty"`
+	Prompt          string     `json:"prompt"`
+	AllowedTools    []string   `json:"allowed_tools,omitempty"`
+	DisallowedTools []string   `json:"disallowed_tools,omitempty"`
+	MaxRounds       int        `json:"max_rounds"`
 }
 
 // MoveCardConfig moves the card to a lane.
@@ -153,10 +156,12 @@ func (e *GraphError) Error() string {
 	return fmt.Sprintf("graph has %d problem(s)", len(e.Problems))
 }
 
-// References tells which lanes and card types exist, to validate configs.
+// References tells which entities exist, to validate configs.
 type References struct {
-	Lanes     map[uuid.UUID]bool
-	CardTypes map[uuid.UUID]bool
+	Lanes      map[uuid.UUID]bool
+	CardTypes  map[uuid.UUID]bool
+	Profiles   map[uuid.UUID]bool
+	McpServers map[uuid.UUID]bool
 }
 
 // Problems lists everything that prevents publishing g: the structure must
@@ -304,13 +309,13 @@ func (v *validator) configProblems(n Node) []string {
 		if err := json.Unmarshal(config, &c); err != nil {
 			return []string{invalidConfig(err)}
 		}
-		return agentProblems(c)
+		return append(v.profileProblems(c.ProfileID), append(v.mcpProblems(c.McpServerIDs), agentProblems(c)...)...)
 	case NodeReview:
 		var c ReviewConfig
 		if err := json.Unmarshal(config, &c); err != nil {
 			return []string{invalidConfig(err)}
 		}
-		return reviewProblems(c)
+		return append(v.profileProblems(c.ProfileID), reviewProblems(c)...)
 	case NodeMoveCard:
 		var c MoveCardConfig
 		if err := json.Unmarshal(config, &c); err != nil {
@@ -345,6 +350,22 @@ func (v *validator) triggerProblems(c TriggerConfig) []string {
 		}
 	}
 	return out
+}
+
+func (v *validator) profileProblems(id *uuid.UUID) []string {
+	if id == nil || !v.refs.Profiles[*id] {
+		return []string{"escolha o perfil do agente"}
+	}
+	return nil
+}
+
+func (v *validator) mcpProblems(ids []uuid.UUID) []string {
+	for _, id := range ids {
+		if !v.refs.McpServers[id] {
+			return []string{"um dos servidores MCP não existe mais"}
+		}
+	}
+	return nil
 }
 
 func agentProblems(c AgentConfig) []string {

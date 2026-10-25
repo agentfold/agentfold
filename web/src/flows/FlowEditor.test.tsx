@@ -246,6 +246,8 @@ describe('FlowEditor', () => {
     const backend = createFakeBackend({ flows: [f] })
     backend.failNext('GET /lanes', 500)
     backend.failNext('GET /card-types', 500)
+    backend.failNext('GET /agent-profiles', 500)
+    backend.failNext('GET /mcp-servers', 500)
     renderWithApi(<FlowEditor flowId={f.id} />, backend)
     await screen.findByRole('heading', { name: 'Dev' })
     nodesChange([{ type: 'select', id: 'trigger', selected: true }])

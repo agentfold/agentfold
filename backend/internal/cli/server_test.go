@@ -17,6 +17,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
+
+	"orquestrator/internal/crypto"
 )
 
 // dsn points to the Postgres started for this package; each test that needs
@@ -112,6 +114,7 @@ func TestCommandErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(envSecretKey, crypto.NewKey())
 			t.Setenv(envDatabaseURL, tt.url)
 			t.Setenv(envAddr, tt.addr)
 			code, _, stderr := run(tt.args...)
@@ -119,6 +122,17 @@ func TestCommandErrors(t *testing.T) {
 				t.Fatalf("code %d, stderr %q; want %q", code, stderr, tt.want)
 			}
 		})
+	}
+}
+
+func TestSecretKeyErrors(t *testing.T) {
+	t.Setenv(envSecretKey, "")
+	if code, _, stderr := run("server"); code != ExitError || !strings.Contains(stderr, "ORQ_SECRET_KEY is not set") {
+		t.Fatalf("missing key: %d %q", code, stderr)
+	}
+	t.Setenv(envSecretKey, "short")
+	if code, _, stderr := run("server"); code != ExitError || !strings.Contains(stderr, "ORQ_SECRET_KEY: the secret key must be") {
+		t.Fatalf("bad key: %d %q", code, stderr)
 	}
 }
 
@@ -143,6 +157,7 @@ func TestServeReportsListenerErrors(t *testing.T) {
 // TestServerEndToEnd migrates a database, starts the server on a random port,
 // uses the API and stops the server by cancelling its context.
 func TestServerEndToEnd(t *testing.T) {
+	t.Setenv(envSecretKey, crypto.NewKey())
 	t.Setenv(envDatabaseURL, freshDatabase(t))
 	if code, stdout, stderr := run("migrate"); code != ExitOK || stdout != "migrations applied\n" {
 		t.Fatalf("migrate: code %d, stdout %q, stderr %q", code, stdout, stderr)

@@ -27,6 +27,8 @@ describe('useBoardEvents', () => {
     expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['cardTypes'] })
     events.emit('flow.published')
     expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['flows'] })
+    events.emit('agent_profile.updated')
+    expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['agentProfiles'] })
   })
 
   it('refreshes everything when the stream (re)connects', () => {

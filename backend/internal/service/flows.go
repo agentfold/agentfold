@@ -108,7 +108,12 @@ func (s *Service) detail(ctx context.Context) func(domain.Flow, error) (FlowDeta
 
 // references collects the lanes and card types that flow configs may use.
 func (s *Service) references(ctx context.Context) (domain.References, error) {
-	refs := domain.References{Lanes: map[uuid.UUID]bool{}, CardTypes: map[uuid.UUID]bool{}}
+	refs := domain.References{
+		Lanes:      map[uuid.UUID]bool{},
+		CardTypes:  map[uuid.UUID]bool{},
+		Profiles:   map[uuid.UUID]bool{},
+		McpServers: map[uuid.UUID]bool{},
+	}
 	lanes, err := s.repo.ListLanes(ctx)
 	if err != nil {
 		return refs, err
@@ -122,6 +127,20 @@ func (s *Service) references(ctx context.Context) (domain.References, error) {
 	}
 	for _, t := range types {
 		refs.CardTypes[t.ID] = true
+	}
+	profiles, err := s.repo.ListAgentProfiles(ctx)
+	if err != nil {
+		return refs, err
+	}
+	for _, p := range profiles {
+		refs.Profiles[p.ID] = true
+	}
+	servers, err := s.repo.ListMcpServers(ctx)
+	if err != nil {
+		return refs, err
+	}
+	for _, m := range servers {
+		refs.McpServers[m.ID] = true
 	}
 	return refs, nil
 }

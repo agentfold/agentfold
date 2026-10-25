@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 
+	"orquestrator/internal/crypto"
 	"orquestrator/internal/events"
 	"orquestrator/internal/gitrepo"
 	"orquestrator/internal/service"
@@ -26,6 +27,7 @@ import (
 const (
 	envDatabaseURL = "ORQ_DATABASE_URL"
 	envAddr        = "ORQ_ADDR"
+	envSecretKey   = "ORQ_SECRET_KEY" //nolint:gosec // a variable name, not a credential
 )
 
 // defaultAddr listens on loopback only: the API has no authentication yet.
@@ -56,6 +58,20 @@ func connect(ctx context.Context) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
+// secretBox opens the key in ORQ_SECRET_KEY, which seals agent credentials
+// and MCP secrets.
+func secretBox() (*crypto.Box, error) {
+	key := os.Getenv(envSecretKey)
+	if key == "" {
+		return nil, fmt.Errorf("%s is not set (generate one with `orquestrator secret-key`)", envSecretKey)
+	}
+	box, err := crypto.NewBox(key)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", envSecretKey, err)
+	}
+	return box, nil
+}
+
 func runMigrate(ctx context.Context, args []string, stdout, _ io.Writer) error {
 	if len(args) > 0 {
 		return errUnexpectedArgs
@@ -82,6 +98,10 @@ func runServer(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	if addr == "" {
 		addr = defaultAddr
 	}
+	box, err := secretBox()
+	if err != nil {
+		return err
+	}
 	pool, err := connect(ctx)
 	if err != nil {
 		return err
@@ -89,7 +109,7 @@ func runServer(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	defer pool.Close()
 
 	hub := events.NewHub(eventBuffer)
-	board := service.New(store.New(pool), gitrepo.Inspector{}, hub)
+	board := service.New(store.New(pool), gitrepo.Inspector{}, hub, box)
 	handler := rest.NewHandler(board, hub, rest.Options{
 		Log:       slog.New(slog.NewTextHandler(stderr, nil)),
 		Heartbeat: sseHeartbeat,

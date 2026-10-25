@@ -73,6 +73,23 @@ func (q *Queries) GetFlowForUpdate(ctx context.Context, id uuid.UUID) (Flow, err
 	return i, err
 }
 
+const getFlowVersion = `-- name: GetFlowVersion :one
+SELECT id, flow_id, version, graph, published_at FROM flow_versions WHERE id = $1
+`
+
+func (q *Queries) GetFlowVersion(ctx context.Context, id uuid.UUID) (FlowVersion, error) {
+	row := q.db.QueryRow(ctx, getFlowVersion, id)
+	var i FlowVersion
+	err := row.Scan(
+		&i.ID,
+		&i.FlowID,
+		&i.Version,
+		&i.Graph,
+		&i.PublishedAt,
+	)
+	return i, err
+}
+
 const insertFlow = `-- name: InsertFlow :one
 INSERT INTO flows (name, draft) VALUES ($1, $2) RETURNING id, name, enabled, draft, created_at, updated_at
 `

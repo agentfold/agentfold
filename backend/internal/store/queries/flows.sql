@@ -31,3 +31,6 @@ INSERT INTO flow_versions (flow_id, version, graph) VALUES ($1, $2, $3) RETURNIN
 
 -- name: ListFlowVersions :many
 SELECT * FROM flow_versions WHERE flow_id = $1 ORDER BY version DESC;
+
+-- name: GetFlowVersion :one
+SELECT * FROM flow_versions WHERE id = $1;

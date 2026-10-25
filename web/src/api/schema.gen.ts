@@ -307,6 +307,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent-profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAgentProfiles"];
+        put?: never;
+        /** @description Creates a profile without credential; log it in with `orquestrator agent login claude --profile <name>`. */
+        post: operations["createAgentProfile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent-profiles/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getAgentProfile"];
+        put: operations["updateAgentProfile"];
+        post?: never;
+        delete: operations["deleteAgentProfile"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp-servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listMcpServers"];
+        put?: never;
+        post: operations["createMcpServer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp-servers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getMcpServer"];
+        put: operations["updateMcpServer"];
+        post?: never;
+        delete: operations["deleteMcpServer"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/events": {
         parameters: {
             query?: never;
@@ -443,7 +512,7 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
-        /** @description A change to the board. `type` is "<entity>.<change>", with entity one of lane, project, card_type, card, flow and change one of created, updated, moved, deleted, published. */
+        /** @description A change to the board. `type` is "<entity>.<change>", with entity one of lane, project, card_type, card, flow, agent_profile, mcp_server and change one of created, updated, moved, deleted, published. */
         BoardEvent: {
             /** @example card.moved */
             type: string;
@@ -579,6 +648,13 @@ export interface components {
         };
         /** @description Runs an agent session on the card's workspace. */
         AgentConfig: {
+            /**
+             * Format: uuid
+             * @description Agent profile the node runs as. Required to publish.
+             */
+            profile_id?: string;
+            /** @description External MCP servers available to the agent. */
+            mcp_server_ids?: string[];
             /** @description Initial prompt. Required to publish. */
             prompt?: string;
             allowed_tools?: string[];
@@ -592,6 +668,11 @@ export interface components {
         };
         /** @description Runs a reviewer on the work of the previous agent. */
         ReviewConfig: {
+            /**
+             * Format: uuid
+             * @description Agent profile the reviewer runs as. Required to publish.
+             */
+            profile_id?: string;
             /** @description Review prompt. Required to publish. */
             prompt?: string;
             allowed_tools?: string[];
@@ -606,6 +687,70 @@ export interface components {
              * @description Required to publish.
              */
             lane_id?: string;
+        };
+        AgentProfile: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "claude";
+            name: string;
+            /** @description Whether the profile has a credential. */
+            ready: boolean;
+            /**
+             * @description Absent until the profile is logged in.
+             * @enum {string}
+             */
+            credential_kind?: "oauth_token" | "api_key";
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        AgentProfileInput: {
+            name: string;
+        };
+        /** @description An external MCP server. Secret values are never returned, only their names. */
+        McpServer: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @enum {string} */
+            transport: "stdio" | "http";
+            command?: string;
+            args: string[];
+            env: {
+                [key: string]: string;
+            };
+            url?: string;
+            headers: {
+                [key: string]: string;
+            };
+            /** @description Env vars (stdio) or headers (http) whose values are stored encrypted. */
+            secret_names: string[];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        McpServerInput: {
+            name: string;
+            /** @enum {string} */
+            transport: "stdio" | "http";
+            /** @description Required for stdio. */
+            command?: string;
+            args?: string[];
+            env?: {
+                [key: string]: string;
+            };
+            /** @description Required for http. */
+            url?: string;
+            headers?: {
+                [key: string]: string;
+            };
+            /** @description Secret env vars (stdio) or headers (http), stored encrypted. On updates, absent or null keeps the current secrets; an object replaces them all. */
+            secrets?: {
+                [key: string]: string;
+            } | null;
         };
     };
     responses: {
@@ -1382,6 +1527,240 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["FlowVersion"][];
                 };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listAgentProfiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All agent-profiles. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProfile"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createAgentProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentProfileInput"];
+            };
+        };
+        responses: {
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProfile"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getAgentProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The AgentProfile. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProfile"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    updateAgentProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentProfileInput"];
+            };
+        };
+        responses: {
+            /** @description Updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProfile"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteAgentProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listMcpServers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All mcp-servers. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpServer"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createMcpServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpServerInput"];
+            };
+        };
+        responses: {
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpServer"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getMcpServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The McpServer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpServer"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    updateMcpServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpServerInput"];
+            };
+        };
+        responses: {
+            /** @description Updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpServer"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteMcpServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Error"];
         };

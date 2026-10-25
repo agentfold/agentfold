@@ -54,6 +54,18 @@ type Board interface {
 	PublishFlow(ctx context.Context, id uuid.UUID) (domain.FlowVersion, error)
 	DeleteFlow(ctx context.Context, id uuid.UUID) error
 	ListFlowVersions(ctx context.Context, id uuid.UUID) ([]domain.FlowVersion, error)
+
+	ListAgentProfiles(ctx context.Context) ([]domain.AgentProfile, error)
+	GetAgentProfile(ctx context.Context, id uuid.UUID) (domain.AgentProfile, error)
+	CreateAgentProfile(ctx context.Context, in domain.AgentProfileInput) (domain.AgentProfile, error)
+	UpdateAgentProfile(ctx context.Context, id uuid.UUID, in domain.AgentProfileInput) (domain.AgentProfile, error)
+	DeleteAgentProfile(ctx context.Context, id uuid.UUID) error
+
+	ListMcpServers(ctx context.Context) ([]domain.McpServer, error)
+	GetMcpServer(ctx context.Context, id uuid.UUID) (domain.McpServer, error)
+	CreateMcpServer(ctx context.Context, in domain.McpServerInput) (domain.McpServer, error)
+	UpdateMcpServer(ctx context.Context, id uuid.UUID, in domain.McpServerInput) (domain.McpServer, error)
+	DeleteMcpServer(ctx context.Context, id uuid.UUID) error
 }
 
 // Subscriber gives access to the live board events. *events.Hub implements it.

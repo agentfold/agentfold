@@ -33,6 +33,39 @@ func (e AgentNodeType) Valid() bool {
 	}
 }
 
+// Defines values for AgentProfileCredentialKind.
+const (
+	ApiKey     AgentProfileCredentialKind = "api_key"
+	OauthToken AgentProfileCredentialKind = "oauth_token"
+)
+
+// Valid indicates whether the value is a known member of the AgentProfileCredentialKind enum.
+func (e AgentProfileCredentialKind) Valid() bool {
+	switch e {
+	case ApiKey:
+		return true
+	case OauthToken:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentProfileKind.
+const (
+	Claude AgentProfileKind = "claude"
+)
+
+// Valid indicates whether the value is a known member of the AgentProfileKind enum.
+func (e AgentProfileKind) Valid() bool {
+	switch e {
+	case Claude:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EndNodeType.
 const (
 	End EndNodeType = "end"
@@ -78,6 +111,42 @@ func (e ErrorCode) Valid() bool {
 	case NotFound:
 		return true
 	case Validation:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for McpServerTransport.
+const (
+	McpServerTransportHttp  McpServerTransport = "http"
+	McpServerTransportStdio McpServerTransport = "stdio"
+)
+
+// Valid indicates whether the value is a known member of the McpServerTransport enum.
+func (e McpServerTransport) Valid() bool {
+	switch e {
+	case McpServerTransportHttp:
+		return true
+	case McpServerTransportStdio:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for McpServerInputTransport.
+const (
+	McpServerInputTransportHttp  McpServerInputTransport = "http"
+	McpServerInputTransportStdio McpServerInputTransport = "stdio"
+)
+
+// Valid indicates whether the value is a known member of the McpServerInputTransport enum.
+func (e McpServerInputTransport) Valid() bool {
+	switch e {
+	case McpServerInputTransportHttp:
+		return true
+	case McpServerInputTransportStdio:
 		return true
 	default:
 		return false
@@ -167,10 +236,16 @@ type AgentConfig struct {
 	AllowedTools    *[]string `json:"allowed_tools,omitempty"`
 	DisallowedTools *[]string `json:"disallowed_tools,omitempty"`
 	MaxTurns        *int      `json:"max_turns,omitempty"`
-	Model           *string   `json:"model,omitempty"`
+
+	// McpServerIds External MCP servers available to the agent.
+	McpServerIds *[]openapi_types.UUID `json:"mcp_server_ids,omitempty"`
+	Model        *string               `json:"model,omitempty"`
 
 	// OutputSchema JSON Schema the agent's structured output must satisfy.
 	OutputSchema *map[string]interface{} `json:"output_schema,omitempty"`
+
+	// ProfileId Agent profile the node runs as. Required to publish.
+	ProfileId *openapi_types.UUID `json:"profile_id,omitempty"`
 
 	// Prompt Initial prompt. Required to publish.
 	Prompt *string `json:"prompt,omitempty"`
@@ -187,6 +262,32 @@ type AgentNode struct {
 
 // AgentNodeType defines model for AgentNode.Type.
 type AgentNodeType string
+
+// AgentProfile defines model for AgentProfile.
+type AgentProfile struct {
+	CreatedAt time.Time `json:"created_at"`
+
+	// CredentialKind Absent until the profile is logged in.
+	CredentialKind *AgentProfileCredentialKind `json:"credential_kind,omitempty"`
+	Id             openapi_types.UUID          `json:"id"`
+	Kind           AgentProfileKind            `json:"kind"`
+	Name           string                      `json:"name"`
+
+	// Ready Whether the profile has a credential.
+	Ready     bool      `json:"ready"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// AgentProfileCredentialKind Absent until the profile is logged in.
+type AgentProfileCredentialKind string
+
+// AgentProfileKind defines model for AgentProfile.Kind.
+type AgentProfileKind string
+
+// AgentProfileInput defines model for AgentProfileInput.
+type AgentProfileInput struct {
+	Name string `json:"name"`
+}
 
 // Card defines model for Card.
 type Card struct {
@@ -379,6 +480,47 @@ type LaneMove struct {
 	Position int `json:"position"`
 }
 
+// McpServer An external MCP server. Secret values are never returned, only their names.
+type McpServer struct {
+	Args      []string           `json:"args"`
+	Command   *string            `json:"command,omitempty"`
+	CreatedAt time.Time          `json:"created_at"`
+	Env       map[string]string  `json:"env"`
+	Headers   map[string]string  `json:"headers"`
+	Id        openapi_types.UUID `json:"id"`
+	Name      string             `json:"name"`
+
+	// SecretNames Env vars (stdio) or headers (http) whose values are stored encrypted.
+	SecretNames []string           `json:"secret_names"`
+	Transport   McpServerTransport `json:"transport"`
+	UpdatedAt   time.Time          `json:"updated_at"`
+	Url         *string            `json:"url,omitempty"`
+}
+
+// McpServerTransport defines model for McpServer.Transport.
+type McpServerTransport string
+
+// McpServerInput defines model for McpServerInput.
+type McpServerInput struct {
+	Args *[]string `json:"args,omitempty"`
+
+	// Command Required for stdio.
+	Command *string            `json:"command,omitempty"`
+	Env     *map[string]string `json:"env,omitempty"`
+	Headers *map[string]string `json:"headers,omitempty"`
+	Name    string             `json:"name"`
+
+	// Secrets Secret env vars (stdio) or headers (http), stored encrypted. On updates, absent or null keeps the current secrets; an object replaces them all.
+	Secrets   *map[string]string      `json:"secrets,omitempty"`
+	Transport McpServerInputTransport `json:"transport"`
+
+	// Url Required for http.
+	Url *string `json:"url,omitempty"`
+}
+
+// McpServerInputTransport defines model for McpServerInput.Transport.
+type McpServerInputTransport string
+
 // MoveCardConfig Moves the card to a lane.
 type MoveCardConfig struct {
 	// LaneId Required to publish.
@@ -447,6 +589,9 @@ type ReviewConfig struct {
 	// MaxRounds Rounds of changes before the max_rounds_exceeded output. Required to publish.
 	MaxRounds *int `json:"max_rounds,omitempty"`
 
+	// ProfileId Agent profile the reviewer runs as. Required to publish.
+	ProfileId *openapi_types.UUID `json:"profile_id,omitempty"`
+
 	// Prompt Review prompt. Required to publish.
 	Prompt *string `json:"prompt,omitempty"`
 }
@@ -491,6 +636,12 @@ type TriggerNodeType string
 // ID defines model for ID.
 type ID = openapi_types.UUID
 
+// CreateAgentProfileJSONRequestBody defines body for CreateAgentProfile for application/json ContentType.
+type CreateAgentProfileJSONRequestBody = AgentProfileInput
+
+// UpdateAgentProfileJSONRequestBody defines body for UpdateAgentProfile for application/json ContentType.
+type UpdateAgentProfileJSONRequestBody = AgentProfileInput
+
 // CreateCardTypeJSONRequestBody defines body for CreateCardType for application/json ContentType.
 type CreateCardTypeJSONRequestBody = CardTypeInput
 
@@ -523,6 +674,12 @@ type UpdateLaneJSONRequestBody = LaneInput
 
 // MoveLaneJSONRequestBody defines body for MoveLane for application/json ContentType.
 type MoveLaneJSONRequestBody = LaneMove
+
+// CreateMcpServerJSONRequestBody defines body for CreateMcpServer for application/json ContentType.
+type CreateMcpServerJSONRequestBody = McpServerInput
+
+// UpdateMcpServerJSONRequestBody defines body for UpdateMcpServer for application/json ContentType.
+type UpdateMcpServerJSONRequestBody = McpServerInput
 
 // CreateProjectJSONRequestBody defines body for CreateProject for application/json ContentType.
 type CreateProjectJSONRequestBody = ProjectInput
@@ -742,6 +899,21 @@ func (t *FlowNode) UnmarshalJSON(b []byte) error {
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 
+	// (GET /agent-profiles)
+	ListAgentProfiles(w http.ResponseWriter, r *http.Request)
+
+	// (POST /agent-profiles)
+	CreateAgentProfile(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /agent-profiles/{id})
+	DeleteAgentProfile(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /agent-profiles/{id})
+	GetAgentProfile(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PUT /agent-profiles/{id})
+	UpdateAgentProfile(w http.ResponseWriter, r *http.Request, id ID)
+
 	// (GET /card-types)
 	ListCardTypes(w http.ResponseWriter, r *http.Request)
 
@@ -823,6 +995,21 @@ type ServerInterface interface {
 	// (POST /lanes/{id}/move)
 	MoveLane(w http.ResponseWriter, r *http.Request, id ID)
 
+	// (GET /mcp-servers)
+	ListMcpServers(w http.ResponseWriter, r *http.Request)
+
+	// (POST /mcp-servers)
+	CreateMcpServer(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /mcp-servers/{id})
+	DeleteMcpServer(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /mcp-servers/{id})
+	GetMcpServer(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (PUT /mcp-servers/{id})
+	UpdateMcpServer(w http.ResponseWriter, r *http.Request, id ID)
+
 	// (GET /projects)
 	ListProjects(w http.ResponseWriter, r *http.Request)
 
@@ -847,6 +1034,112 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// ListAgentProfiles operation middleware
+func (siw *ServerInterfaceWrapper) ListAgentProfiles(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAgentProfiles(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateAgentProfile operation middleware
+func (siw *ServerInterfaceWrapper) CreateAgentProfile(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateAgentProfile(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteAgentProfile operation middleware
+func (siw *ServerInterfaceWrapper) DeleteAgentProfile(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteAgentProfile(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAgentProfile operation middleware
+func (siw *ServerInterfaceWrapper) GetAgentProfile(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAgentProfile(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateAgentProfile operation middleware
+func (siw *ServerInterfaceWrapper) UpdateAgentProfile(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateAgentProfile(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // ListCardTypes operation middleware
 func (siw *ServerInterfaceWrapper) ListCardTypes(w http.ResponseWriter, r *http.Request) {
@@ -1454,6 +1747,112 @@ func (siw *ServerInterfaceWrapper) MoveLane(w http.ResponseWriter, r *http.Reque
 	handler.ServeHTTP(w, r)
 }
 
+// ListMcpServers operation middleware
+func (siw *ServerInterfaceWrapper) ListMcpServers(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListMcpServers(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateMcpServer operation middleware
+func (siw *ServerInterfaceWrapper) CreateMcpServer(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateMcpServer(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteMcpServer operation middleware
+func (siw *ServerInterfaceWrapper) DeleteMcpServer(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteMcpServer(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMcpServer operation middleware
+func (siw *ServerInterfaceWrapper) GetMcpServer(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMcpServer(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateMcpServer operation middleware
+func (siw *ServerInterfaceWrapper) UpdateMcpServer(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateMcpServer(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListProjects operation middleware
 func (siw *ServerInterfaceWrapper) ListProjects(w http.ResponseWriter, r *http.Request) {
 
@@ -1712,11 +2111,210 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/flows/{id}/draft", wrapper.SaveFlowDraft)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/flows/{id}/publish", wrapper.PublishFlow)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/flows/{id}/versions", wrapper.ListFlowVersions)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/agent-profiles", wrapper.ListAgentProfiles)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/agent-profiles", wrapper.CreateAgentProfile)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/agent-profiles/{id}", wrapper.DeleteAgentProfile)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/agent-profiles/{id}", wrapper.GetAgentProfile)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/agent-profiles/{id}", wrapper.UpdateAgentProfile)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/mcp-servers", wrapper.ListMcpServers)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/mcp-servers", wrapper.CreateMcpServer)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/mcp-servers/{id}", wrapper.DeleteMcpServer)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/mcp-servers/{id}", wrapper.GetMcpServer)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/mcp-servers/{id}", wrapper.UpdateMcpServer)
 
 	return m
 }
 
 type ErrorJSONResponse Error
+
+type ListAgentProfilesRequestObject struct {
+}
+
+type ListAgentProfilesResponseObject interface {
+	VisitListAgentProfilesResponse(w http.ResponseWriter) error
+}
+
+type ListAgentProfiles200JSONResponse []AgentProfile
+
+func (response ListAgentProfiles200JSONResponse) VisitListAgentProfilesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAgentProfilesdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListAgentProfilesdefaultJSONResponse) VisitListAgentProfilesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAgentProfileRequestObject struct {
+	Body *CreateAgentProfileJSONRequestBody
+}
+
+type CreateAgentProfileResponseObject interface {
+	VisitCreateAgentProfileResponse(w http.ResponseWriter) error
+}
+
+type CreateAgentProfile201JSONResponse AgentProfile
+
+func (response CreateAgentProfile201JSONResponse) VisitCreateAgentProfileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAgentProfiledefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateAgentProfiledefaultJSONResponse) VisitCreateAgentProfileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAgentProfileRequestObject struct {
+	Id ID `json:"id"`
+}
+
+type DeleteAgentProfileResponseObject interface {
+	VisitDeleteAgentProfileResponse(w http.ResponseWriter) error
+}
+
+type DeleteAgentProfile204Response struct {
+}
+
+func (response DeleteAgentProfile204Response) VisitDeleteAgentProfileResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteAgentProfiledefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeleteAgentProfiledefaultJSONResponse) VisitDeleteAgentProfileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAgentProfileRequestObject struct {
+	Id ID `json:"id"`
+}
+
+type GetAgentProfileResponseObject interface {
+	VisitGetAgentProfileResponse(w http.ResponseWriter) error
+}
+
+type GetAgentProfile200JSONResponse AgentProfile
+
+func (response GetAgentProfile200JSONResponse) VisitGetAgentProfileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAgentProfiledefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetAgentProfiledefaultJSONResponse) VisitGetAgentProfileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAgentProfileRequestObject struct {
+	Id   ID `json:"id"`
+	Body *UpdateAgentProfileJSONRequestBody
+}
+
+type UpdateAgentProfileResponseObject interface {
+	VisitUpdateAgentProfileResponse(w http.ResponseWriter) error
+}
+
+type UpdateAgentProfile200JSONResponse AgentProfile
+
+func (response UpdateAgentProfile200JSONResponse) VisitUpdateAgentProfileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAgentProfiledefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response UpdateAgentProfiledefaultJSONResponse) VisitUpdateAgentProfileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type ListCardTypesRequestObject struct {
 }
@@ -2750,6 +3348,195 @@ func (response MoveLanedefaultJSONResponse) VisitMoveLaneResponse(w http.Respons
 	return err
 }
 
+type ListMcpServersRequestObject struct {
+}
+
+type ListMcpServersResponseObject interface {
+	VisitListMcpServersResponse(w http.ResponseWriter) error
+}
+
+type ListMcpServers200JSONResponse []McpServer
+
+func (response ListMcpServers200JSONResponse) VisitListMcpServersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMcpServersdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListMcpServersdefaultJSONResponse) VisitListMcpServersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMcpServerRequestObject struct {
+	Body *CreateMcpServerJSONRequestBody
+}
+
+type CreateMcpServerResponseObject interface {
+	VisitCreateMcpServerResponse(w http.ResponseWriter) error
+}
+
+type CreateMcpServer201JSONResponse McpServer
+
+func (response CreateMcpServer201JSONResponse) VisitCreateMcpServerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMcpServerdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateMcpServerdefaultJSONResponse) VisitCreateMcpServerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMcpServerRequestObject struct {
+	Id ID `json:"id"`
+}
+
+type DeleteMcpServerResponseObject interface {
+	VisitDeleteMcpServerResponse(w http.ResponseWriter) error
+}
+
+type DeleteMcpServer204Response struct {
+}
+
+func (response DeleteMcpServer204Response) VisitDeleteMcpServerResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteMcpServerdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeleteMcpServerdefaultJSONResponse) VisitDeleteMcpServerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMcpServerRequestObject struct {
+	Id ID `json:"id"`
+}
+
+type GetMcpServerResponseObject interface {
+	VisitGetMcpServerResponse(w http.ResponseWriter) error
+}
+
+type GetMcpServer200JSONResponse McpServer
+
+func (response GetMcpServer200JSONResponse) VisitGetMcpServerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMcpServerdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetMcpServerdefaultJSONResponse) VisitGetMcpServerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMcpServerRequestObject struct {
+	Id   ID `json:"id"`
+	Body *UpdateMcpServerJSONRequestBody
+}
+
+type UpdateMcpServerResponseObject interface {
+	VisitUpdateMcpServerResponse(w http.ResponseWriter) error
+}
+
+type UpdateMcpServer200JSONResponse McpServer
+
+func (response UpdateMcpServer200JSONResponse) VisitUpdateMcpServerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateMcpServerdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response UpdateMcpServerdefaultJSONResponse) VisitUpdateMcpServerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListProjectsRequestObject struct {
 }
 
@@ -2942,6 +3729,21 @@ func (response UpdateProjectdefaultJSONResponse) VisitUpdateProjectResponse(w ht
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 
+	// (GET /agent-profiles)
+	ListAgentProfiles(ctx context.Context, request ListAgentProfilesRequestObject) (ListAgentProfilesResponseObject, error)
+
+	// (POST /agent-profiles)
+	CreateAgentProfile(ctx context.Context, request CreateAgentProfileRequestObject) (CreateAgentProfileResponseObject, error)
+
+	// (DELETE /agent-profiles/{id})
+	DeleteAgentProfile(ctx context.Context, request DeleteAgentProfileRequestObject) (DeleteAgentProfileResponseObject, error)
+
+	// (GET /agent-profiles/{id})
+	GetAgentProfile(ctx context.Context, request GetAgentProfileRequestObject) (GetAgentProfileResponseObject, error)
+
+	// (PUT /agent-profiles/{id})
+	UpdateAgentProfile(ctx context.Context, request UpdateAgentProfileRequestObject) (UpdateAgentProfileResponseObject, error)
+
 	// (GET /card-types)
 	ListCardTypes(ctx context.Context, request ListCardTypesRequestObject) (ListCardTypesResponseObject, error)
 
@@ -3023,6 +3825,21 @@ type StrictServerInterface interface {
 	// (POST /lanes/{id}/move)
 	MoveLane(ctx context.Context, request MoveLaneRequestObject) (MoveLaneResponseObject, error)
 
+	// (GET /mcp-servers)
+	ListMcpServers(ctx context.Context, request ListMcpServersRequestObject) (ListMcpServersResponseObject, error)
+
+	// (POST /mcp-servers)
+	CreateMcpServer(ctx context.Context, request CreateMcpServerRequestObject) (CreateMcpServerResponseObject, error)
+
+	// (DELETE /mcp-servers/{id})
+	DeleteMcpServer(ctx context.Context, request DeleteMcpServerRequestObject) (DeleteMcpServerResponseObject, error)
+
+	// (GET /mcp-servers/{id})
+	GetMcpServer(ctx context.Context, request GetMcpServerRequestObject) (GetMcpServerResponseObject, error)
+
+	// (PUT /mcp-servers/{id})
+	UpdateMcpServer(ctx context.Context, request UpdateMcpServerRequestObject) (UpdateMcpServerResponseObject, error)
+
 	// (GET /projects)
 	ListProjects(ctx context.Context, request ListProjectsRequestObject) (ListProjectsResponseObject, error)
 
@@ -3076,6 +3893,146 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// ListAgentProfiles operation middleware
+func (sh *strictHandler) ListAgentProfiles(w http.ResponseWriter, r *http.Request) {
+	var request ListAgentProfilesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAgentProfiles(ctx, request.(ListAgentProfilesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAgentProfiles")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListAgentProfilesResponseObject); ok {
+		if err := validResponse.VisitListAgentProfilesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateAgentProfile operation middleware
+func (sh *strictHandler) CreateAgentProfile(w http.ResponseWriter, r *http.Request) {
+	var request CreateAgentProfileRequestObject
+
+	var body CreateAgentProfileJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateAgentProfile(ctx, request.(CreateAgentProfileRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateAgentProfile")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateAgentProfileResponseObject); ok {
+		if err := validResponse.VisitCreateAgentProfileResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteAgentProfile operation middleware
+func (sh *strictHandler) DeleteAgentProfile(w http.ResponseWriter, r *http.Request, id ID) {
+	var request DeleteAgentProfileRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteAgentProfile(ctx, request.(DeleteAgentProfileRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteAgentProfile")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteAgentProfileResponseObject); ok {
+		if err := validResponse.VisitDeleteAgentProfileResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetAgentProfile operation middleware
+func (sh *strictHandler) GetAgentProfile(w http.ResponseWriter, r *http.Request, id ID) {
+	var request GetAgentProfileRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAgentProfile(ctx, request.(GetAgentProfileRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAgentProfile")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetAgentProfileResponseObject); ok {
+		if err := validResponse.VisitGetAgentProfileResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateAgentProfile operation middleware
+func (sh *strictHandler) UpdateAgentProfile(w http.ResponseWriter, r *http.Request, id ID) {
+	var request UpdateAgentProfileRequestObject
+
+	request.Id = id
+
+	var body UpdateAgentProfileJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateAgentProfile(ctx, request.(UpdateAgentProfileRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateAgentProfile")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateAgentProfileResponseObject); ok {
+		if err := validResponse.VisitUpdateAgentProfileResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // ListCardTypes operation middleware
@@ -3834,6 +4791,146 @@ func (sh *strictHandler) MoveLane(w http.ResponseWriter, r *http.Request, id ID)
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(MoveLaneResponseObject); ok {
 		if err := validResponse.VisitMoveLaneResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListMcpServers operation middleware
+func (sh *strictHandler) ListMcpServers(w http.ResponseWriter, r *http.Request) {
+	var request ListMcpServersRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListMcpServers(ctx, request.(ListMcpServersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListMcpServers")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListMcpServersResponseObject); ok {
+		if err := validResponse.VisitListMcpServersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateMcpServer operation middleware
+func (sh *strictHandler) CreateMcpServer(w http.ResponseWriter, r *http.Request) {
+	var request CreateMcpServerRequestObject
+
+	var body CreateMcpServerJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateMcpServer(ctx, request.(CreateMcpServerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateMcpServer")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateMcpServerResponseObject); ok {
+		if err := validResponse.VisitCreateMcpServerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteMcpServer operation middleware
+func (sh *strictHandler) DeleteMcpServer(w http.ResponseWriter, r *http.Request, id ID) {
+	var request DeleteMcpServerRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteMcpServer(ctx, request.(DeleteMcpServerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteMcpServer")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteMcpServerResponseObject); ok {
+		if err := validResponse.VisitDeleteMcpServerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMcpServer operation middleware
+func (sh *strictHandler) GetMcpServer(w http.ResponseWriter, r *http.Request, id ID) {
+	var request GetMcpServerRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMcpServer(ctx, request.(GetMcpServerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMcpServer")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMcpServerResponseObject); ok {
+		if err := validResponse.VisitGetMcpServerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateMcpServer operation middleware
+func (sh *strictHandler) UpdateMcpServer(w http.ResponseWriter, r *http.Request, id ID) {
+	var request UpdateMcpServerRequestObject
+
+	request.Id = id
+
+	var body UpdateMcpServerJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateMcpServer(ctx, request.(UpdateMcpServerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateMcpServer")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateMcpServerResponseObject); ok {
+		if err := validResponse.VisitUpdateMcpServerResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -10,12 +10,17 @@ import (
 )
 
 var (
-	laneID = uuid.New()
-	typeID = uuid.New()
-	refs   = References{
-		Lanes:     map[uuid.UUID]bool{laneID: true},
-		CardTypes: map[uuid.UUID]bool{typeID: true},
+	laneID    = uuid.New()
+	typeID    = uuid.New()
+	profileID = uuid.New()
+	mcpID     = uuid.New()
+	refs      = References{
+		Lanes:      map[uuid.UUID]bool{laneID: true},
+		CardTypes:  map[uuid.UUID]bool{typeID: true},
+		Profiles:   map[uuid.UUID]bool{profileID: true},
+		McpServers: map[uuid.UUID]bool{mcpID: true},
 	}
+	profile = `"profile_id":"` + profileID.String() + `"`
 )
 
 func node(id string, t NodeType, config string) Node {
@@ -31,8 +36,8 @@ func validGraph() Graph {
 	return Graph{
 		Nodes: []Node{
 			node("t", NodeTrigger, `{"event":"card_entered_lane","lane_id":"`+laneID.String()+`","card_type_ids":["`+typeID.String()+`"]}`),
-			node("dev", NodeAgent, `{"prompt":"do it","max_turns":5,"output_schema":{"type":"object"}}`),
-			node("rev", NodeReview, `{"prompt":"check","max_rounds":3}`),
+			node("dev", NodeAgent, `{`+profile+`,"mcp_server_ids":["`+mcpID.String()+`"],"prompt":"do it","max_turns":5,"output_schema":{"type":"object"}}`),
+			node("rev", NodeReview, `{`+profile+`,"prompt":"check","max_rounds":3}`),
 			node("move", NodeMoveCard, `{"lane_id":"`+laneID.String()+`"}`),
 			node("end", NodeEnd, ``),
 		},
@@ -130,14 +135,16 @@ func TestConfigProblems(t *testing.T) {
 		{"trigger with missing type", NodeTrigger, `{"event":"card_created","card_type_ids":["` + uuid.NewString() + `","` + uuid.NewString() + `"]}`,
 			[]string{"o filtro usa um tipo de card que não existe mais"}},
 		{"trigger with bad JSON", NodeTrigger, `[]`, []string{"configuração inválida"}},
-		{"agent without config", NodeAgent, ``, []string{"o prompt inicial é obrigatório"}},
-		{"agent with bad values", NodeAgent, `{"prompt":" ","max_turns":0,"output_schema":[1]}`, []string{
+		{"agent without config", NodeAgent, ``, []string{"escolha o perfil do agente", "o prompt inicial é obrigatório"}},
+		{"agent with bad values", NodeAgent, `{` + profile + `,"prompt":" ","max_turns":0,"output_schema":[1]}`, []string{
 			"o prompt inicial é obrigatório", "max_turns precisa ser pelo menos 1", "o schema de saída precisa ser um objeto JSON",
 		}},
-		{"agent with null schema", NodeAgent, `{"prompt":"p","output_schema":null}`, nil},
+		{"agent with missing profile and MCP", NodeAgent, `{"profile_id":"` + uuid.NewString() + `","mcp_server_ids":["` + uuid.NewString() + `"],"prompt":"p"}`,
+			[]string{"escolha o perfil do agente", "um dos servidores MCP não existe mais"}},
+		{"agent with null schema", NodeAgent, `{` + profile + `,"prompt":"p","output_schema":null}`, nil},
 		{"agent with bad JSON", NodeAgent, `[]`, []string{"configuração inválida"}},
 		{"review with bad values", NodeReview, `{"prompt":"","max_rounds":0}`, []string{
-			"o prompt de review é obrigatório", "max_rounds precisa ser pelo menos 1",
+			"escolha o perfil do agente", "o prompt de review é obrigatório", "max_rounds precisa ser pelo menos 1",
 		}},
 		{"review with bad JSON", NodeReview, `[]`, []string{"configuração inválida"}},
 		{"move without lane", NodeMoveCard, `{}`, []string{"escolha a baia de destino"}},

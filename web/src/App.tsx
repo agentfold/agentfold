@@ -1,3 +1,4 @@
+import { AgentsPage } from './agents/AgentsPage'
 import { useBoardEvents } from './api/events'
 import { Board } from './board/Board'
 import { CardTypesPage } from './cardTypes/CardTypesPage'
@@ -11,6 +12,7 @@ const tabs: { page: Page; label: string }[] = [
   { page: 'projects', label: 'Projetos' },
   { page: 'flows', label: 'Fluxos' },
   { page: 'card-types', label: 'Tipos de card' },
+  { page: 'agents', label: 'Agentes' },
 ]
 
 function App() {
@@ -42,6 +44,7 @@ function App() {
         {page === 'board' && <Board />}
         {page === 'projects' && <ProjectsPage />}
         {page === 'card-types' && <CardTypesPage />}
+        {page === 'agents' && <AgentsPage />}
         {page === 'flows' && !id && <FlowsPage />}
         {page === 'flows' && id && <FlowEditor key={id} flowId={id} />}
       </main>

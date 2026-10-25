@@ -25,6 +25,9 @@ export type TriggerConfig = Schemas['TriggerConfig']
 export type AgentConfig = Schemas['AgentConfig']
 export type ReviewConfig = Schemas['ReviewConfig']
 export type MoveCardConfig = Schemas['MoveCardConfig']
+export type AgentProfile = Schemas['AgentProfile']
+export type McpServer = Schemas['McpServer']
+export type McpServerInput = Schemas['McpServerInput']
 type ErrorBody = Schemas['Error']
 
 export type ApiClient = ReturnType<typeof createClient<paths>>

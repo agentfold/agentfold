@@ -62,7 +62,7 @@ func run(m *testing.M) (int, error) {
 // newStore returns a Store over an empty database.
 func newStore(t *testing.T) *Store {
 	t.Helper()
-	_, err := pool.Exec(context.Background(), "TRUNCATE flow_versions, flows, card_events, cards, card_types, projects, lanes")
+	_, err := pool.Exec(context.Background(), "TRUNCATE jobs, agent_sessions, node_runs, flow_runs, mcp_servers, agent_profiles, flow_versions, flows, card_events, cards, card_types, projects, lanes")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,4 +178,11 @@ func (f *failing) InsertFlowVersion(ctx context.Context, arg sqlcgen.InsertFlowV
 		return sqlcgen.FlowVersion{}, err
 	}
 	return f.Querier.InsertFlowVersion(ctx, arg)
+}
+
+func (f *failing) InsertJob(ctx context.Context, arg sqlcgen.InsertJobParams) (sqlcgen.Job, error) {
+	if err := f.hit("InsertJob"); err != nil {
+		return sqlcgen.Job{}, err
+	}
+	return f.Querier.InsertJob(ctx, arg)
 }

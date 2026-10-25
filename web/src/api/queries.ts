@@ -12,6 +12,7 @@ import {
   type CardTypeInput,
   type FlowGraph,
   type FlowInput,
+  type McpServerInput,
   type LaneInput,
   type NewCard,
   type ProjectInput,
@@ -26,6 +27,8 @@ export const keys = {
   cards: ['cards'],
   flows: ['flows'],
   flow: (id: string) => ['flows', id],
+  agentProfiles: ['agentProfiles'],
+  mcpServers: ['mcpServers'],
 } as const
 
 const byId = (id: string) => ({ params: { path: { id } } })
@@ -77,6 +80,22 @@ export function useFlow(id: string) {
   return useQuery({
     queryKey: keys.flow(id),
     queryFn: () => unwrap(client.GET('/flows/{id}', byId(id))),
+  })
+}
+
+export function useAgentProfiles() {
+  const { client } = useApi()
+  return useQuery({
+    queryKey: keys.agentProfiles,
+    queryFn: () => unwrap(client.GET('/agent-profiles')),
+  })
+}
+
+export function useMcpServers() {
+  const { client } = useApi()
+  return useQuery({
+    queryKey: keys.mcpServers,
+    queryFn: () => unwrap(client.GET('/mcp-servers')),
   })
 }
 
@@ -222,6 +241,43 @@ export function usePublishFlow(id: string) {
   const { client } = useApi()
   return useChange(keys.flows, () =>
     unwrap(client.POST('/flows/{id}/publish', byId(id))),
+  )
+}
+
+export function useCreateAgentProfile() {
+  const { client } = useApi()
+  return useChange(keys.agentProfiles, (name: string) =>
+    unwrap(client.POST('/agent-profiles', { body: { name } })),
+  )
+}
+
+export function useDeleteAgentProfile() {
+  const { client } = useApi()
+  return useChange(keys.agentProfiles, (id: string) =>
+    unwrap(client.DELETE('/agent-profiles/{id}', byId(id))),
+  )
+}
+
+export function useCreateMcpServer() {
+  const { client } = useApi()
+  return useChange(keys.mcpServers, (body: McpServerInput) =>
+    unwrap(client.POST('/mcp-servers', { body })),
+  )
+}
+
+export function useUpdateMcpServer() {
+  const { client } = useApi()
+  return useChange(
+    keys.mcpServers,
+    ({ id, ...body }: McpServerInput & { id: string }) =>
+      unwrap(client.PUT('/mcp-servers/{id}', { ...byId(id), body })),
+  )
+}
+
+export function useDeleteMcpServer() {
+  const { client } = useApi()
+  return useChange(keys.mcpServers, (id: string) =>
+    unwrap(client.DELETE('/mcp-servers/{id}', byId(id))),
   )
 }
 

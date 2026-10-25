@@ -10,6 +10,25 @@ import (
 	"github.com/google/uuid"
 )
 
+type AgentProfile struct {
+	ID             uuid.UUID
+	Kind           string
+	Name           string
+	Credential     []byte
+	CredentialKind *string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+type AgentSession struct {
+	ID              uuid.UUID
+	FlowRunID       uuid.UUID
+	NodeKey         string
+	ProfileID       uuid.UUID
+	ClaudeSessionID uuid.UUID
+	CreatedAt       time.Time
+}
+
 type Card struct {
 	ID           uuid.UUID
 	Title        string
@@ -47,6 +66,16 @@ type Flow struct {
 	UpdatedAt time.Time
 }
 
+type FlowRun struct {
+	ID            uuid.UUID
+	FlowVersionID uuid.UUID
+	CardID        uuid.UUID
+	Trigger       string
+	Status        string
+	StartedAt     time.Time
+	FinishedAt    *time.Time
+}
+
 type FlowVersion struct {
 	ID          uuid.UUID
 	FlowID      uuid.UUID
@@ -55,12 +84,61 @@ type FlowVersion struct {
 	PublishedAt time.Time
 }
 
+type Job struct {
+	ID           uuid.UUID
+	Kind         string
+	Payload      []byte
+	Requirements []byte
+	Status       string
+	RunAt        time.Time
+	Attempts     int32
+	MaxAttempts  int32
+	LockedBy     *string
+	LeaseUntil   *time.Time
+	LastError    *string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
 type Lane struct {
 	ID        uuid.UUID
 	Name      string
 	Position  int32
 	Color     string
 	CreatedAt time.Time
+}
+
+type McpServer struct {
+	ID        uuid.UUID
+	Name      string
+	Transport string
+	Config    []byte
+	Secrets   []byte
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type NodeRun struct {
+	ID           uuid.UUID
+	FlowRunID    uuid.UUID
+	NodeKey      string
+	Iteration    int32
+	Status       string
+	Input        []byte
+	Output       []byte
+	OutputHandle *string
+	SessionID    *uuid.UUID
+	TokensIn     int64
+	TokensOut    int64
+	CacheRead    int64
+	CacheWrite   int64
+	CostUsd      float64
+	Turns        int32
+	DurationMs   int64
+	Error        *string
+	CreatedAt    time.Time
+	StartedAt    *time.Time
+	FinishedAt   *time.Time
 }
 
 type Project struct {

@@ -21,8 +21,6 @@ func TestRun(t *testing.T) {
 		{name: "short help flag", args: []string{"-h"}, wantCode: ExitOK, wantStdout: "server"},
 		{name: "long help flag", args: []string{"--help"}, wantCode: ExitOK, wantStdout: "worker"},
 		{name: "unknown command", args: []string{"nope"}, wantCode: ExitUsage, wantStderr: `unknown command "nope"`},
-		{name: "worker not implemented", args: []string{"worker"}, wantCode: ExitError, wantStderr: "orquestrator worker: not implemented yet"},
-		{name: "agent not implemented", args: []string{"agent", "login", "claude"}, wantCode: ExitError, wantStderr: "not implemented yet"},
 	}
 
 	for _, tt := range tests {

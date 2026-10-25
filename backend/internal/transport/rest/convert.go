@@ -59,6 +59,10 @@ func toEntity(v any) any {
 		return toCard(v)
 	case domain.Flow:
 		return toFlowSummary(v)
+	case domain.AgentProfile:
+		return toAgentProfile(v)
+	case domain.McpServer:
+		return toMcpServer(v)
 	}
 	return nil
 }

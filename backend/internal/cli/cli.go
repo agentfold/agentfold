@@ -3,7 +3,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -16,22 +15,18 @@ const (
 	ExitUsage = 2
 )
 
-// ErrNotImplemented is returned by subcommands that are not built yet.
-var ErrNotImplemented = errors.New("not implemented yet")
-
 type command struct {
 	name    string
 	summary string
 	run     func(ctx context.Context, args []string, stdout, stderr io.Writer) error
 }
 
-func notImplemented(context.Context, []string, io.Writer, io.Writer) error { return ErrNotImplemented }
-
 var commands = []command{
 	{name: "server", summary: "run the API, MCP server and flow engine", run: runServer},
-	{name: "worker", summary: "run a worker that executes agent jobs", run: notImplemented},
+	{name: "worker", summary: "run a worker that executes agent jobs", run: runWorker},
 	{name: "migrate", summary: "apply database migrations", run: runMigrate},
-	{name: "agent", summary: "manage agent profiles (agent login claude)", run: notImplemented},
+	{name: "agent", summary: "log in agent profiles (agent login claude --profile name)", run: runAgent},
+	{name: "secret-key", summary: "print a new random ORQ_SECRET_KEY", run: runSecretKey},
 }
 
 // Run executes the subcommand named by args[0] and returns the process exit

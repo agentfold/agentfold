@@ -44,6 +44,11 @@ describe('App', () => {
       screen.getByRole('heading', { name: 'Tipos de card' }),
     ).toBeInTheDocument()
 
+    goTo('#/agents')
+    expect(
+      screen.getByRole('heading', { name: 'Perfis de agente' }),
+    ).toBeInTheDocument()
+
     goTo('#/flows')
     expect(screen.getByRole('heading', { name: 'Fluxos' })).toBeInTheDocument()
 

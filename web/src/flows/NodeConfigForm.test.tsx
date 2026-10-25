@@ -3,16 +3,19 @@ import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
 
-import { cardType, lane } from '../test/fakeBackend'
+import { agentProfile, cardType, lane, mcpServer } from '../test/fakeBackend'
 import type { NodeKind, StepConfig } from './graph'
 import { NodeConfigForm } from './NodeConfigForm'
 
 const todo = lane('Todo', 0)
+const dev = agentProfile('dev')
+const fresh = agentProfile('fresh', { ready: false })
+const sg = mcpServer('sg')
 const bug = cardType('bug')
 const task = cardType('task')
 
 /** Renders the form for a node and exposes the latest config. */
-function setup(kind: NodeKind, initial: StepConfig) {
+function setup(kind: NodeKind, initial: StepConfig, mcpServers = [sg]) {
   const result: { config: StepConfig } = { config: initial }
   function Harness() {
     const [config, setConfig] = useState(initial)
@@ -22,6 +25,8 @@ function setup(kind: NodeKind, initial: StepConfig) {
         data={{ kind, config }}
         lanes={[todo]}
         cardTypes={[bug, task]}
+        profiles={[dev, fresh]}
+        mcpServers={mcpServers}
         onChange={setConfig}
       />
     )
@@ -105,6 +110,28 @@ describe('NodeConfigForm', () => {
     })
   })
 
+  it('picks the profile and MCP servers of an agent', async () => {
+    const result = setup('agent', {})
+    const profile = screen.getByLabelText('Perfil do agente')
+    expect(
+      screen.getByRole('option', { name: 'fresh (sem credencial)' }),
+    ).toBeInTheDocument()
+    await userEvent.selectOptions(profile, 'dev')
+    await userEvent.click(screen.getByLabelText('sg'))
+    expect(result.config).toEqual({
+      profile_id: dev.id,
+      mcp_server_ids: [sg.id],
+    })
+    await userEvent.click(screen.getByLabelText('sg'))
+    await userEvent.selectOptions(profile, 'Escolha o perfil')
+    expect(result.config).toEqual({ profile_id: undefined, mcp_server_ids: [] })
+  })
+
+  it('says when there are no MCP servers', () => {
+    setup('agent', {}, [])
+    expect(screen.getByText(/Nenhum cadastrado/)).toBeInTheDocument()
+  })
+
   it('keeps the last valid output schema', async () => {
     const result = setup('agent', {})
     const schema = screen.getByLabelText(/Schema de saída/)
@@ -136,8 +163,16 @@ describe('NodeConfigForm', () => {
     await userEvent.clear(rounds)
     expect(result.config).toMatchObject({ max_rounds: undefined })
     await userEvent.type(rounds, '5')
+    await userEvent.selectOptions(
+      screen.getByLabelText('Perfil do agente'),
+      'dev',
+    )
     await userEvent.type(screen.getByLabelText('Prompt de review'), '!')
-    expect(result.config).toMatchObject({ prompt: 'Check!', max_rounds: 5 })
+    expect(result.config).toMatchObject({
+      prompt: 'Check!',
+      max_rounds: 5,
+      profile_id: dev.id,
+    })
   })
 
   it('starts a review from an empty config', () => {

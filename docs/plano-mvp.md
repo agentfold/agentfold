@@ -94,6 +94,14 @@ orquestrator/
   parse do `stream-json`, captura de usage).
 - Testes do adaptador com um binário `claude` falso que emite `stream-json` roteirizado.
 - **Pronto quando:** um job executa o agente (falso nos testes, real no smoke) num worktree e grava usage.
+- Decidido: o login roda `claude setup-token` num diretório de config temporário e pede para colar
+  o token (ou uma API key); o CLI do Claude vem do mise (`npm:@anthropic-ai/claude-code`, com
+  `postinstall` que instala o binário nativo); sem retry automático — job com lease vencido volta
+  à fila uma vez (`max_attempts = 2`, a engine da F6 enfileira assim) e falha do agente vai para a
+  saída `failed`; a F5 é provada pelos testes (o primeiro disparo real vem com a F6).
+- Detalhes: os dois providers (`LocalWorktree` e `Empty`) ficaram num só `workspace.Local`;
+  o Claude roda com `--permission-mode acceptEdits` e sempre com `git commit`/`git push`
+  bloqueados; a saída estruturada (MCP `submit_output` ou `--json-schema` do CLI) fica para a F7.
 
 ### F6 — Engine de fluxo
 - Migrations `flow_runs`; triggers `card_created` / `card_entered_lane`.

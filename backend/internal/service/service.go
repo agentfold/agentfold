@@ -48,6 +48,21 @@ type Repository interface {
 	DeleteFlow(ctx context.Context, id uuid.UUID) error
 	PublishFlow(ctx context.Context, id uuid.UUID, graph domain.Graph) (domain.FlowVersion, error)
 	ListFlowVersions(ctx context.Context, flowID uuid.UUID) ([]domain.FlowVersion, error)
+
+	ListAgentProfiles(ctx context.Context) ([]domain.AgentProfile, error)
+	GetAgentProfile(ctx context.Context, id uuid.UUID) (domain.AgentProfile, error)
+	GetAgentProfileByName(ctx context.Context, name string) (domain.AgentProfile, error)
+	CreateAgentProfile(ctx context.Context, kind domain.AgentKind, name string) (domain.AgentProfile, error)
+	RenameAgentProfile(ctx context.Context, id uuid.UUID, name string) (domain.AgentProfile, error)
+	SetAgentCredential(ctx context.Context, id uuid.UUID, kind domain.CredentialKind, sealed []byte) (domain.AgentProfile, error)
+	DeleteAgentProfile(ctx context.Context, id uuid.UUID) error
+
+	ListMcpServers(ctx context.Context) ([]domain.McpServer, error)
+	GetMcpServer(ctx context.Context, id uuid.UUID) (domain.McpServer, error)
+	McpSecrets(ctx context.Context, id uuid.UUID) ([]byte, error)
+	CreateMcpServer(ctx context.Context, r domain.McpServerRecord) (domain.McpServer, error)
+	UpdateMcpServer(ctx context.Context, id uuid.UUID, r domain.McpServerRecord) (domain.McpServer, error)
+	DeleteMcpServer(ctx context.Context, id uuid.UUID) error
 }
 
 // GitInspector finds the repository that contains a path. *gitrepo.Inspector
@@ -64,14 +79,15 @@ type Publisher interface {
 
 // Service implements the board use cases.
 type Service struct {
-	repo Repository
-	git  GitInspector
-	pub  Publisher
+	repo    Repository
+	git     GitInspector
+	pub     Publisher
+	secrets Sealer
 }
 
 // New returns a Service.
-func New(repo Repository, git GitInspector, pub Publisher) *Service {
-	return &Service{repo: repo, git: git, pub: pub}
+func New(repo Repository, git GitInspector, pub Publisher, secrets Sealer) *Service {
+	return &Service{repo: repo, git: git, pub: pub, secrets: secrets}
 }
 
 // entity is a domain value that board events can refer to.

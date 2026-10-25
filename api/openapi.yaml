@@ -440,6 +440,133 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/FlowVersion" }
         default: { $ref: "#/components/responses/Error" }
+  /agent-profiles:
+    get:
+      operationId: listAgentProfiles
+      tags: [agent-profiles]
+      responses:
+        "200":
+          description: All agent-profiles.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AgentProfile" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createAgentProfile
+      tags: [agent-profiles]
+      description: Creates a profile without credential; log it in with `orquestrator agent login claude --profile <name>`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AgentProfileInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentProfile" }
+        default: { $ref: "#/components/responses/Error" }
+  /agent-profiles/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: getAgentProfile
+      tags: [agent-profiles]
+      responses:
+        "200":
+          description: The AgentProfile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentProfile" }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      operationId: updateAgentProfile
+      tags: [agent-profiles]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AgentProfileInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentProfile" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteAgentProfile
+      tags: [agent-profiles]
+      responses:
+        "204":
+          description: Deleted.
+        default: { $ref: "#/components/responses/Error" }
+  /mcp-servers:
+    get:
+      operationId: listMcpServers
+      tags: [mcp-servers]
+      responses:
+        "200":
+          description: All mcp-servers.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/McpServer" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      operationId: createMcpServer
+      tags: [mcp-servers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/McpServerInput" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/McpServer" }
+        default: { $ref: "#/components/responses/Error" }
+  /mcp-servers/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: getMcpServer
+      tags: [mcp-servers]
+      responses:
+        "200":
+          description: The McpServer.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/McpServer" }
+        default: { $ref: "#/components/responses/Error" }
+    put:
+      operationId: updateMcpServer
+      tags: [mcp-servers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/McpServerInput" }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/McpServer" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteMcpServer
+      tags: [mcp-servers]
+      responses:
+        "204":
+          description: Deleted.
+        default: { $ref: "#/components/responses/Error" }
   /events:
     get:
       operationId: streamEvents
@@ -598,7 +725,8 @@ components:
       type: object
       description: >
         A change to the board. `type` is "<entity>.<change>", with entity one of
-        lane, project, card_type, card, flow and change one of created,
+        lane, project, card_type, card, flow, agent_profile, mcp_server and
+        change one of created,
         updated, moved, deleted, published.
       required: [type, id]
       properties:
@@ -774,6 +902,14 @@ components:
       type: object
       description: Runs an agent session on the card's workspace.
       properties:
+        profile_id:
+          type: string
+          format: uuid
+          description: Agent profile the node runs as. Required to publish.
+        mcp_server_ids:
+          type: array
+          description: External MCP servers available to the agent.
+          items: { type: string, format: uuid }
         prompt:
           type: string
           description: Initial prompt. Required to publish.
@@ -797,6 +933,10 @@ components:
       type: object
       description: Runs a reviewer on the work of the previous agent.
       properties:
+        profile_id:
+          type: string
+          format: uuid
+          description: Agent profile the reviewer runs as. Required to publish.
         prompt:
           type: string
           description: Review prompt. Required to publish.
@@ -818,3 +958,78 @@ components:
           type: string
           format: uuid
           description: Required to publish.
+    AgentProfile:
+      type: object
+      required: [id, kind, name, ready, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [claude] }
+        name: { type: string }
+        ready:
+          type: boolean
+          description: Whether the profile has a credential.
+        credential_kind:
+          type: string
+          enum: [oauth_token, api_key]
+          description: Absent until the profile is logged in.
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AgentProfileInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+    McpServer:
+      type: object
+      description: An external MCP server. Secret values are never returned, only their names.
+      required: [id, name, transport, args, env, headers, secret_names, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        transport: { type: string, enum: [stdio, http] }
+        command: { type: string }
+        args:
+          type: array
+          items: { type: string }
+        env:
+          type: object
+          additionalProperties: { type: string }
+        url: { type: string }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+        secret_names:
+          type: array
+          description: Env vars (stdio) or headers (http) whose values are stored encrypted.
+          items: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    McpServerInput:
+      type: object
+      required: [name, transport]
+      properties:
+        name: { type: string }
+        transport: { type: string, enum: [stdio, http] }
+        command:
+          type: string
+          description: Required for stdio.
+        args:
+          type: array
+          items: { type: string }
+        env:
+          type: object
+          additionalProperties: { type: string }
+        url:
+          type: string
+          description: Required for http.
+        headers:
+          type: object
+          additionalProperties: { type: string }
+        secrets:
+          type: object
+          nullable: true
+          additionalProperties: { type: string }
+          description: >
+            Secret env vars (stdio) or headers (http), stored encrypted. On
+            updates, absent or null keeps the current secrets; an object
+            replaces them all.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -21,6 +22,10 @@ type fakeRepo struct {
 	in    any            // input of the last call
 	ins   map[string]any // input of the last call of each method
 	flow  domain.Flow
+	// Agent profile and MCP server methods return these.
+	profile domain.AgentProfile
+	mcp     domain.McpServer
+	sealed  []byte
 }
 
 func (f *fakeRepo) call(name string, in any) error {
@@ -164,6 +169,69 @@ func (f *fakeRepo) ListFlowVersions(_ context.Context, flowID uuid.UUID) ([]doma
 	return nil, f.call("ListFlowVersions", flowID)
 }
 
+func (f *fakeRepo) ListAgentProfiles(context.Context) ([]domain.AgentProfile, error) {
+	return []domain.AgentProfile{{ID: profileID}}, f.call("ListAgentProfiles", nil)
+}
+
+func (f *fakeRepo) GetAgentProfile(_ context.Context, id uuid.UUID) (domain.AgentProfile, error) {
+	return f.profile, f.call("GetAgentProfile", id)
+}
+
+func (f *fakeRepo) GetAgentProfileByName(_ context.Context, name string) (domain.AgentProfile, error) {
+	return f.profile, f.call("GetAgentProfileByName", name)
+}
+
+func (f *fakeRepo) CreateAgentProfile(_ context.Context, kind domain.AgentKind, name string) (domain.AgentProfile, error) {
+	return f.profile, f.call("CreateAgentProfile", string(kind)+" "+name)
+}
+
+func (f *fakeRepo) RenameAgentProfile(_ context.Context, _ uuid.UUID, name string) (domain.AgentProfile, error) {
+	return f.profile, f.call("RenameAgentProfile", name)
+}
+
+func (f *fakeRepo) SetAgentCredential(_ context.Context, _ uuid.UUID, kind domain.CredentialKind, sealed []byte) (domain.AgentProfile, error) {
+	return f.profile, f.call("SetAgentCredential", string(kind)+" "+string(sealed))
+}
+
+func (f *fakeRepo) DeleteAgentProfile(_ context.Context, id uuid.UUID) error {
+	return f.call("DeleteAgentProfile", id)
+}
+
+func (f *fakeRepo) ListMcpServers(context.Context) ([]domain.McpServer, error) {
+	return []domain.McpServer{{ID: mcpID}}, f.call("ListMcpServers", nil)
+}
+
+func (f *fakeRepo) GetMcpServer(_ context.Context, id uuid.UUID) (domain.McpServer, error) {
+	return f.mcp, f.call("GetMcpServer", id)
+}
+
+func (f *fakeRepo) McpSecrets(_ context.Context, id uuid.UUID) ([]byte, error) {
+	return f.sealed, f.call("McpSecrets", id)
+}
+
+func (f *fakeRepo) CreateMcpServer(_ context.Context, r domain.McpServerRecord) (domain.McpServer, error) {
+	return f.mcp, f.call("CreateMcpServer", r)
+}
+
+func (f *fakeRepo) UpdateMcpServer(_ context.Context, _ uuid.UUID, r domain.McpServerRecord) (domain.McpServer, error) {
+	return f.mcp, f.call("UpdateMcpServer", r)
+}
+
+func (f *fakeRepo) DeleteMcpServer(_ context.Context, id uuid.UUID) error {
+	return f.call("DeleteMcpServer", id)
+}
+
+// fakeSealer "seals" by prefixing, or fails with err.
+type fakeSealer struct{ err error }
+
+func (s fakeSealer) Seal(plain []byte) ([]byte, error) {
+	return append([]byte("sealed:"), plain...), s.err
+}
+
+func (s fakeSealer) Open(sealed []byte) ([]byte, error) {
+	return []byte(strings.TrimPrefix(string(sealed), "sealed:")), s.err
+}
+
 // fakeGit answers Root with root, or fails with err.
 type fakeGit struct {
 	root string
@@ -173,11 +241,13 @@ type fakeGit struct {
 func (g fakeGit) Root(context.Context, string) (string, error) { return g.root, g.err }
 
 var (
-	ctx     = context.Background()
-	id      = uuid.New()
-	laneID  = uuid.New()
-	typeID  = uuid.New()
-	errRepo = errors.New("repo failed")
+	ctx       = context.Background()
+	id        = uuid.New()
+	laneID    = uuid.New()
+	typeID    = uuid.New()
+	profileID = uuid.New()
+	mcpID     = uuid.New()
+	errRepo   = errors.New("repo failed")
 )
 
 // fakePub records the published events.
@@ -187,7 +257,7 @@ func (p *fakePub) Publish(e events.Event) { p.events = append(p.events, e) }
 
 func newService() (*Service, *fakeRepo, *fakePub) {
 	repo, pub := &fakeRepo{}, &fakePub{}
-	return New(repo, fakeGit{root: "/repo"}, pub), repo, pub
+	return New(repo, fakeGit{root: "/repo"}, pub, fakeSealer{}), repo, pub
 }
 
 func validCard() domain.CardInput {
@@ -331,7 +401,7 @@ func TestValidation(t *testing.T) {
 
 func TestProjectMustBeGitRepository(t *testing.T) {
 	repo := &fakeRepo{}
-	s := New(repo, fakeGit{err: errors.New("not a repo")}, &fakePub{})
+	s := New(repo, fakeGit{err: errors.New("not a repo")}, &fakePub{}, fakeSealer{})
 	var verr *domain.ValidationError
 	_, err := s.CreateProject(ctx, domain.ProjectInput{Name: "p", LocalPath: "/tmp/x"})
 	if !errors.As(err, &verr) || verr.Field != "local_path" {

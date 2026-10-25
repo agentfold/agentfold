@@ -19,6 +19,8 @@ type stubBoard struct {
 	cardEvent domain.CardEvent
 	flow      service.FlowDetail
 	version   domain.FlowVersion
+	profile   domain.AgentProfile
+	mcp       domain.McpServer
 
 	call string
 	args []any
@@ -155,4 +157,44 @@ func (b *stubBoard) DeleteFlow(_ context.Context, id uuid.UUID) error {
 
 func (b *stubBoard) ListFlowVersions(_ context.Context, id uuid.UUID) ([]domain.FlowVersion, error) {
 	return []domain.FlowVersion{b.version}, b.record("ListFlowVersions", id)
+}
+
+func (b *stubBoard) ListAgentProfiles(context.Context) ([]domain.AgentProfile, error) {
+	return []domain.AgentProfile{b.profile}, b.record("ListAgentProfiles")
+}
+
+func (b *stubBoard) GetAgentProfile(_ context.Context, id uuid.UUID) (domain.AgentProfile, error) {
+	return b.profile, b.record("GetAgentProfile", id)
+}
+
+func (b *stubBoard) CreateAgentProfile(_ context.Context, in domain.AgentProfileInput) (domain.AgentProfile, error) {
+	return b.profile, b.record("CreateAgentProfile", in)
+}
+
+func (b *stubBoard) UpdateAgentProfile(_ context.Context, id uuid.UUID, in domain.AgentProfileInput) (domain.AgentProfile, error) {
+	return b.profile, b.record("UpdateAgentProfile", id, in)
+}
+
+func (b *stubBoard) DeleteAgentProfile(_ context.Context, id uuid.UUID) error {
+	return b.record("DeleteAgentProfile", id)
+}
+
+func (b *stubBoard) ListMcpServers(context.Context) ([]domain.McpServer, error) {
+	return []domain.McpServer{b.mcp}, b.record("ListMcpServers")
+}
+
+func (b *stubBoard) GetMcpServer(_ context.Context, id uuid.UUID) (domain.McpServer, error) {
+	return b.mcp, b.record("GetMcpServer", id)
+}
+
+func (b *stubBoard) CreateMcpServer(_ context.Context, in domain.McpServerInput) (domain.McpServer, error) {
+	return b.mcp, b.record("CreateMcpServer", in)
+}
+
+func (b *stubBoard) UpdateMcpServer(_ context.Context, id uuid.UUID, in domain.McpServerInput) (domain.McpServer, error) {
+	return b.mcp, b.record("UpdateMcpServer", id, in)
+}
+
+func (b *stubBoard) DeleteMcpServer(_ context.Context, id uuid.UUID) error {
+	return b.record("DeleteMcpServer", id)
 }

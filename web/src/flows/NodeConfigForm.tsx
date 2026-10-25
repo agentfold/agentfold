@@ -2,6 +2,8 @@ import { useState } from 'react'
 
 import type {
   AgentConfig,
+  AgentProfile,
+  McpServer,
   CardType,
   Lane,
   MoveCardConfig,
@@ -16,11 +18,20 @@ interface Props {
   data: StepData
   lanes: Lane[]
   cardTypes: CardType[]
+  profiles: AgentProfile[]
+  mcpServers: McpServer[]
   onChange: (config: StepConfig) => void
 }
 
 /** The settings of the selected node, by kind. */
-export function NodeConfigForm({ data, lanes, cardTypes, onChange }: Props) {
+export function NodeConfigForm({
+  data,
+  lanes,
+  cardTypes,
+  profiles,
+  mcpServers,
+  onChange,
+}: Props) {
   switch (data.kind) {
     case 'trigger':
       return (
@@ -33,11 +44,20 @@ export function NodeConfigForm({ data, lanes, cardTypes, onChange }: Props) {
       )
     case 'agent':
       return (
-        <AgentForm config={data.config as AgentConfig} onChange={onChange} />
+        <AgentForm
+          config={data.config as AgentConfig}
+          profiles={profiles}
+          mcpServers={mcpServers}
+          onChange={onChange}
+        />
       )
     case 'review':
       return (
-        <ReviewForm config={data.config as ReviewConfig} onChange={onChange} />
+        <ReviewForm
+          config={data.config as ReviewConfig}
+          profiles={profiles}
+          onChange={onChange}
+        />
       )
     case 'move_card':
       return (
@@ -132,12 +152,41 @@ function TriggerForm({ config, lanes, cardTypes, onChange }: TriggerFormProps) {
 
 interface AgentFormProps {
   config: AgentConfig
+  profiles: AgentProfile[]
+  mcpServers: McpServer[]
   onChange: (config: AgentConfig) => void
 }
 
-function AgentForm({ config, onChange }: AgentFormProps) {
+function AgentForm({ config, profiles, mcpServers, onChange }: AgentFormProps) {
+  const selected = new Set(config.mcp_server_ids ?? [])
   return (
     <div className="flex flex-col gap-3">
+      <ProfileField config={config} profiles={profiles} onChange={onChange} />
+      <fieldset className="flex flex-col gap-1">
+        <legend className="text-xs font-medium text-slate-600">
+          Servidores MCP
+        </legend>
+        {mcpServers.length === 0 && (
+          <p className="text-xs text-slate-500">
+            Nenhum cadastrado (aba Agentes).
+          </p>
+        )}
+        {mcpServers.map((m) => (
+          <label key={m.id} className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={selected.has(m.id)}
+              onChange={(e) => {
+                const ids = e.target.checked
+                  ? [...selected, m.id]
+                  : [...selected].filter((id) => id !== m.id)
+                onChange({ ...config, mcp_server_ids: ids })
+              }}
+            />
+            {m.name}
+          </label>
+        ))}
+      </fieldset>
       <TextArea
         label="Prompt inicial"
         rows={6}
@@ -177,12 +226,14 @@ function AgentForm({ config, onChange }: AgentFormProps) {
 
 interface ReviewFormProps {
   config: ReviewConfig
+  profiles: AgentProfile[]
   onChange: (config: ReviewConfig) => void
 }
 
-function ReviewForm({ config, onChange }: ReviewFormProps) {
+function ReviewForm({ config, profiles, onChange }: ReviewFormProps) {
   return (
     <div className="flex flex-col gap-3">
+      <ProfileField config={config} profiles={profiles} onChange={onChange} />
       <TextArea
         label="Prompt de review"
         rows={6}
@@ -202,6 +253,36 @@ function ReviewForm({ config, onChange }: ReviewFormProps) {
         }}
       />
     </div>
+  )
+}
+
+interface ProfileFieldProps<C extends AgentConfig | ReviewConfig> {
+  config: C
+  profiles: AgentProfile[]
+  onChange: (config: C) => void
+}
+
+/** The agent profile a node runs as. */
+function ProfileField<C extends AgentConfig | ReviewConfig>({
+  config,
+  profiles,
+  onChange,
+}: ProfileFieldProps<C>) {
+  return (
+    <SelectField
+      label="Perfil do agente"
+      value={config.profile_id ?? ''}
+      onChange={(id) => {
+        onChange({ ...config, profile_id: id || undefined })
+      }}
+      options={[
+        { value: '', label: 'Escolha o perfil' },
+        ...profiles.map((p) => ({
+          value: p.id,
+          label: p.ready ? p.name : `${p.name} (sem credencial)`,
+        })),
+      ]}
+    />
   )
 }
 

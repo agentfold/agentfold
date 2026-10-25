@@ -50,7 +50,7 @@ func TestFlowReads(t *testing.T) {
 }
 
 func TestFlowDetailFailures(t *testing.T) {
-	for _, method := range []string{"GetFlow", "ListLanes", "ListCardTypes"} {
+	for _, method := range []string{"GetFlow", "ListLanes", "ListCardTypes", "ListAgentProfiles", "ListMcpServers"} {
 		t.Run(method, func(t *testing.T) {
 			s, repo, _ := newService()
 			repo.errs = map[string]error{method: errRepo}

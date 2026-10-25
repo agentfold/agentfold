@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"orquestrator/internal/domain"
 	"orquestrator/internal/store/sqlcgen"
@@ -23,10 +24,12 @@ const (
 // last is an upper bound for position ranges ("until the end of the lane").
 const last = 1<<31 - 1
 
-// Beginner starts transactions; *pgxpool.Pool satisfies it.
+// Beginner starts transactions and hands out connections; *pgxpool.Pool
+// satisfies it.
 type Beginner interface {
 	sqlcgen.DBTX
 	Begin(ctx context.Context) (pgx.Tx, error)
+	Acquire(ctx context.Context) (*pgxpool.Conn, error)
 }
 
 // Store implements the board persistence.

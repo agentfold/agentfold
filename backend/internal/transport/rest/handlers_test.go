@@ -38,6 +38,11 @@ func newStub() *stubBoard {
 			Problems: []domain.GraphProblem{{NodeID: "t", Message: "on node"}, {EdgeID: "e", Message: "on edge"}},
 		},
 		version: domain.FlowVersion{ID: id2, FlowID: id1, Version: 2, Graph: stubGraph(), PublishedAt: stamp},
+		profile: domain.AgentProfile{ID: id1, Kind: domain.AgentClaude, Name: "dev", CredentialKind: domain.CredentialOAuthToken, CreatedAt: stamp, UpdatedAt: stamp},
+		mcp: domain.McpServer{
+			ID: id1, Name: "sg", Transport: domain.McpHTTP, McpConfig: domain.McpConfig{URL: "https://sg/mcp"},
+			SecretNames: []string{"Authorization"}, CreatedAt: stamp, UpdatedAt: stamp,
+		},
 	}
 }
 
@@ -96,6 +101,11 @@ const (
 		`"problems":[{"node_id":"t","message":"on node"},{"edge_id":"e","message":"on edge"}]}`
 	versionJSON = `{"id":"00000000-0000-7000-8000-000000000002","flow_id":"00000000-0000-7000-8000-000000000001",` +
 		`"version":2,"graph":` + graphJSON + `,"published_at":"2026-10-25T12:00:00Z"}`
+	profileJSON = `{"id":"00000000-0000-7000-8000-000000000001","kind":"claude","name":"dev","ready":true,` +
+		`"credential_kind":"oauth_token","created_at":"2026-10-25T12:00:00Z","updated_at":"2026-10-25T12:00:00Z"}`
+	mcpJSON = `{"id":"00000000-0000-7000-8000-000000000001","name":"sg","transport":"http","url":"https://sg/mcp",` +
+		`"args":[],"env":{},"headers":{},"secret_names":["Authorization"],` +
+		`"created_at":"2026-10-25T12:00:00Z","updated_at":"2026-10-25T12:00:00Z"}`
 	cardEventJSON = `{"id":"00000000-0000-7000-8000-000000000001","card_id":"00000000-0000-7000-8000-000000000002",` +
 		`"type":"card.moved","payload":{"position":1},"created_at":"2026-10-25T12:00:00Z"}`
 )
@@ -161,6 +171,27 @@ func TestRoutes(t *testing.T) {
 		{"PUT", "/api/flows" + p1 + "/draft", graphJSON, 200, "SaveFlowDraft", []any{id1, stubGraph()}, flowJSON},
 		{"POST", "/api/flows" + p1 + "/publish", "", 201, "PublishFlow", []any{id1}, versionJSON},
 		{"GET", "/api/flows" + p1 + "/versions", "", 200, "ListFlowVersions", []any{id1}, "[" + versionJSON + "]"},
+
+		{"GET", "/api/agent-profiles", "", 200, "ListAgentProfiles", nil, "[" + profileJSON + "]"},
+		{"POST", "/api/agent-profiles", `{"name":"dev"}`, 201, "CreateAgentProfile", []any{domain.AgentProfileInput{Name: "dev"}}, profileJSON},
+		{"GET", "/api/agent-profiles" + p1, "", 200, "GetAgentProfile", []any{id1}, profileJSON},
+		{"PUT", "/api/agent-profiles" + p1, `{"name":"rev"}`, 200, "UpdateAgentProfile", []any{id1, domain.AgentProfileInput{Name: "rev"}}, profileJSON},
+		{"DELETE", "/api/agent-profiles" + p1, "", 204, "DeleteAgentProfile", []any{id1}, ""},
+
+		{"GET", "/api/mcp-servers", "", 200, "ListMcpServers", nil, "[" + mcpJSON + "]"},
+		{"POST", "/api/mcp-servers", `{"name":"sg","transport":"http","url":"https://sg/mcp","headers":{"X":"1"},"secrets":{"Authorization":"t"}}`,
+			201, "CreateMcpServer", []any{domain.McpServerInput{
+				Name: "sg", Transport: domain.McpHTTP,
+				McpConfig: domain.McpConfig{URL: "https://sg/mcp", Headers: map[string]string{"X": "1"}},
+				Secrets:   map[string]string{"Authorization": "t"},
+			}}, mcpJSON},
+		{"GET", "/api/mcp-servers" + p1, "", 200, "GetMcpServer", []any{id1}, mcpJSON},
+		{"PUT", "/api/mcp-servers" + p1, `{"name":"fs","transport":"stdio","command":"srv","args":["-v"],"env":{"A":"1"}}`,
+			200, "UpdateMcpServer", []any{id1, domain.McpServerInput{
+				Name: "fs", Transport: domain.McpStdio,
+				McpConfig: domain.McpConfig{Command: "srv", Args: []string{"-v"}, Env: map[string]string{"A": "1"}},
+			}}, mcpJSON},
+		{"DELETE", "/api/mcp-servers" + p1, "", 204, "DeleteMcpServer", []any{id1}, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
@@ -254,6 +285,17 @@ func TestMalformedGraphNode(t *testing.T) {
 	}
 }
 
+func TestConversionsOfEmptyValues(t *testing.T) {
+	profile := toAgentProfile(domain.AgentProfile{Name: "new"})
+	if profile.Ready || profile.CredentialKind != nil {
+		t.Errorf("profile %+v", profile)
+	}
+	stdio := toMcpServer(domain.McpServer{Transport: domain.McpStdio, McpConfig: domain.McpConfig{Command: "srv", Env: map[string]string{"A": "1"}}})
+	if *stdio.Command != "srv" || stdio.Url != nil || stdio.Args == nil || stdio.Env["A"] != "1" || stdio.Headers == nil || stdio.SecretNames == nil {
+		t.Errorf("mcp %+v", stdio)
+	}
+}
+
 func TestToEntity(t *testing.T) {
 	b := newStub()
 	tests := []struct {
@@ -265,6 +307,8 @@ func TestToEntity(t *testing.T) {
 		{b.cardType, cardTypeJSON},
 		{b.card, cardJSON},
 		{b.flow.Flow, flowSummaryJSON},
+		{b.profile, profileJSON},
+		{b.mcp, mcpJSON},
 		{nil, "null"},
 	}
 	for _, tt := range tests {

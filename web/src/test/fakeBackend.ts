@@ -1,5 +1,6 @@
 // An in-memory implementation of the REST API, used as `fetch` in tests.
 import type {
+  AgentProfile,
   Card,
   CardEvent,
   CardType,
@@ -7,6 +8,7 @@ import type {
   FlowGraph,
   GraphProblem,
   Lane,
+  McpServer,
   Project,
 } from '../api/client'
 import { laneCards, placeCard } from '../api/placement'
@@ -18,6 +20,8 @@ interface State {
   cards: Card[]
   events: CardEvent[]
   flows: Flow[]
+  agentProfiles: AgentProfile[]
+  mcpServers: McpServer[]
 }
 
 type Body = Record<string, unknown>
@@ -84,6 +88,41 @@ function invalid(field: string): Reply {
   return [422, { code: 'validation', message: `${field}: is required`, field }]
 }
 
+export function agentProfile(
+  name: string,
+  extra: Partial<AgentProfile> = {},
+): AgentProfile {
+  return {
+    id: newId(),
+    kind: 'claude',
+    name,
+    ready: true,
+    credential_kind: 'oauth_token',
+    created_at: stamp,
+    updated_at: stamp,
+    ...extra,
+  }
+}
+
+export function mcpServer(
+  name: string,
+  extra: Partial<McpServer> = {},
+): McpServer {
+  return {
+    id: newId(),
+    name,
+    transport: 'stdio',
+    command: 'npx',
+    args: ['server'],
+    env: {},
+    headers: {},
+    secret_names: [],
+    created_at: stamp,
+    updated_at: stamp,
+    ...extra,
+  }
+}
+
 /** A flow whose draft is a lone trigger, as the server creates them. */
 export function flow(name: string, extra: Partial<Flow> = {}): Flow {
   return {
@@ -139,6 +178,8 @@ export function createFakeBackend(initial: Partial<State> = {}): FakeBackend {
     cards: [],
     events: [],
     flows: [],
+    agentProfiles: [],
+    mcpServers: [],
     ...initial,
   }
   const requests: string[] = []
@@ -244,6 +285,43 @@ export function createFakeBackend(initial: Partial<State> = {}): FakeBackend {
         return [200, state.cards.filter((c) => c.parent_card_id === id)]
       case 'GET /cards/:id/events':
         return [200, state.events.filter((e) => e.card_id === id)]
+      case 'GET /agent-profiles':
+        return [200, state.agentProfiles]
+      case 'POST /agent-profiles': {
+        if (!body.name) return invalid('name')
+        const p = agentProfile(str(body.name), {
+          ready: false,
+          credential_kind: undefined,
+        })
+        state.agentProfiles.push(p)
+        return [201, p]
+      }
+      case 'DELETE /agent-profiles/:id':
+        return remove(state.agentProfiles, id)
+      case 'GET /mcp-servers':
+        return [200, state.mcpServers]
+      case 'POST /mcp-servers':
+      case 'PUT /mcp-servers/:id': {
+        if (!body.name) return invalid('name')
+        const { secrets, ...config } = body as Partial<McpServer> & {
+          secrets?: Record<string, string>
+        }
+        const names = secrets ? Object.keys(secrets) : undefined
+        if (method === 'POST') {
+          const m = mcpServer(str(body.name), {
+            ...config,
+            secret_names: names ?? [],
+          })
+          state.mcpServers.push(m)
+          return [201, m]
+        }
+        const current = state.mcpServers.find((x) => x.id === id)
+        if (!current) return notFound
+        Object.assign(current, config, names ? { secret_names: names } : {})
+        return [200, current]
+      }
+      case 'DELETE /mcp-servers/:id':
+        return remove(state.mcpServers, id)
       case 'GET /flows':
         return [
           200,

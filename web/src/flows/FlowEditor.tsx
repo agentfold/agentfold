@@ -12,9 +12,11 @@ import { useState } from 'react'
 
 import type { Flow, FlowVersion } from '../api/client'
 import {
+  useAgentProfiles,
   useCardTypes,
   useFlow,
   useLanes,
+  useMcpServers,
   usePublishFlow,
   useSaveFlowDraft,
 } from '../api/queries'
@@ -56,6 +58,8 @@ const palette: NodeKind[] = ['agent', 'review', 'move_card', 'end']
 function DraftEditor({ flow }: { flow: Flow }) {
   const lanes = useLanes()
   const cardTypes = useCardTypes()
+  const profiles = useAgentProfiles()
+  const mcpServers = useMcpServers()
   const save = useSaveFlowDraft(flow.id)
   const publish = usePublishFlow(flow.id)
   const [initial] = useState(() => fromApi(flow.draft))
@@ -243,6 +247,8 @@ function DraftEditor({ flow }: { flow: Flow }) {
                 data={selected.data}
                 lanes={lanes.data ?? []}
                 cardTypes={cardTypes.data ?? []}
+                profiles={profiles.data ?? []}
+                mcpServers={mcpServers.data ?? []}
                 onChange={(config) => {
                   setConfig(selected.id, config)
                 }}

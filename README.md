@@ -21,6 +21,7 @@ Toolchains e tarefas são gerenciadas pelo [mise](https://mise.jdx.dev):
 ```bash
 mise install
 mise run web:install
+mise run dev:setup    # cria .env com a ORQ_SECRET_KEY (uma vez)
 mise run db:up        # Postgres de desenvolvimento (docker compose)
 mise run check        # lint + testes com gate de 100% de cobertura
 ```
@@ -32,10 +33,21 @@ mise run db:up
 mise run backend:serve   # aplica as migrations e sobe o server
 ```
 
+Para rodar agentes:
+
+```bash
+mise run agent:login -- --profile dev   # roda `claude setup-token` e guarda o token criptografado
+mise run backend:worker                 # executa os jobs de agente (isolados com bwrap)
+```
+
+O worker lê `ORQ_DATA_DIR` (padrão `~/.local/share/orquestrator`, onde ficam os worktrees dos
+cards), `ORQ_CLAUDE_BIN` (padrão: o `claude` do PATH, fixado no `mise.toml`) e `ORQ_RUNNER`
+(`bwrap`, padrão, ou `local` sem isolamento).
+
 Em outro terminal, `mise run web:dev` sobe o board em `http://localhost:5173` (o Vite repassa
 `/api` para o server).
 
-O binário lê `ORQ_DATABASE_URL` (obrigatória) e `ORQ_ADDR` (padrão `127.0.0.1:8080`; a API ainda
+O binário lê `ORQ_DATABASE_URL` e `ORQ_SECRET_KEY` (obrigatórias) e `ORQ_ADDR` (padrão `127.0.0.1:8080`; a API ainda
 não tem autenticação, por isso escuta só em loopback). Eventos do board em tempo real:
 `GET /api/events` (Server-Sent Events).
 

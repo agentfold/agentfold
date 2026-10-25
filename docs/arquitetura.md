@@ -95,7 +95,7 @@ interfaces para viabilizar 100% de cobertura com fakes.
 | `flow_versions` | id, flow_id, version, graph jsonb (nós com config + arestas por saída), published_at |
 | `flow_runs` | id, flow_version_id, card_id, trigger, status, started_at, finished_at |
 | `node_runs` | id, flow_run_id, node_key, status, iteration, input jsonb, output jsonb, session_id?, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error |
-| `agent_sessions` | id, flow_run_id, node_key, profile_id, claude_session_id, config_dir |
+| `agent_sessions` | id, flow_run_id, node_key, profile_id, claude_session_id (escolhido pelo board via `--session-id`) |
 | `questions` | id, card_id, node_run_id, text, answer?, answered_at? |
 | `review_comments` | id, card_id, node_run_id, round, file?, line?, body |
 | `jobs` | id, kind, payload jsonb, requirements jsonb, status, run_at, attempts, locked_by, lease_until, last_error |
