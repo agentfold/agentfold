@@ -1,6 +1,6 @@
 import type { FlowRunDetail, NodeRun } from '../api/client'
 import { kindLabels } from '../flows/graph'
-import { formatCost, formatDuration, formatInt } from './format'
+import { formatCost, formatDuration, formatInt, runLabel } from './format'
 
 type Usage = Pick<
   NodeRun,
@@ -55,7 +55,7 @@ function Cells({ usage }: { usage: Usage }) {
 export function UsagePanel({ runs }: { runs: FlowRunDetail[] }) {
   const rows = runs.flatMap((run) =>
     run.nodes
-      .filter((n) => n.node_type === 'agent' || n.node_type === 'review')
+      .filter((n) => n.node_type === 'agent')
       .map((node) => ({ run, node })),
   )
   if (rows.length === 0) {
@@ -86,10 +86,9 @@ export function UsagePanel({ runs }: { runs: FlowRunDetail[] }) {
           <tbody>
             {rows.map(({ run, node }) => (
               <tr key={node.id} className="border-t border-slate-100">
-                <td className="px-2 py-1">{run.flow_name}</td>
+                <td className="px-2 py-1">{runLabel(run)}</td>
                 <td className="px-2 py-1">
-                  {kindLabels[node.node_type as 'agent' | 'review']}{' '}
-                  {node.node_key}
+                  {kindLabels.agent} {node.node_key}
                   {node.iteration > 1 && ` (${String(node.iteration)}ª vez)`}
                 </td>
                 <Cells usage={node} />

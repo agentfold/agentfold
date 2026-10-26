@@ -1,14 +1,19 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -41,7 +46,8 @@ type Store interface {
 	FinishNodeRun(ctx context.Context, id uuid.UUID, r domain.NodeResult) (domain.NodeRun, error)
 	PendingQuestions(ctx context.Context, nodeRunID uuid.UUID) (int, error)
 	AddNodeOutput(ctx context.Context, nodeRunID uuid.UUID, entries []domain.NodeOutput) error
-	ListReviewComments(ctx context.Context, nodeRunID uuid.UUID) ([]domain.ReviewComment, error)
+	SaveArtifact(ctx context.Context, cardID, nodeRunID uuid.UUID, name, path, content string) (domain.Artifact, int, bool, error)
+	AddCardEvent(ctx context.Context, cardID uuid.UUID, typ domain.CardEventType, payload any) (domain.CardEvent, error)
 }
 
 // Opener decrypts stored secrets. *crypto.Box implements it.
@@ -117,7 +123,7 @@ func (e *Executor) execute(ctx context.Context, run domain.NodeRun, prompt strin
 		return domain.NodeResult{}, err
 	}
 	if !resume || prompt == "" {
-		prompt = firstPrompt(j.node.config.Prompt, j.card)
+		prompt = firstPrompt(j.node.config.Prompt, j.card, prompt)
 	}
 	token, tokenHash := newToken()
 	layout := e.Runner.Layout(ws)
@@ -156,7 +162,7 @@ func (e *Executor) execute(ctx context.Context, run domain.NodeRun, prompt strin
 	if ctx.Err() != nil {
 		return failure(stream.Outcome(runErr), "the agent was interrupted: its flow run was canceled, or another worker took the job over"), nil
 	}
-	return e.outcome(context.WithoutCancel(ctx), j, stream.Outcome(runErr))
+	return e.outcome(context.WithoutCancel(ctx), j, ws, stream.Outcome(runErr))
 }
 
 // record keeps the steps of a stream-json line for the card page. Steps
@@ -172,8 +178,8 @@ func (e *Executor) record(ctx context.Context, nodeRunID uuid.UUID, line []byte)
 }
 
 // outcome reads what the agent reported through the board tools while it
-// ran and settles the node result.
-func (e *Executor) outcome(ctx context.Context, j job, cli domain.NodeResult) (domain.NodeResult, error) {
+// ran and settles the node result. A node done collects its artifacts.
+func (e *Executor) outcome(ctx context.Context, j job, ws workspace.Workspace, cli domain.NodeResult) (domain.NodeResult, error) {
 	nr, err := e.Store.GetNodeRun(ctx, j.run.ID)
 	if err != nil {
 		return domain.NodeResult{}, err
@@ -182,13 +188,79 @@ func (e *Executor) outcome(ctx context.Context, j job, cli domain.NodeResult) (d
 	if err != nil {
 		return domain.NodeResult{}, err
 	}
-	var comments []domain.ReviewComment
-	if j.node.typ == domain.NodeReview {
-		if comments, err = e.Store.ListReviewComments(ctx, nr.ID); err != nil {
-			return domain.NodeResult{}, err
+	result := j.node.outcome(cli, nr, pending)
+	if result.Status != domain.NodeDone {
+		return result, nil
+	}
+	for _, spec := range j.node.config.Artifacts {
+		if msg, err := e.collect(ctx, j, ws, spec); msg != "" || err != nil {
+			return failure(result, msg), err
 		}
 	}
-	return j.node.outcome(cli, nr, pending, comments), nil
+	return result, nil
+}
+
+// maxArtifactSize bounds the files collected as artifacts.
+const maxArtifactSize = 1 << 20
+
+// collect reads an artifact the node declares from the card workspace and
+// saves it. It returns why the agent failed to provide it, if it did.
+func (e *Executor) collect(ctx context.Context, j job, ws workspace.Workspace, spec domain.ArtifactSpec) (string, error) {
+	name := strings.TrimSpace(spec.Name)
+	root, err := os.OpenRoot(ws.Dir)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = root.Close() }()
+	content, err := readArtifact(root, spec.Path)
+	if err != nil {
+		return fmt.Sprintf("the artifact %q could not be collected from %s: %v", name, spec.Path, err), nil
+	}
+	artifact, version, created, err := e.Store.SaveArtifact(ctx, j.card.ID, j.run.ID, name, spec.Path, content)
+	if err != nil {
+		return "", err
+	}
+	e.Pub.Publish(events.Event{Type: "artifact.updated", ID: artifact.ID})
+	if !created {
+		return "", nil
+	}
+	event, err := e.Store.AddCardEvent(ctx, j.card.ID, domain.ArtifactCollected, artifactCollected{
+		ArtifactID: artifact.ID, Name: name, Version: version, NodeKey: j.run.NodeKey,
+	})
+	if err == nil {
+		e.Pub.Publish(events.Event{Type: "card_event.created", ID: event.ID, Data: event})
+	}
+	return "", err
+}
+
+// readArtifact reads a text file of the workspace; root keeps it inside.
+func readArtifact(root *os.Root, path string) (string, error) {
+	f, err := root.Open(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", errors.New("the file does not exist")
+	}
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	data, err := io.ReadAll(io.LimitReader(f, maxArtifactSize+1))
+	switch {
+	case err != nil:
+		return "", err
+	case len(data) > maxArtifactSize:
+		return "", fmt.Errorf("the file is larger than %d bytes", maxArtifactSize)
+	case !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0:
+		return "", errors.New("the file is not text")
+	}
+	return string(data), nil
+}
+
+// artifactCollected is the timeline payload of a new artifact version.
+type artifactCollected struct {
+	ArtifactID uuid.UUID `json:"artifact_id"`
+	Name       string    `json:"name"`
+	Version    int       `json:"version"`
+	NodeKey    string    `json:"node_key"`
 }
 
 // newToken returns a random token for the board tools and its hash, which
@@ -255,11 +327,15 @@ func (e *Executor) session(ctx context.Context, j job) (uuid.UUID, bool, error) 
 	return id, false, e.Store.CreateAgentSession(ctx, j.flowRun.ID, j.run.NodeKey, j.profile.ID, id)
 }
 
-// firstPrompt is the node prompt followed by the card it works on.
-func firstPrompt(prompt string, card domain.Card) string {
+// firstPrompt starts a session: the node prompt, the card it works on and
+// what the board hands the node, if anything.
+func firstPrompt(prompt string, card domain.Card, input string) string {
 	text := prompt + "\n\n## Card\n\n# " + card.Title
 	if card.Description != "" {
 		text += "\n\n" + card.Description
+	}
+	if input != "" {
+		text += "\n\n## Input\n\n" + input
 	}
 	return text
 }

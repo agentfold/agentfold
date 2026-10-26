@@ -20,13 +20,13 @@ import (
 
 // Defines values for AgentNodeType.
 const (
-	Agent AgentNodeType = "agent"
+	AgentNodeTypeAgent AgentNodeType = "agent"
 )
 
 // Valid indicates whether the value is a known member of the AgentNodeType enum.
 func (e AgentNodeType) Valid() bool {
 	switch e {
-	case Agent:
+	case AgentNodeTypeAgent:
 		return true
 	default:
 		return false
@@ -66,6 +66,24 @@ func (e AgentProfileKind) Valid() bool {
 	}
 }
 
+// Defines values for ArtifactMessageRole.
+const (
+	ArtifactMessageRoleAgent ArtifactMessageRole = "agent"
+	ArtifactMessageRoleHuman ArtifactMessageRole = "human"
+)
+
+// Valid indicates whether the value is a known member of the ArtifactMessageRole enum.
+func (e ArtifactMessageRole) Valid() bool {
+	switch e {
+	case ArtifactMessageRoleAgent:
+		return true
+	case ArtifactMessageRoleHuman:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EndNodeType.
 const (
 	End EndNodeType = "end"
@@ -83,6 +101,7 @@ func (e EndNodeType) Valid() bool {
 
 // Defines values for ErrorCode.
 const (
+	ArtifactFrozen   ErrorCode = "artifact_frozen"
 	BadRequest       ErrorCode = "bad_request"
 	CardBusy         ErrorCode = "card_busy"
 	Conflict         ErrorCode = "conflict"
@@ -98,6 +117,8 @@ const (
 // Valid indicates whether the value is a known member of the ErrorCode enum.
 func (e ErrorCode) Valid() bool {
 	switch e {
+	case ArtifactFrozen:
+		return true
 	case BadRequest:
 		return true
 	case CardBusy:
@@ -152,13 +173,16 @@ func (e FlowRunStatus) Valid() bool {
 
 // Defines values for FlowRunTrigger.
 const (
-	FlowRunTriggerCardCreated     FlowRunTrigger = "card_created"
-	FlowRunTriggerCardEnteredLane FlowRunTrigger = "card_entered_lane"
+	FlowRunTriggerArtifactRevision FlowRunTrigger = "artifact_revision"
+	FlowRunTriggerCardCreated      FlowRunTrigger = "card_created"
+	FlowRunTriggerCardEnteredLane  FlowRunTrigger = "card_entered_lane"
 )
 
 // Valid indicates whether the value is a known member of the FlowRunTrigger enum.
 func (e FlowRunTrigger) Valid() bool {
 	switch e {
+	case FlowRunTriggerArtifactRevision:
+		return true
 	case FlowRunTriggerCardCreated:
 		return true
 	case FlowRunTriggerCardEnteredLane:
@@ -197,13 +221,16 @@ func (e FlowRunDetailStatus) Valid() bool {
 
 // Defines values for FlowRunDetailTrigger.
 const (
-	FlowRunDetailTriggerCardCreated     FlowRunDetailTrigger = "card_created"
-	FlowRunDetailTriggerCardEnteredLane FlowRunDetailTrigger = "card_entered_lane"
+	FlowRunDetailTriggerArtifactRevision FlowRunDetailTrigger = "artifact_revision"
+	FlowRunDetailTriggerCardCreated      FlowRunDetailTrigger = "card_created"
+	FlowRunDetailTriggerCardEnteredLane  FlowRunDetailTrigger = "card_entered_lane"
 )
 
 // Valid indicates whether the value is a known member of the FlowRunDetailTrigger enum.
 func (e FlowRunDetailTrigger) Valid() bool {
 	switch e {
+	case FlowRunDetailTriggerArtifactRevision:
+		return true
 	case FlowRunDetailTriggerCardCreated:
 		return true
 	case FlowRunDetailTriggerCardEnteredLane:
@@ -288,6 +315,27 @@ func (e NodeOutputKind) Valid() bool {
 	}
 }
 
+// Defines values for NodeRunDecision.
+const (
+	Approved NodeRunDecision = "approved"
+	Empty    NodeRunDecision = ""
+	Rejected NodeRunDecision = "rejected"
+)
+
+// Valid indicates whether the value is a known member of the NodeRunDecision enum.
+func (e NodeRunDecision) Valid() bool {
+	switch e {
+	case Approved:
+		return true
+	case Empty:
+		return true
+	case Rejected:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NodeRunStatus.
 const (
 	NodeRunStatusAwaitingInput NodeRunStatus = "awaiting_input"
@@ -330,21 +378,6 @@ func (e ProjectSourceKind) Valid() bool {
 	}
 }
 
-// Defines values for ReviewNodeType.
-const (
-	Review ReviewNodeType = "review"
-)
-
-// Valid indicates whether the value is a known member of the ReviewNodeType enum.
-func (e ReviewNodeType) Valid() bool {
-	switch e {
-	case Review:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for TriggerConfigEvent.
 const (
 	TriggerConfigEventCardCreated     TriggerConfigEvent = "card_created"
@@ -380,9 +413,16 @@ func (e TriggerNodeType) Valid() bool {
 
 // AgentConfig Runs an agent session on the card's workspace.
 type AgentConfig struct {
-	AllowedTools    *[]string `json:"allowed_tools,omitempty"`
-	DisallowedTools *[]string `json:"disallowed_tools,omitempty"`
-	MaxTurns        *int      `json:"max_turns,omitempty"`
+	AllowedTools    *[]string       `json:"allowed_tools,omitempty"`
+	Artifacts       *[]ArtifactSpec `json:"artifacts,omitempty"`
+	DisallowedTools *[]string       `json:"disallowed_tools,omitempty"`
+
+	// Gateway The agent decides with the approve or reject tools; the node outputs become approved, rejected, max_rounds_exceeded and failed.
+	Gateway *bool `json:"gateway,omitempty"`
+
+	// MaxRounds Rejections before the max_rounds_exceeded output. Required with the gateway on.
+	MaxRounds *int `json:"max_rounds,omitempty"`
+	MaxTurns  *int `json:"max_turns,omitempty"`
 
 	// McpServerIds External MCP servers available to the agent.
 	McpServerIds *[]openapi_types.UUID `json:"mcp_server_ids,omitempty"`
@@ -396,6 +436,9 @@ type AgentConfig struct {
 
 	// Prompt Initial prompt. Required to publish.
 	Prompt *string `json:"prompt,omitempty"`
+
+	// ReadOnly Blocks the editing tools, as for a reviewer.
+	ReadOnly *bool `json:"read_only,omitempty"`
 }
 
 // AgentNode defines model for AgentNode.
@@ -434,6 +477,70 @@ type AgentProfileKind string
 // AgentProfileInput defines model for AgentProfileInput.
 type AgentProfileInput struct {
 	Name string `json:"name"`
+}
+
+// Artifact A file an agent node collected on the card, with its versions and review chat. Moving the card to another lane freezes it.
+type Artifact struct {
+	CardId    openapi_types.UUID `json:"card_id"`
+	CreatedAt time.Time          `json:"created_at"`
+
+	// Frozen The card left the lane; the artifact can no longer be revised.
+	Frozen bool               `json:"frozen"`
+	Id     openapi_types.UUID `json:"id"`
+
+	// Messages The review chat, oldest first.
+	Messages []ArtifactMessage `json:"messages"`
+	Name     string            `json:"name"`
+
+	// Revising The agent is revising it now.
+	Revising  bool      `json:"revising"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	// Versions Oldest first.
+	Versions []ArtifactVersion `json:"versions"`
+}
+
+// ArtifactMessage defines model for ArtifactMessage.
+type ArtifactMessage struct {
+	ArtifactId openapi_types.UUID `json:"artifact_id"`
+	CreatedAt  time.Time          `json:"created_at"`
+
+	// FlowRunId The revision run the message belongs to.
+	FlowRunId *openapi_types.UUID `json:"flow_run_id"`
+	Id        openapi_types.UUID  `json:"id"`
+	Role      ArtifactMessageRole `json:"role"`
+	Text      string              `json:"text"`
+
+	// Version The version the human was reading, or the agent revised.
+	Version int `json:"version"`
+}
+
+// ArtifactMessageRole defines model for ArtifactMessage.Role.
+type ArtifactMessageRole string
+
+// ArtifactMessageInput defines model for ArtifactMessageInput.
+type ArtifactMessageInput struct {
+	Text string `json:"text"`
+
+	// Version The version the human is reading.
+	Version int `json:"version"`
+}
+
+// ArtifactSpec A file of the card workspace the node collects into the card when it finishes.
+type ArtifactSpec struct {
+	Name string `json:"name"`
+
+	// Path Relative to the card workspace.
+	Path string `json:"path"`
+}
+
+// ArtifactVersion defines model for ArtifactVersion.
+type ArtifactVersion struct {
+	Content   string             `json:"content"`
+	CreatedAt time.Time          `json:"created_at"`
+	NodeRunId openapi_types.UUID `json:"node_run_id"`
+	Path      string             `json:"path"`
+	Version   int                `json:"version"`
 }
 
 // Card defines model for Card.
@@ -549,7 +656,7 @@ type FlowEdge struct {
 	Id     string `json:"id"`
 	Source string `json:"source"`
 
-	// SourceHandle Output of the source node: trigger and move_card have "next"; agent has "done" and "failed"; review has "approved", "changes_requested" and "max_rounds_exceeded"; end has none.
+	// SourceHandle Output of the source node: trigger and move_card have "next"; agent has "done" and "failed", or with the gateway on "approved", "rejected", "max_rounds_exceeded" and "failed"; end has none.
 	SourceHandle string `json:"source_handle"`
 	Target       string `json:"target"`
 }
@@ -585,14 +692,16 @@ type FlowRun struct {
 	StartedAt     time.Time          `json:"started_at"`
 
 	// Status While running or waiting, the card can only be moved by the flow.
-	Status  FlowRunStatus  `json:"status"`
+	Status FlowRunStatus `json:"status"`
+
+	// Trigger artifact_revision runs revise an artifact from its review chat.
 	Trigger FlowRunTrigger `json:"trigger"`
 }
 
 // FlowRunStatus While running or waiting, the card can only be moved by the flow.
 type FlowRunStatus string
 
-// FlowRunTrigger defines model for FlowRun.Trigger.
+// FlowRunTrigger artifact_revision runs revise an artifact from its review chat.
 type FlowRunTrigger string
 
 // FlowRunDetail defines model for FlowRunDetail.
@@ -610,14 +719,16 @@ type FlowRunDetail struct {
 	StartedAt     time.Time          `json:"started_at"`
 
 	// Status While running or waiting, the card can only be moved by the flow.
-	Status  FlowRunDetailStatus  `json:"status"`
+	Status FlowRunDetailStatus `json:"status"`
+
+	// Trigger artifact_revision runs revise an artifact from its review chat.
 	Trigger FlowRunDetailTrigger `json:"trigger"`
 }
 
 // FlowRunDetailStatus While running or waiting, the card can only be moved by the flow.
 type FlowRunDetailStatus string
 
-// FlowRunDetailTrigger defines model for FlowRunDetail.Trigger.
+// FlowRunDetailTrigger artifact_revision runs revise an artifact from its review chat.
 type FlowRunDetailTrigger string
 
 // FlowSummary defines model for FlowSummary.
@@ -774,22 +885,28 @@ type NodeRun struct {
 	CacheWrite int64 `json:"cache_write"`
 
 	// CostUsd As reported by Claude Code; an estimate with a subscription token.
-	CostUsd    float64            `json:"cost_usd"`
-	CreatedAt  time.Time          `json:"created_at"`
-	DurationMs int64              `json:"duration_ms"`
-	Error      string             `json:"error"`
+	CostUsd   float64   `json:"cost_usd"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// Decision How a gateway node decided; empty for other nodes and while it runs.
+	Decision   NodeRunDecision `json:"decision"`
+	DurationMs int64           `json:"duration_ms"`
+	Error      string          `json:"error"`
+
+	// Feedback The reason of approve or the feedback of reject.
+	Feedback   string             `json:"feedback"`
 	FinishedAt *time.Time         `json:"finished_at"`
 	FlowRunId  openapi_types.UUID `json:"flow_run_id"`
 	Id         openapi_types.UUID `json:"id"`
 
-	// Iteration How many times the run entered the node (review rounds re-enter agents).
+	// Iteration How many times the run entered the node (gateway rejections re-enter agents).
 	Iteration int    `json:"iteration"`
 	NodeKey   string `json:"node_key"`
 
 	// NodeType The type of the node in the flow version; empty if it is gone.
 	NodeType string `json:"node_type"`
 
-	// Output The node output handed to the next node: the agent result, summary and structured output, or the review verdict and comments.
+	// Output The node output handed to the next node: the agent result, summary, structured output and gateway decision.
 	Output *map[string]interface{} `json:"output"`
 
 	// OutputHandle The output the node left through; empty while it runs.
@@ -803,6 +920,9 @@ type NodeRun struct {
 	TokensOut int64  `json:"tokens_out"`
 	Turns     int    `json:"turns"`
 }
+
+// NodeRunDecision How a gateway node decided; empty for other nodes and while it runs.
+type NodeRunDecision string
 
 // NodeRunStatus defines model for NodeRun.Status.
 type NodeRunStatus string
@@ -853,33 +973,6 @@ type QuestionAnswer struct {
 	Answer string `json:"answer"`
 }
 
-// ReviewConfig Runs a reviewer on the work of the previous agent.
-type ReviewConfig struct {
-	AllowedTools    *[]string `json:"allowed_tools,omitempty"`
-	DisallowedTools *[]string `json:"disallowed_tools,omitempty"`
-
-	// MaxRounds Rounds of changes before the max_rounds_exceeded output. Required to publish.
-	MaxRounds *int `json:"max_rounds,omitempty"`
-
-	// ProfileId Agent profile the reviewer runs as. Required to publish.
-	ProfileId *openapi_types.UUID `json:"profile_id,omitempty"`
-
-	// Prompt Review prompt. Required to publish.
-	Prompt *string `json:"prompt,omitempty"`
-}
-
-// ReviewNode defines model for ReviewNode.
-type ReviewNode struct {
-	// Config Runs a reviewer on the work of the previous agent.
-	Config   ReviewConfig   `json:"config"`
-	Id       string         `json:"id"`
-	Position Position       `json:"position"`
-	Type     ReviewNodeType `json:"type"`
-}
-
-// ReviewNodeType defines model for ReviewNode.Type.
-type ReviewNodeType string
-
 // TriggerConfig Starts the flow when a card is created or enters a lane, optionally only for some card types.
 type TriggerConfig struct {
 	// CardTypeIds Card types that start the flow; empty or absent means all.
@@ -913,6 +1006,9 @@ type CreateAgentProfileJSONRequestBody = AgentProfileInput
 
 // UpdateAgentProfileJSONRequestBody defines body for UpdateAgentProfile for application/json ContentType.
 type UpdateAgentProfileJSONRequestBody = AgentProfileInput
+
+// ReviseArtifactJSONRequestBody defines body for ReviseArtifact for application/json ContentType.
+type ReviseArtifactJSONRequestBody = ArtifactMessageInput
 
 // CreateCardTypeJSONRequestBody defines body for CreateCardType for application/json ContentType.
 type CreateCardTypeJSONRequestBody = CardTypeInput
@@ -1030,40 +1126,6 @@ func (t *FlowNode) MergeAgentNode(v AgentNode) error {
 	return err
 }
 
-// AsReviewNode returns the union data inside the FlowNode as a ReviewNode
-func (t FlowNode) AsReviewNode() (ReviewNode, error) {
-	var body ReviewNode
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromReviewNode overwrites any union data inside the FlowNode as the provided ReviewNode
-func (t *FlowNode) FromReviewNode(v ReviewNode) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	b, err = runtime.JSONMerge(b, []byte(`{"type":"review"}`))
-	t.union = b
-	return err
-}
-
-// MergeReviewNode performs a merge with any union data inside the FlowNode, using the provided ReviewNode
-func (t *FlowNode) MergeReviewNode(v ReviewNode) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	b, err = runtime.JSONMerge(b, []byte(`{"type":"review"}`))
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
 // AsMoveCardNode returns the union data inside the FlowNode as a MoveCardNode
 func (t FlowNode) AsMoveCardNode() (MoveCardNode, error) {
 	var body MoveCardNode
@@ -1152,8 +1214,6 @@ func (t FlowNode) ValueByDiscriminator() (interface{}, error) {
 		return t.AsEndNode()
 	case "move_card":
 		return t.AsMoveCardNode()
-	case "review":
-		return t.AsReviewNode()
 	case "trigger":
 		return t.AsTriggerNode()
 	default:
@@ -1189,6 +1249,12 @@ type ServerInterface interface {
 	// (PUT /agent-profiles/{id})
 	UpdateAgentProfile(w http.ResponseWriter, r *http.Request, id ID)
 
+	// (GET /artifacts/{id})
+	GetArtifact(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /artifacts/{id}/messages)
+	ReviseArtifact(w http.ResponseWriter, r *http.Request, id ID)
+
 	// (GET /card-types)
 	ListCardTypes(w http.ResponseWriter, r *http.Request)
 
@@ -1218,6 +1284,9 @@ type ServerInterface interface {
 
 	// (PUT /cards/{id})
 	UpdateCard(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (GET /cards/{id}/artifacts)
+	ListCardArtifacts(w http.ResponseWriter, r *http.Request, id ID)
 
 	// (GET /cards/{id}/children)
 	ListChildCards(w http.ResponseWriter, r *http.Request, id ID)
@@ -1434,6 +1503,58 @@ func (siw *ServerInterfaceWrapper) UpdateAgentProfile(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
+// GetArtifact operation middleware
+func (siw *ServerInterfaceWrapper) GetArtifact(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetArtifact(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReviseArtifact operation middleware
+func (siw *ServerInterfaceWrapper) ReviseArtifact(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReviseArtifact(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListCardTypes operation middleware
 func (siw *ServerInterfaceWrapper) ListCardTypes(w http.ResponseWriter, r *http.Request) {
 
@@ -1637,6 +1758,32 @@ func (siw *ServerInterfaceWrapper) UpdateCard(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateCard(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListCardArtifacts operation middleware
+func (siw *ServerInterfaceWrapper) ListCardArtifacts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListCardArtifacts(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2553,6 +2700,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/cards/{id}/runs", wrapper.ListCardRuns)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/flow-runs/{id}/cancel", wrapper.CancelFlowRun)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/node-runs/{id}/output", wrapper.ListNodeOutput)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/cards/{id}/artifacts", wrapper.ListCardArtifacts)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/artifacts/{id}", wrapper.GetArtifact)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/artifacts/{id}/messages", wrapper.ReviseArtifact)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/flow-runs/latest", wrapper.ListLatestFlowRuns)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/agent-profiles", wrapper.ListAgentProfiles)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/agent-profiles", wrapper.CreateAgentProfile)
@@ -2748,6 +2898,85 @@ type UpdateAgentProfiledefaultJSONResponse struct {
 }
 
 func (response UpdateAgentProfiledefaultJSONResponse) VisitUpdateAgentProfileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetArtifactRequestObject struct {
+	Id ID `json:"id"`
+}
+
+type GetArtifactResponseObject interface {
+	VisitGetArtifactResponse(w http.ResponseWriter) error
+}
+
+type GetArtifact200JSONResponse Artifact
+
+func (response GetArtifact200JSONResponse) VisitGetArtifactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetArtifactdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetArtifactdefaultJSONResponse) VisitGetArtifactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviseArtifactRequestObject struct {
+	Id   ID `json:"id"`
+	Body *ReviseArtifactJSONRequestBody
+}
+
+type ReviseArtifactResponseObject interface {
+	VisitReviseArtifactResponse(w http.ResponseWriter) error
+}
+
+type ReviseArtifact201JSONResponse ArtifactMessage
+
+func (response ReviseArtifact201JSONResponse) VisitReviseArtifactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviseArtifactdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ReviseArtifactdefaultJSONResponse) VisitReviseArtifactResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -3126,6 +3355,45 @@ type UpdateCarddefaultJSONResponse struct {
 }
 
 func (response UpdateCarddefaultJSONResponse) VisitUpdateCardResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCardArtifactsRequestObject struct {
+	Id ID `json:"id"`
+}
+
+type ListCardArtifactsResponseObject interface {
+	VisitListCardArtifactsResponse(w http.ResponseWriter) error
+}
+
+type ListCardArtifacts200JSONResponse []Artifact
+
+func (response ListCardArtifacts200JSONResponse) VisitListCardArtifactsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCardArtifactsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListCardArtifactsdefaultJSONResponse) VisitListCardArtifactsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -4421,6 +4689,12 @@ type StrictServerInterface interface {
 	// (PUT /agent-profiles/{id})
 	UpdateAgentProfile(ctx context.Context, request UpdateAgentProfileRequestObject) (UpdateAgentProfileResponseObject, error)
 
+	// (GET /artifacts/{id})
+	GetArtifact(ctx context.Context, request GetArtifactRequestObject) (GetArtifactResponseObject, error)
+
+	// (POST /artifacts/{id}/messages)
+	ReviseArtifact(ctx context.Context, request ReviseArtifactRequestObject) (ReviseArtifactResponseObject, error)
+
 	// (GET /card-types)
 	ListCardTypes(ctx context.Context, request ListCardTypesRequestObject) (ListCardTypesResponseObject, error)
 
@@ -4450,6 +4724,9 @@ type StrictServerInterface interface {
 
 	// (PUT /cards/{id})
 	UpdateCard(ctx context.Context, request UpdateCardRequestObject) (UpdateCardResponseObject, error)
+
+	// (GET /cards/{id}/artifacts)
+	ListCardArtifacts(ctx context.Context, request ListCardArtifactsRequestObject) (ListCardArtifactsResponseObject, error)
 
 	// (GET /cards/{id}/children)
 	ListChildCards(ctx context.Context, request ListChildCardsRequestObject) (ListChildCardsResponseObject, error)
@@ -4730,6 +5007,65 @@ func (sh *strictHandler) UpdateAgentProfile(w http.ResponseWriter, r *http.Reque
 	}
 }
 
+// GetArtifact operation middleware
+func (sh *strictHandler) GetArtifact(w http.ResponseWriter, r *http.Request, id ID) {
+	var request GetArtifactRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetArtifact(ctx, request.(GetArtifactRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetArtifact")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetArtifactResponseObject); ok {
+		if err := validResponse.VisitGetArtifactResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReviseArtifact operation middleware
+func (sh *strictHandler) ReviseArtifact(w http.ResponseWriter, r *http.Request, id ID) {
+	var request ReviseArtifactRequestObject
+
+	request.Id = id
+
+	var body ReviseArtifactJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ReviseArtifact(ctx, request.(ReviseArtifactRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReviseArtifact")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReviseArtifactResponseObject); ok {
+		if err := validResponse.VisitReviseArtifactResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListCardTypes operation middleware
 func (sh *strictHandler) ListCardTypes(w http.ResponseWriter, r *http.Request) {
 	var request ListCardTypesRequestObject
@@ -5003,6 +5339,32 @@ func (sh *strictHandler) UpdateCard(w http.ResponseWriter, r *http.Request, id I
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateCardResponseObject); ok {
 		if err := validResponse.VisitUpdateCardResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListCardArtifacts operation middleware
+func (sh *strictHandler) ListCardArtifacts(w http.ResponseWriter, r *http.Request, id ID) {
+	var request ListCardArtifactsRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListCardArtifacts(ctx, request.(ListCardArtifactsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListCardArtifacts")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListCardArtifactsResponseObject); ok {
+		if err := validResponse.VisitListCardArtifactsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -55,6 +55,10 @@ type Board interface {
 	ListCardQuestions(ctx context.Context, cardID uuid.UUID) ([]domain.Question, error)
 	AnswerQuestion(ctx context.Context, id uuid.UUID, answer string) (domain.Question, error)
 
+	ListCardArtifacts(ctx context.Context, cardID uuid.UUID) ([]service.ArtifactDetail, error)
+	GetArtifact(ctx context.Context, id uuid.UUID) (service.ArtifactDetail, error)
+	ReviseArtifact(ctx context.Context, id uuid.UUID, version int, text string) (domain.ArtifactMessage, error)
+
 	ListFlows(ctx context.Context) ([]domain.Flow, error)
 	GetFlow(ctx context.Context, id uuid.UUID) (service.FlowDetail, error)
 	CreateFlow(ctx context.Context, name string) (service.FlowDetail, error)

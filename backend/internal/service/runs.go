@@ -36,8 +36,8 @@ func (s *Service) Entity(ctx context.Context, typ string, id uuid.UUID) (any, er
 		return s.repo.GetCardEvent(ctx, id)
 	case "node_run":
 		return s.repo.GetNodeRun(ctx, id)
-	case "node_output":
-		return nil, nil // clients reload the output of the node run id
+	case "node_output", "artifact":
+		return nil, nil // clients reload what the id refers to
 	}
 	return nil, fmt.Errorf("no entity for event %q", typ)
 }

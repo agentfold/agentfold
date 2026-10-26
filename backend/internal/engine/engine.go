@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -37,6 +38,7 @@ type Store interface {
 	WaitFlowRun(ctx context.Context, id uuid.UUID) (domain.FlowRun, error)
 	ResumeIfAnswered(ctx context.Context, nodeRunID uuid.UUID) (domain.FlowRun, bool, error)
 	EnqueueJob(ctx context.Context, j store.NewJob) (uuid.UUID, error)
+	AddRevisionReply(ctx context.Context, flowRunID uuid.UUID, text string) (domain.ArtifactMessage, error)
 }
 
 // Publisher announces the changes the engine makes to the board.
@@ -185,11 +187,50 @@ func (e *Engine) continueFrom(ctx context.Context, nodeRunID uuid.UUID) error {
 	if !fr.Status.Active() {
 		return nil // the run ended meanwhile
 	}
+	if fr.Trigger == domain.TriggerRevision {
+		return e.endRevision(ctx, r, nr)
+	}
 	next, err := e.route(ctx, r, nr.NodeKey, nr.OutputHandle, nr.Error)
 	if err != nil || next == "" {
 		return err
 	}
 	return e.advance(ctx, r, next, nr.Output)
+}
+
+// endRevision ends a run that revised an artifact: the agent answer goes
+// to the review chat and the run ends there, whatever the node output.
+// The run ends even when the answer cannot be kept, freeing the card.
+func (e *Engine) endRevision(ctx context.Context, r *run, nr domain.NodeRun) error {
+	msg, err := e.Store.AddRevisionReply(ctx, r.ID, revisionReply(nr))
+	if err == nil {
+		e.Pub.Publish(events.Event{Type: "artifact.updated", ID: msg.ArtifactID})
+	} else if errors.Is(err, domain.ErrNotFound) {
+		err = nil // the artifact went with its card
+	}
+	status := domain.RunDone
+	if nr.Status == domain.NodeFailed {
+		status = domain.RunFailed
+	}
+	return errors.Join(err, e.finish(ctx, r, status, nr.Error))
+}
+
+// revisionReply is what the review chat shows of a revision: the agent
+// answer, or why it failed.
+func revisionReply(nr domain.NodeRun) string {
+	if nr.Status == domain.NodeFailed {
+		return "A revisão falhou: " + nr.Error
+	}
+	var out struct {
+		Result string `json:"result"`
+	}
+	_ = json.Unmarshal(nr.Output, &out) // agent outputs always hold it
+	if strings.TrimSpace(out.Result) != "" {
+		return out.Result
+	}
+	if nr.Summary != "" {
+		return nr.Summary
+	}
+	return "Revisão concluída."
 }
 
 // advance enters the node key, then the nodes after it, until the run ends
@@ -207,10 +248,10 @@ func (e *Engine) advance(ctx context.Context, r *run, key string, input json.Raw
 		if err != nil {
 			return err
 		}
-		if node.Type == domain.NodeAgent || node.Type == domain.NodeReview {
+		if node.Type == domain.NodeAgent {
 			return e.queueAgent(ctx, nr, input)
 		}
-		result, err := e.runBoardNode(ctx, r, node)
+		result, err := e.runBoardNode(ctx, r, node, input)
 		if err != nil {
 			return err
 		}
@@ -246,39 +287,33 @@ func (e *Engine) enter(ctx context.Context, r *run, node domain.Node, input json
 	})
 }
 
-// queueAgent queues the run of an agent node. Re-entering a node resumes
-// its session with the output of the node before as the prompt.
+// queueAgent queues the run of an agent node with what the node before
+// handed on as its message: after the node prompt in a new session, alone
+// when the node is re-entered and resumes its session.
 func (e *Engine) queueAgent(ctx context.Context, nr domain.NodeRun, input json.RawMessage) error {
-	payload := agent.Payload{NodeRunID: nr.ID}
-	if nr.Iteration > 1 {
-		payload.Prompt = promptFrom(input)
-	}
+	payload := agent.Payload{NodeRunID: nr.ID, Prompt: domain.MessageFrom(input)}
 	// No requirements yet: agents run on the single host of the MVP.
 	_, err := e.Store.EnqueueJob(ctx, store.NewJob{Kind: agent.JobKind, Payload: payload, MaxAttempts: 2})
 	return err
 }
 
-// promptFrom is the text an output carries: its "result" (what agents
-// answer) or else the output itself.
-func promptFrom(output json.RawMessage) string {
-	var v struct {
-		Result string `json:"result"`
-	}
-	if json.Unmarshal(output, &v) == nil && v.Result != "" {
-		return v.Result
-	}
-	return string(output)
-}
-
-// runBoardNode runs a node that does not need an agent.
-func (e *Engine) runBoardNode(ctx context.Context, r *run, node domain.Node) (domain.NodeResult, error) {
+// runBoardNode runs a node that does not need an agent. Board nodes hand
+// on the output of the node before, so agents after them still get it.
+func (e *Engine) runBoardNode(ctx context.Context, r *run, node domain.Node, input json.RawMessage) (domain.NodeResult, error) {
+	var result domain.NodeResult
+	var err error
 	switch node.Type {
 	case domain.NodeMoveCard:
-		return e.moveCard(ctx, r, node)
+		result, err = e.moveCard(ctx, r, node)
 	case domain.NodeEnd:
-		return domain.NodeResult{Status: domain.NodeDone}, nil
+		result = domain.NodeResult{Status: domain.NodeDone}
+	default:
+		return failed(fmt.Sprintf("o nó %s (%s) ainda não é suportado", node.ID, node.Type)), nil
 	}
-	return failed(fmt.Sprintf("o nó %s (%s) ainda não é suportado", node.ID, node.Type)), nil
+	if result.Status == domain.NodeDone {
+		result.Output = input
+	}
+	return result, err
 }
 
 // moveCard moves the card to the end of the node's lane.

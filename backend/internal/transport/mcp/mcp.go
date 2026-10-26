@@ -25,7 +25,7 @@ type Board interface {
 	AskHuman(ctx context.Context, run service.AgentRun, texts []string) ([]domain.Question, error)
 	ReportDone(ctx context.Context, run service.AgentRun, summary string) error
 	SubmitOutput(ctx context.Context, run service.AgentRun, output json.RawMessage) error
-	SubmitReview(ctx context.Context, run service.AgentRun, approved bool, comments []domain.ReviewInput) error
+	Decide(ctx context.Context, run service.AgentRun, decision, feedback string) error
 
 	ListLanes(ctx context.Context) ([]domain.Lane, error)
 	ListCardTypes(ctx context.Context) ([]domain.CardType, error)

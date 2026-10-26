@@ -9,6 +9,7 @@ import {
   isEdit,
   newStep,
   nextPosition,
+  nodeOutputs,
   summary,
   toApi,
 } from './graph'
@@ -76,7 +77,6 @@ describe('newStep', () => {
   it.each([
     ['trigger', { event: 'card_created' }],
     ['agent', { prompt: '' }],
-    ['review', { prompt: '', max_rounds: 3 }],
     ['move_card', {}],
     ['end', {}],
   ] as const)('gives %s nodes a default config', (kind, config) => {
@@ -165,11 +165,27 @@ describe('summary', () => {
     ],
     [{ kind: 'agent', config: { prompt: 'Implemente' } }, 'Implemente'],
     [{ kind: 'agent', config: {} }, 'Sem prompt'],
-    [{ kind: 'review', config: { max_rounds: 2 } }, 'Até 2 rodadas'],
-    [{ kind: 'review', config: {} }, 'Até ? rodadas'],
+    [
+      { kind: 'agent', config: { prompt: 'Revise', gateway: true } },
+      'Gateway, até ? rodadas: Revise',
+    ],
     [{ kind: 'move_card', config: {} }, 'Move o card de baia'],
     [{ kind: 'end', config: {} }, 'Encerra o fluxo'],
   ] as const)('describes %j', (data, want) => {
     expect(summary(data)).toBe(want)
+  })
+})
+
+describe('nodeOutputs', () => {
+  it.each([
+    [{ kind: 'trigger', config: {} }, ['next']],
+    [{ kind: 'agent', config: {} }, ['done', 'failed']],
+    [
+      { kind: 'agent', config: { gateway: true } },
+      ['approved', 'rejected', 'max_rounds_exceeded', 'failed'],
+    ],
+    [{ kind: 'end', config: {} }, []],
+  ] as const)('lists the outputs of %j', (data, want) => {
+    expect(nodeOutputs(data)).toEqual(want)
   })
 })

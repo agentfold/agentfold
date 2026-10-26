@@ -24,8 +24,9 @@ type AgentRun struct {
 // ErrNoOutputSchema means submit_output was called by a node without one.
 var ErrNoOutputSchema = errors.New("this node has no output schema: call report_done instead")
 
-// ErrNotReview means submit_review was called by a node that is no review.
-var ErrNotReview = errors.New("only review nodes submit reviews")
+// ErrNotGateway means approve or reject was called by a node whose gateway
+// is off.
+var ErrNotGateway = errors.New("only gateway nodes approve or reject")
 
 // AgentRun finds the running node a board tool token belongs to.
 func (s *Service) AgentRun(ctx context.Context, token string) (AgentRun, error) {
@@ -99,27 +100,20 @@ func (s *Service) SubmitOutput(ctx context.Context, run AgentRun, output json.Ra
 	return err
 }
 
-// SubmitReview records the verdict of a review node: approved, or the
-// comments the developer must address.
-func (s *Service) SubmitReview(ctx context.Context, run AgentRun, approved bool, comments []domain.ReviewInput) error {
-	if run.Node.Type != domain.NodeReview {
-		return ErrNotReview
+// Decide records the decision of a gateway node: approved with an
+// optional reason, or rejected with the feedback for the next agent. A
+// later call replaces it.
+func (s *Service) Decide(ctx context.Context, run AgentRun, decision, feedback string) error {
+	var cfg domain.AgentConfig
+	if run.Node.Type != domain.NodeAgent || json.Unmarshal(run.Node.Config, &cfg) != nil || !cfg.Gateway {
+		return ErrNotGateway
 	}
-	for i := range comments {
-		if comments[i].Body = strings.TrimSpace(comments[i].Body); comments[i].Body == "" {
-			return &domain.ValidationError{Field: "comments", Message: "every comment needs a body"}
-		}
+	feedback = strings.TrimSpace(feedback)
+	if decision == domain.DecisionRejected && feedback == "" {
+		return &domain.ValidationError{Field: "feedback", Message: "say what must change"}
 	}
-	if !approved && len(comments) == 0 {
-		return &domain.ValidationError{Field: "comments", Message: "say what must change when not approving"}
-	}
-	saved, err := s.repo.SubmitReview(ctx, run.NodeRun, run.FlowRun.CardID, approved, comments)
-	if err != nil {
-		return err
-	}
-	return s.timeline(ctx, run.FlowRun.CardID, domain.ReviewSubmitted, reviewPayload{
-		NodeKey: run.NodeRun.NodeKey, Round: run.NodeRun.Iteration, Approved: approved, Comments: toCommentPayloads(saved),
-	})
+	_, err := s.repo.SetNodeRunDecision(ctx, run.NodeRun.ID, decision, feedback)
+	return err
 }
 
 // ListCardQuestions returns the questions asked on a card, oldest first.
@@ -167,23 +161,4 @@ type (
 		Text       string    `json:"text"`
 		Answer     string    `json:"answer,omitempty"`
 	}
-	commentPayload struct {
-		File string `json:"file,omitempty"`
-		Line *int   `json:"line,omitempty"`
-		Body string `json:"body"`
-	}
-	reviewPayload struct {
-		NodeKey  string           `json:"node_key"`
-		Round    int              `json:"round"`
-		Approved bool             `json:"approved"`
-		Comments []commentPayload `json:"comments"`
-	}
 )
-
-func toCommentPayloads(comments []domain.ReviewComment) []commentPayload {
-	out := make([]commentPayload, len(comments))
-	for i, c := range comments {
-		out[i] = commentPayload{File: c.File, Line: c.Line, Body: c.Body}
-	}
-	return out
-}

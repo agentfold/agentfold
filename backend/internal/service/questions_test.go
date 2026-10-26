@@ -93,39 +93,33 @@ func TestSubmitOutput(t *testing.T) {
 	if err := s.SubmitOutput(ctx, agentRun(domain.NodeAgent, schema), json.RawMessage(`{"n": "x"}`)); !errors.As(err, &verr) || verr.Field != "output" {
 		t.Fatalf("invalid output: %v", err)
 	}
-	for _, run := range []AgentRun{agentRun(domain.NodeAgent, `{}`), agentRun(domain.NodeReview, schema), agentRun(domain.NodeAgent, `[`)} {
+	for _, run := range []AgentRun{agentRun(domain.NodeAgent, `{}`), agentRun(domain.NodeMoveCard, schema), agentRun(domain.NodeAgent, `[`)} {
 		if err := s.SubmitOutput(ctx, run, json.RawMessage(`{}`)); !errors.Is(err, ErrNoOutputSchema) {
 			t.Fatalf("%s %s: got %v", run.Node.Type, run.Node.Config, err)
 		}
 	}
 }
 
-func TestSubmitReview(t *testing.T) {
-	s, repo, pub := newService()
-	line := 3
-	err := s.SubmitReview(ctx, agentRun(domain.NodeReview, `{}`), false, []domain.ReviewInput{{File: "a.go", Line: &line, Body: " add tests "}})
-	if err != nil || repo.ins["SubmitReview"] != false || !slices.Equal(eventTypes(pub), []string{"card_event.created"}) {
-		t.Fatalf("got %v, events %v", err, pub.events)
+func TestDecide(t *testing.T) {
+	s, repo, _ := newService()
+	gateway := agentRun(domain.NodeAgent, `{"gateway":true}`)
+	if err := s.Decide(ctx, gateway, domain.DecisionRejected, " add tests "); err != nil || repo.in != "rejected:add tests" {
+		t.Fatalf("reject: %v, %v", repo.in, err)
 	}
-	payload := repo.ins["AddCardEvent:review.submitted"].(reviewPayload)
-	if payload.Round != 2 || payload.Comments[0].Body != "add tests" || *payload.Comments[0].Line != 3 {
-		t.Fatalf("timeline payload %+v", payload)
+	if err := s.Decide(ctx, gateway, domain.DecisionApproved, ""); err != nil || repo.in != "approved:" {
+		t.Fatalf("approve: %v, %v", repo.in, err)
 	}
-	if err := s.SubmitReview(ctx, agentRun(domain.NodeReview, `{}`), true, nil); err != nil {
-		t.Fatal(err)
-	}
-
 	var verr *domain.ValidationError
-	for _, comments := range [][]domain.ReviewInput{nil, {{Body: " "}}} {
-		if err := s.SubmitReview(ctx, agentRun(domain.NodeReview, `{}`), false, comments); !errors.As(err, &verr) {
-			t.Fatalf("%v: got %v", comments, err)
+	if err := s.Decide(ctx, gateway, domain.DecisionRejected, " "); !errors.As(err, &verr) || verr.Field != "feedback" {
+		t.Fatalf("reject without feedback: %v", err)
+	}
+	for _, run := range []AgentRun{agentRun(domain.NodeAgent, `{}`), agentRun(domain.NodeMoveCard, `{"gateway":true}`), agentRun(domain.NodeAgent, `[`)} {
+		if err := s.Decide(ctx, run, domain.DecisionApproved, ""); !errors.Is(err, ErrNotGateway) {
+			t.Fatalf("%s %s: got %v", run.Node.Type, run.Node.Config, err)
 		}
 	}
-	if err := s.SubmitReview(ctx, agentRun(domain.NodeAgent, `{}`), true, nil); !errors.Is(err, ErrNotReview) {
-		t.Fatalf("agent node: %v", err)
-	}
-	repo.errs = map[string]error{"SubmitReview": errRepo}
-	if err := s.SubmitReview(ctx, agentRun(domain.NodeReview, `{}`), true, nil); !errors.Is(err, errRepo) {
+	repo.errs = map[string]error{"SetNodeRunDecision": errRepo}
+	if err := s.Decide(ctx, gateway, domain.DecisionApproved, ""); !errors.Is(err, errRepo) {
 		t.Fatalf("got %v", err)
 	}
 }

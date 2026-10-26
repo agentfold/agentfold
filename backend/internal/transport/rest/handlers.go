@@ -180,6 +180,21 @@ func (h handlers) AnswerQuestion(ctx context.Context, req openapi.AnswerQuestion
 	return openapi.AnswerQuestion200JSONResponse(toQuestion(q)), err
 }
 
+func (h handlers) ListCardArtifacts(ctx context.Context, req openapi.ListCardArtifactsRequestObject) (openapi.ListCardArtifactsResponseObject, error) {
+	artifacts, err := h.board.ListCardArtifacts(ctx, req.Id)
+	return openapi.ListCardArtifacts200JSONResponse(mapAll(artifacts, toArtifact)), err
+}
+
+func (h handlers) GetArtifact(ctx context.Context, req openapi.GetArtifactRequestObject) (openapi.GetArtifactResponseObject, error) {
+	a, err := h.board.GetArtifact(ctx, req.Id)
+	return openapi.GetArtifact200JSONResponse(toArtifact(a)), err
+}
+
+func (h handlers) ReviseArtifact(ctx context.Context, req openapi.ReviseArtifactRequestObject) (openapi.ReviseArtifactResponseObject, error) {
+	msg, err := h.board.ReviseArtifact(ctx, req.Id, req.Body.Version, req.Body.Text)
+	return openapi.ReviseArtifact201JSONResponse(toArtifactMessage(msg)), err
+}
+
 func (h handlers) ListCardRuns(ctx context.Context, req openapi.ListCardRunsRequestObject) (openapi.ListCardRunsResponseObject, error) {
 	runs, err := h.board.ListCardRuns(ctx, req.Id)
 	return openapi.ListCardRuns200JSONResponse(mapAll(runs, toRunDetail)), err

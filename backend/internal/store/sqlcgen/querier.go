@@ -12,6 +12,7 @@ import (
 
 type Querier interface {
 	AnswerQuestion(ctx context.Context, arg AnswerQuestionParams) (Question, error)
+	ArtifactRevising(ctx context.Context, artifactID uuid.UUID) (bool, error)
 	CancelFlowRun(ctx context.Context, id uuid.UUID) (FlowRun, error)
 	// CancelRunJobs stops the agent jobs of a run: a worker running one loses
 	// its lease at the next heartbeat and interrupts the agent.
@@ -33,7 +34,6 @@ type Querier interface {
 	DeleteLane(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteMcpServer(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteProject(ctx context.Context, id uuid.UUID) (int64, error)
-	DeleteReviewComments(ctx context.Context, nodeRunID uuid.UUID) error
 	DeliverQuestions(ctx context.Context, nodeRunID uuid.UUID) error
 	ExtendJobLease(ctx context.Context, arg ExtendJobLeaseParams) (int64, error)
 	FailOpenNodeRuns(ctx context.Context, flowRunID uuid.UUID) error
@@ -41,9 +41,14 @@ type Querier interface {
 	FinishJob(ctx context.Context, arg FinishJobParams) (int64, error)
 	// FinishNodeRun adds the usage: a node resumed after questions runs again.
 	FinishNodeRun(ctx context.Context, arg FinishNodeRunParams) (NodeRun, error)
+	// FreezeCardArtifacts freezes the artifacts of a card that left its lane,
+	// except those a run still active collected: that run moves the card on.
+	FreezeCardArtifacts(ctx context.Context, cardID uuid.UUID) ([]Artifact, error)
 	GetAgentProfile(ctx context.Context, id uuid.UUID) (AgentProfile, error)
 	GetAgentProfileByName(ctx context.Context, name string) (AgentProfile, error)
 	GetAgentSession(ctx context.Context, arg GetAgentSessionParams) (AgentSession, error)
+	GetArtifact(ctx context.Context, id uuid.UUID) (Artifact, error)
+	GetArtifactForUpdate(ctx context.Context, id uuid.UUID) (Artifact, error)
 	GetCard(ctx context.Context, id uuid.UUID) (Card, error)
 	GetCardEvent(ctx context.Context, id uuid.UUID) (CardEvent, error)
 	GetCardForUpdate(ctx context.Context, id uuid.UUID) (Card, error)
@@ -59,9 +64,12 @@ type Querier interface {
 	GetNodeRunForUpdate(ctx context.Context, id uuid.UUID) (NodeRun, error)
 	GetProject(ctx context.Context, id uuid.UUID) (Project, error)
 	GetQuestion(ctx context.Context, id uuid.UUID) (Question, error)
+	GetRevisionMessage(ctx context.Context, flowRunID *uuid.UUID) (ArtifactMessage, error)
 	GetRunningNodeRunByToken(ctx context.Context, tokenHash []byte) (NodeRun, error)
 	InsertAgentProfile(ctx context.Context, arg InsertAgentProfileParams) (AgentProfile, error)
 	InsertAgentSession(ctx context.Context, arg InsertAgentSessionParams) (AgentSession, error)
+	InsertArtifactMessage(ctx context.Context, arg InsertArtifactMessageParams) (ArtifactMessage, error)
+	InsertArtifactVersion(ctx context.Context, arg InsertArtifactVersionParams) (ArtifactVersion, error)
 	InsertCard(ctx context.Context, arg InsertCardParams) (Card, error)
 	InsertCardEvent(ctx context.Context, arg InsertCardEventParams) (CardEvent, error)
 	InsertCardType(ctx context.Context, arg InsertCardTypeParams) (CardType, error)
@@ -76,8 +84,11 @@ type Querier interface {
 	InsertNodeRun(ctx context.Context, arg InsertNodeRunParams) (NodeRun, error)
 	InsertProject(ctx context.Context, arg InsertProjectParams) (Project, error)
 	InsertQuestion(ctx context.Context, arg InsertQuestionParams) (Question, error)
-	InsertReviewComment(ctx context.Context, arg InsertReviewCommentParams) (ReviewComment, error)
+	LatestArtifactVersion(ctx context.Context, artifactID uuid.UUID) (ArtifactVersion, error)
 	ListAgentProfiles(ctx context.Context) ([]AgentProfile, error)
+	ListArtifactMessages(ctx context.Context, artifactID uuid.UUID) ([]ArtifactMessage, error)
+	ListArtifactVersions(ctx context.Context, artifactID uuid.UUID) ([]ArtifactVersion, error)
+	ListCardArtifacts(ctx context.Context, cardID uuid.UUID) ([]Artifact, error)
 	ListCardEvents(ctx context.Context, cardID uuid.UUID) ([]CardEvent, error)
 	ListCardFlowRuns(ctx context.Context, cardID uuid.UUID) ([]ListCardFlowRunsRow, error)
 	ListCardQuestions(ctx context.Context, cardID uuid.UUID) ([]Question, error)
@@ -94,7 +105,6 @@ type Querier interface {
 	ListNodeOutput(ctx context.Context, nodeRunID uuid.UUID) ([]NodeRunOutput, error)
 	ListNodeRuns(ctx context.Context, flowRunID uuid.UUID) ([]NodeRun, error)
 	ListProjects(ctx context.Context) ([]Project, error)
-	ListReviewComments(ctx context.Context, nodeRunID uuid.UUID) ([]ReviewComment, error)
 	ListRunnableFlows(ctx context.Context) ([]ListRunnableFlowsRow, error)
 	ListUndeliveredQuestions(ctx context.Context, nodeRunID uuid.UUID) ([]Question, error)
 	NextFlowVersion(ctx context.Context, flowID uuid.UUID) (int32, error)
@@ -106,8 +116,8 @@ type Querier interface {
 	SetAgentCredential(ctx context.Context, arg SetAgentCredentialParams) (AgentProfile, error)
 	SetFlowRunStatus(ctx context.Context, arg SetFlowRunStatusParams) (FlowRun, error)
 	SetLanePosition(ctx context.Context, arg SetLanePositionParams) (Lane, error)
+	SetNodeRunDecision(ctx context.Context, arg SetNodeRunDecisionParams) (NodeRun, error)
 	SetNodeRunOutput(ctx context.Context, arg SetNodeRunOutputParams) (NodeRun, error)
-	SetNodeRunReview(ctx context.Context, arg SetNodeRunReviewParams) (NodeRun, error)
 	SetNodeRunSummary(ctx context.Context, arg SetNodeRunSummaryParams) (NodeRun, error)
 	ShiftCards(ctx context.Context, arg ShiftCardsParams) error
 	ShiftLanes(ctx context.Context, arg ShiftLanesParams) error
@@ -119,6 +129,7 @@ type Querier interface {
 	UpdateLane(ctx context.Context, arg UpdateLaneParams) (Lane, error)
 	UpdateMcpServer(ctx context.Context, arg UpdateMcpServerParams) (McpServer, error)
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) (Project, error)
+	UpsertArtifact(ctx context.Context, arg UpsertArtifactParams) (Artifact, error)
 }
 
 var _ Querier = (*Queries)(nil)

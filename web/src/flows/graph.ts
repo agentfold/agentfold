@@ -5,17 +5,12 @@ import type {
   FlowGraph,
   FlowNode,
   MoveCardConfig,
-  ReviewConfig,
   TriggerConfig,
 } from '../api/client'
 
 export type NodeKind = FlowNode['type']
 export type StepConfig =
-  | TriggerConfig
-  | AgentConfig
-  | ReviewConfig
-  | MoveCardConfig
-  | Record<string, never>
+  TriggerConfig | AgentConfig | MoveCardConfig | Record<string, never>
 
 export interface StepData extends Record<string, unknown> {
   kind: NodeKind
@@ -30,18 +25,26 @@ export type StepNode = Node<StepData, 'step'>
 export const kindLabels: Record<NodeKind, string> = {
   trigger: 'Gatilho',
   agent: 'Agente',
-  review: 'Review',
   move_card: 'Mover card',
   end: 'Fim',
 }
 
 /** The outputs (source handles) of each node kind, as in the contract. */
-export const outputs: Record<NodeKind, string[]> = {
+const outputs: Record<NodeKind, string[]> = {
   trigger: ['next'],
   agent: ['done', 'failed'],
-  review: ['approved', 'changes_requested', 'max_rounds_exceeded'],
   move_card: ['next'],
   end: [],
+}
+
+/** The outputs of an agent node with the gateway on. */
+const gatewayOutputs = ['approved', 'rejected', 'max_rounds_exceeded', 'failed']
+
+/** The outputs of a node: agents with the gateway on decide where to go. */
+export function nodeOutputs({ kind, config }: StepData): string[] {
+  return kind === 'agent' && (config as AgentConfig).gateway
+    ? gatewayOutputs
+    : outputs[kind]
 }
 
 export const outputLabels: Record<string, string> = {
@@ -49,7 +52,7 @@ export const outputLabels: Record<string, string> = {
   done: 'concluído',
   failed: 'falhou',
   approved: 'aprovado',
-  changes_requested: 'pedir mudanças',
+  rejected: 'rejeitado',
   max_rounds_exceeded: 'limite de rodadas',
 }
 
@@ -59,8 +62,6 @@ export function defaultConfig(kind: NodeKind): StepConfig {
       return { event: 'card_created' }
     case 'agent':
       return { prompt: '' }
-    case 'review':
-      return { prompt: '', max_rounds: 3 }
     default:
       return {}
   }
@@ -190,11 +191,13 @@ export function summary({ kind, config }: StepData): string {
         ? 'Quando o card entra numa baia'
         : 'Quando o card é criado'
     case 'agent': {
-      const prompt = (config as AgentConfig).prompt ?? ''
-      return prompt === '' ? 'Sem prompt' : prompt
+      const agent = config as AgentConfig
+      const prompt = agent.prompt ?? ''
+      const text = prompt === '' ? 'Sem prompt' : prompt
+      return agent.gateway
+        ? `Gateway, até ${String(agent.max_rounds ?? '?')} rodadas: ${text}`
+        : text
     }
-    case 'review':
-      return `Até ${String((config as ReviewConfig).max_rounds ?? '?')} rodadas`
     case 'move_card':
       return 'Move o card de baia'
     case 'end':

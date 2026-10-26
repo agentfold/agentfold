@@ -71,7 +71,7 @@ orquestrator/
 ### F4 — Fluxos
 - Migrations `flows`, `flow_versions`; endpoints de fluxo; validação do grafo no backend
   (um Trigger, arestas válidas por tipo de saída, nós alcançáveis).
-- Editor ReactFlow: paleta (Trigger, Agent, Review, MoveCard, End), painel de configuração por nó
+- Editor ReactFlow: paleta (Trigger, Agent, Review, MoveCard, End; o Review saiu na F10), painel de configuração por nó
   (filtro por tipo no Trigger; schema de saída no Agent), salvar rascunho,
   publicar versão.
 - Decidido: um rascunho por fluxo + versões imutáveis ao publicar; o grafo só é validado ao
@@ -148,16 +148,29 @@ orquestrator/
   agente. O stream bruto continua em `logs/`; a página guarda mensagens, chamadas e resultados de
   tools (encurtados) e o resultado final.
 
+### F10 — Gateway, saída como entrada e artefatos (antes da F9)
+- Substitui o nó Approval planejado: revisão por agente vira um nó Agent com **gateway** e revisão
+  humana é feita sobre **artefatos**, aprovando ao mover o card.
+- Decidido: o nó Review sai (sem migração de dados, MVP); o Agent ganha somente leitura, gateway
+  (tools `approve`/`reject`, saídas `approved`/`rejected`/`max_rounds_exceeded`/`failed`) e
+  artefatos (nome + arquivo); a saída de um nó é sempre a entrada do seguinte, como mensagem na
+  sessão (JSON da saída estruturada, senão o texto final ou o feedback do `reject`), também na
+  primeira entrada; MoveCard/End repassam a entrada; sem variáveis de fluxo nem templates.
+- Artefatos: versionados no card, renderizados com react-markdown + GFM; a aba Artefatos tem um
+  chat por artefato (selecionar um trecho e clicar em "Revisar" cita o trecho na mensagem); cada
+  mensagem retoma a sessão do nó que coletou o artefato num run de revisão que não segue o fluxo
+  e não move o card; mover o card para outra baia congela os artefatos (aprovação); só um nó que
+  declara o mesmo nome coleta de novo.
+- **Pronto quando:** dev ⇄ gateway até aprovar, e plano coletado, revisado pelo chat (versão 2) e
+  congelado ao mover o card, de ponta a ponta com o Claude falso.
+
 ### F9 — Smoke de ponta a ponta
-- Roteiro manual com Claude real: criar fluxo Dev → Review → MoveCard, criar card num repo de
-  exemplo, responder uma pergunta, passar por um ciclo de review.
+- Roteiro manual com Claude real: criar fluxo Dev ⇄ Agent com gateway → MoveCard e um planner com
+  artefato, criar card num repo de exemplo, responder uma pergunta, passar por uma rejeição e
+  revisar um artefato pelo chat.
 - Ajustes e documentação de uso (`README`).
 
 ## Fase 2 — Orquestração entre cards
-
-### F10 — Approval
-- Nó `Approval` (`approved` / `rejected` com comentário); tela de aprovação no painel do card
-  exibindo a saída estruturada do nó anterior; rejeição pode voltar ao Agent (reentrada).
 
 ### F11 — CreateCards e WaitChildren
 - Nó `CreateCards`: um card filho por item da saída estruturada (tipo, baia, projeto por nome).
@@ -165,8 +178,8 @@ orquestrator/
 - UI: filhos listados no card pai, progresso agregado.
 
 ### F12 — Smoke do cenário de referência
-- Fluxo "Proposta" (Sourcegraph → Approval → CreateCards → WaitChildren) e fluxo
-  "Implementação" (Agent ⇄ Review) de ponta a ponta com Claude real.
+- Fluxo "Proposta" (Sourcegraph → artefato revisado no chat → CreateCards → WaitChildren) e fluxo
+  "Implementação" (Agent ⇄ Agent com gateway) de ponta a ponta com Claude real.
 
 ## Fora do MVP e da Fase 2
 Nó de PR, review entre repositórios no fluxo do pai (`WaitSignal`), Fork/Join, projetos com origem

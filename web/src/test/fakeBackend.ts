@@ -1,6 +1,8 @@
 // An in-memory implementation of the REST API, used as `fetch` in tests.
 import type {
   AgentProfile,
+  Artifact,
+  ArtifactMessage,
   Card,
   CardEvent,
   CardType,
@@ -29,6 +31,7 @@ interface State {
   questions: Question[]
   cardRuns: FlowRunDetail[]
   outputs: NodeOutput[]
+  artifacts: Artifact[]
   agentProfiles: AgentProfile[]
   mcpServers: McpServer[]
 }
@@ -185,6 +188,8 @@ export function nodeRun(
     output_handle: 'done',
     error: '',
     summary: '',
+    decision: '',
+    feedback: '',
     output: null,
     tokens_in: 10,
     tokens_out: 20,
@@ -222,6 +227,51 @@ export function nodeOutput(
     text,
     tool: '',
     is_error: false,
+    created_at: stamp,
+    ...extra,
+  }
+}
+
+export function artifact(
+  cardId: string,
+  name: string,
+  contents: string[],
+  extra: Partial<Artifact> = {},
+): Artifact {
+  const id = newId()
+  return {
+    id,
+    card_id: cardId,
+    name,
+    frozen: false,
+    revising: false,
+    versions: contents.map((content, i) => ({
+      version: i + 1,
+      path: 'plan.md',
+      content,
+      node_run_id: newId(),
+      created_at: stamp,
+    })),
+    messages: [],
+    created_at: stamp,
+    updated_at: stamp,
+    ...extra,
+  }
+}
+
+export function artifactMessage(
+  artifactId: string,
+  role: ArtifactMessage['role'],
+  text: string,
+  extra: Partial<ArtifactMessage> = {},
+): ArtifactMessage {
+  return {
+    id: newId(),
+    artifact_id: artifactId,
+    version: 1,
+    role,
+    text,
+    flow_run_id: null,
     created_at: stamp,
     ...extra,
   }
@@ -294,6 +344,7 @@ export function createFakeBackend(initial: Partial<State> = {}): FakeBackend {
     questions: [],
     cardRuns: [],
     outputs: [],
+    artifacts: [],
     agentProfiles: [],
     mcpServers: [],
     ...initial,
@@ -424,6 +475,22 @@ export function createFakeBackend(initial: Partial<State> = {}): FakeBackend {
       }
       case 'GET /cards/:id/runs':
         return [200, state.cardRuns.filter((r) => r.card_id === id)]
+      case 'GET /cards/:id/artifacts':
+        return [200, state.artifacts.filter((a) => a.card_id === id)]
+      case 'POST /artifacts/:id/messages': {
+        const a = state.artifacts.find((x) => x.id === id)
+        if (!a) return notFound
+        if (a.frozen) {
+          return [409, { code: 'artifact_frozen', message: 'frozen' }]
+        }
+        if (!str(body.text).trim()) return invalid('text')
+        const msg = artifactMessage(a.id, 'human', str(body.text), {
+          version: Number(body.version),
+        })
+        a.messages.push(msg)
+        a.revising = true
+        return [201, msg]
+      }
       case 'GET /node-runs/:id/output':
         return [200, state.outputs.filter((o) => o.node_run_id === id)]
       case 'POST /flow-runs/:id/cancel': {

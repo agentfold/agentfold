@@ -3,13 +3,14 @@ import { useState } from 'react'
 import type {
   AgentConfig,
   AgentProfile,
+  ArtifactSpec,
   McpServer,
   CardType,
   Lane,
   MoveCardConfig,
-  ReviewConfig,
   TriggerConfig,
 } from '../api/client'
+import { Button } from '../components/Button'
 import { SelectField, TextArea, TextField } from '../components/Field'
 import { formatTools, parseCount, parseSchema, parseTools } from './config'
 import type { StepConfig, StepData } from './graph'
@@ -48,14 +49,6 @@ export function NodeConfigForm({
           config={data.config as AgentConfig}
           profiles={profiles}
           mcpServers={mcpServers}
-          onChange={onChange}
-        />
-      )
-    case 'review':
-      return (
-        <ReviewForm
-          config={data.config as ReviewConfig}
-          profiles={profiles}
           onChange={onChange}
         />
       )
@@ -220,50 +213,149 @@ function AgentForm({ config, profiles, mcpServers, onChange }: AgentFormProps) {
           onChange({ ...config, output_schema })
         }}
       />
+      <Toggle
+        label="Somente leitura"
+        hint="Bloqueia a edição de arquivos, como num revisor."
+        checked={config.read_only ?? false}
+        onChange={(read_only) => {
+          onChange({ ...config, read_only: read_only || undefined })
+        }}
+      />
+      <Toggle
+        label="Gateway"
+        hint="O agente decide com approve ou reject; as saídas passam a ser aprovado, rejeitado, limite de rodadas e falhou."
+        checked={config.gateway ?? false}
+        onChange={(gateway) => {
+          onChange(
+            gateway
+              ? { ...config, gateway, max_rounds: config.max_rounds ?? 3 }
+              : { ...config, gateway: undefined, max_rounds: undefined },
+          )
+        }}
+      />
+      {config.gateway && (
+        <TextField
+          label="Máx. de rodadas"
+          type="number"
+          hint="Depois disso a rejeição sai por “limite de rodadas”."
+          value={
+            config.max_rounds === undefined ? '' : String(config.max_rounds)
+          }
+          onChange={(text) => {
+            onChange({ ...config, max_rounds: parseCount(text) })
+          }}
+        />
+      )}
+      <ArtifactsField
+        artifacts={config.artifacts ?? []}
+        onChange={(artifacts) => {
+          onChange({
+            ...config,
+            artifacts: artifacts.length > 0 ? artifacts : undefined,
+          })
+        }}
+      />
     </div>
   )
 }
 
-interface ReviewFormProps {
-  config: ReviewConfig
-  profiles: AgentProfile[]
-  onChange: (config: ReviewConfig) => void
+interface ToggleProps {
+  label: string
+  hint: string
+  checked: boolean
+  onChange: (checked: boolean) => void
 }
 
-function ReviewForm({ config, profiles, onChange }: ReviewFormProps) {
+function Toggle({ label, hint, checked, onChange }: ToggleProps) {
   return (
-    <div className="flex flex-col gap-3">
-      <ProfileField config={config} profiles={profiles} onChange={onChange} />
-      <TextArea
-        label="Prompt de review"
-        rows={6}
-        value={config.prompt ?? ''}
-        onChange={(prompt) => {
-          onChange({ ...config, prompt })
+    <label className="flex items-start gap-2 text-sm">
+      <input
+        type="checkbox"
+        className="mt-1"
+        checked={checked}
+        onChange={(e) => {
+          onChange(e.target.checked)
         }}
       />
-      <ToolFields config={config} onChange={onChange} />
-      <TextField
-        label="Máx. de rodadas"
-        type="number"
-        hint="Depois disso o review sai por “limite de rodadas”."
-        value={config.max_rounds === undefined ? '' : String(config.max_rounds)}
-        onChange={(text) => {
-          onChange({ ...config, max_rounds: parseCount(text) })
-        }}
-      />
-    </div>
+      <span className="flex flex-col">
+        <span className="font-medium">{label}</span>
+        <span className="text-xs text-slate-500">{hint}</span>
+      </span>
+    </label>
   )
 }
 
-interface ProfileFieldProps<C extends AgentConfig | ReviewConfig> {
+interface ArtifactsFieldProps {
+  artifacts: ArtifactSpec[]
+  onChange: (artifacts: ArtifactSpec[]) => void
+}
+
+/** The files the node collects into the card when it finishes. */
+function ArtifactsField({ artifacts, onChange }: ArtifactsFieldProps) {
+  const set = (i: number, change: Partial<ArtifactSpec>) => {
+    onChange(artifacts.map((a, j) => (j === i ? { ...a, ...change } : a)))
+  }
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="text-xs font-medium text-slate-600">Artefatos</legend>
+      <p className="text-xs text-slate-500">
+        Arquivos do workspace que viram artefatos do card quando o agente
+        termina. Diga no prompt onde salvá-los.
+      </p>
+      {artifacts.map((a, i) => (
+        <div
+          key={i}
+          role="group"
+          aria-label={`Artefato ${String(i + 1)}`}
+          className="grid grid-cols-[1fr_1fr_auto] items-end gap-2"
+        >
+          <TextField
+            label="Nome"
+            placeholder="Plano"
+            value={a.name}
+            onChange={(name) => {
+              set(i, { name })
+            }}
+          />
+          <TextField
+            label="Arquivo"
+            placeholder="plan.md"
+            value={a.path}
+            onChange={(path) => {
+              set(i, { path })
+            }}
+          />
+          <Button
+            variant="ghost"
+            onClick={() => {
+              onChange(artifacts.filter((_, j) => j !== i))
+            }}
+          >
+            Remover
+          </Button>
+        </div>
+      ))}
+      <Button
+        variant="ghost"
+        className="self-start"
+        onClick={() => {
+          onChange([...artifacts, { name: '', path: '' }])
+        }}
+      >
+        Adicionar artefato
+      </Button>
+    </fieldset>
+  )
+}
+
+interface ProfileFieldProps<C extends AgentConfig> {
   config: C
   profiles: AgentProfile[]
   onChange: (config: C) => void
 }
 
 /** The agent profile a node runs as. */
-function ProfileField<C extends AgentConfig | ReviewConfig>({
+function ProfileField<C extends AgentConfig>({
   config,
   profiles,
   onChange,
@@ -286,12 +378,12 @@ function ProfileField<C extends AgentConfig | ReviewConfig>({
   )
 }
 
-interface ToolFieldsProps<C extends AgentConfig | ReviewConfig> {
+interface ToolFieldsProps<C extends AgentConfig> {
   config: C
   onChange: (config: C) => void
 }
 
-function ToolFields<C extends AgentConfig | ReviewConfig>({
+function ToolFields<C extends AgentConfig>({
   config,
   onChange,
 }: ToolFieldsProps<C>) {

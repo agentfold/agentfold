@@ -49,10 +49,12 @@ ao vivo pelo server (`LISTEN/NOTIFY`).
 Os agentes falam com o board pelo servidor MCP em `http://127.0.0.1:8080/mcp` (o worker o encontra
 por `ORQ_SERVER_URL`, padrão `http://127.0.0.1:8080`). Cada execução recebe um token próprio e as
 tools `get_card`, `ask_human`, `report_done`, `submit_output` (nós com schema de saída) e
-`submit_review` (nós Review). Perguntas do agente aparecem na página do card (`#/cards/<id>`, aberta
-pelo clique no card) para resposta; o card fica parado até todas serem respondidas. A página
-mostra também a execução ao vivo (nós, saída do agente, comentários de review), a linha do tempo
-e o consumo, e permite cancelar o fluxo. Sem token, o mesmo endpoint expõe tools de integração
+`approve`/`reject` (nós com gateway). A saída de cada nó chega ao agente seguinte como mensagem.
+Perguntas do agente aparecem na página do card (`#/cards/<id>`, aberta pelo clique no card) para
+resposta; o card fica parado até todas serem respondidas. A página mostra também a execução ao
+vivo (nós, saída do agente, decisões de gateway), os artefatos coletados (com um chat que pede
+revisões ao agente que os gerou; mover o card para outra baia os congela), a linha do tempo e o
+consumo, e permite cancelar o fluxo. Sem token, o mesmo endpoint expõe tools de integração
 (`list_cards`, `create_card`, `move_card`, `list_questions`, `answer_questions`, `get_run`…).
 
 O worker lê `ORQ_DATA_DIR` (padrão `~/.local/share/orquestrator`, onde ficam os worktrees dos

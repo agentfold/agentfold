@@ -37,12 +37,32 @@ func (f *fakeRepo) SetNodeRunOutput(_ context.Context, _ uuid.UUID, output json.
 	return f.nodeRun, f.call("SetNodeRunOutput", string(output))
 }
 
-func (f *fakeRepo) SubmitReview(_ context.Context, nr domain.NodeRun, cardID uuid.UUID, approved bool, comments []domain.ReviewInput) ([]domain.ReviewComment, error) {
-	out := make([]domain.ReviewComment, len(comments))
-	for i, c := range comments {
-		out[i] = domain.ReviewComment{CardID: cardID, NodeRunID: nr.ID, Round: nr.Iteration, File: c.File, Line: c.Line, Body: c.Body}
-	}
-	return out, f.call("SubmitReview", approved)
+func (f *fakeRepo) SetNodeRunDecision(_ context.Context, _ uuid.UUID, decision, feedback string) (domain.NodeRun, error) {
+	return f.nodeRun, f.call("SetNodeRunDecision", decision+":"+feedback)
+}
+
+func (f *fakeRepo) GetArtifact(_ context.Context, id uuid.UUID) (domain.Artifact, error) {
+	return domain.Artifact{ID: id, CardID: id}, f.call("GetArtifact", id)
+}
+
+func (f *fakeRepo) ListCardArtifacts(_ context.Context, cardID uuid.UUID) ([]domain.Artifact, error) {
+	return []domain.Artifact{{ID: uuid.New(), CardID: cardID}}, f.call("ListCardArtifacts", cardID)
+}
+
+func (f *fakeRepo) ListArtifactVersions(_ context.Context, id uuid.UUID) ([]domain.ArtifactVersion, error) {
+	return []domain.ArtifactVersion{{ArtifactID: id, Version: 1}}, f.call("ListArtifactVersions", id)
+}
+
+func (f *fakeRepo) ListArtifactMessages(_ context.Context, id uuid.UUID) ([]domain.ArtifactMessage, error) {
+	return []domain.ArtifactMessage{{ArtifactID: id, Version: 1}}, f.call("ListArtifactMessages", id)
+}
+
+func (f *fakeRepo) ArtifactRevising(_ context.Context, id uuid.UUID) (bool, error) {
+	return f.resumed, f.call("ArtifactRevising", id)
+}
+
+func (f *fakeRepo) StartRevision(_ context.Context, id uuid.UUID, version int, text string) (domain.ArtifactMessage, domain.FlowRun, error) {
+	return domain.ArtifactMessage{ArtifactID: id, Version: version, Role: domain.RoleHuman, Text: text}, f.flowRun, f.call("StartRevision", text)
 }
 
 func (f *fakeRepo) AddQuestions(_ context.Context, cardID, nodeRunID uuid.UUID, texts []string) ([]domain.Question, error) {

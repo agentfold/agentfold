@@ -9,7 +9,8 @@ const affected: Record<string, QueryKey[]> = {
   lane: [keys.lanes],
   project: [keys.projects],
   card_type: [keys.cardTypes],
-  card: [keys.cards, keys.cardEvents],
+  // Moving a card freezes its artifacts.
+  card: [keys.cards, keys.cardEvents, keys.artifacts],
   flow: [keys.flows],
   agent_profile: [keys.agentProfiles],
   mcp_server: [keys.mcpServers],
@@ -18,6 +19,7 @@ const affected: Record<string, QueryKey[]> = {
   node_output: [keys.nodeOutput],
   card_event: [keys.cardEvents, keys.cardRuns],
   question: [keys.questions],
+  artifact: [keys.artifacts],
 }
 
 const changes = ['created', 'updated', 'moved', 'deleted', 'published']

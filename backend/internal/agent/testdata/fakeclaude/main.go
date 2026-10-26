@@ -12,8 +12,10 @@
 //	[ask:Q]          ask_human([Q]) on the first run
 //	[done:S]         report_done(S) on every run without questions
 //	[output:JSON]    submit_output(JSON) on every run without questions
-//	[review:a,b,…]   submit_review on run i with verdict i (approve or
-//	                 reject; the last one repeats)
+//	[gate:a,b,…]     approve or reject on run i, by verdict i (the last
+//	                 one repeats); rejections ask to "add tests"
+//	[write:F:T]      writes T and the run number to the file F of the
+//	                 working directory on every run without questions
 package main
 
 import (
@@ -87,7 +89,7 @@ func main() {
 	fmt.Println(string(result))
 }
 
-var marker = regexp.MustCompile(`\[(ask|done|output|review):([^\]]*)\]`)
+var marker = regexp.MustCompile(`\[(ask|done|output|gate|write):([^\]]*)\]`)
 
 // script runs the board tool calls the first prompt of the session asks for
 // and returns which run of the session this is, and that first prompt.
@@ -136,14 +138,16 @@ func script(prompt, mcpConfig, session string) (int, string, error) {
 			err = call("report_done", map[string]any{"summary": c[2]})
 		case "output":
 			err = call("submit_output", map[string]any{"output": json.RawMessage(c[2])})
-		case "review":
+		case "gate":
 			verdicts := strings.Split(c[2], ",")
-			verdict := verdicts[min(run, len(verdicts))-1]
-			args := map[string]any{"approved": verdict == "approve"}
-			if verdict != "approve" {
-				args["comments"] = []map[string]any{{"file": "main.go", "line": 1, "body": "add tests"}}
+			if verdicts[min(run, len(verdicts))-1] == "approve" {
+				err = call("approve", map[string]any{"reason": "looks good"})
+			} else {
+				err = call("reject", map[string]any{"feedback": "add tests"})
 			}
-			err = call("submit_review", args)
+		case "write":
+			file, text, _ := strings.Cut(c[2], ":")
+			err = os.WriteFile(file, fmt.Appendf(nil, "%s\n\nrun %d\n", text, run), 0o600)
 		}
 		if err != nil {
 			return run, string(original), err

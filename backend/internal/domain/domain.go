@@ -25,6 +25,9 @@ var (
 	ErrCardBusy = errors.New("a flow is running for the card")
 	// ErrQuestionClosed means the answer already reached the agent.
 	ErrQuestionClosed = errors.New("the answer was already delivered to the agent")
+	// ErrArtifactFrozen means the card left the lane where the artifact
+	// was collected: it can no longer be revised.
+	ErrArtifactFrozen = errors.New("the artifact is frozen: the card left its lane")
 )
 
 // ValidationError reports an invalid field value.
@@ -100,7 +103,8 @@ const (
 
 	QuestionAsked    CardEventType = "question.asked"
 	QuestionAnswered CardEventType = "question.answered"
-	ReviewSubmitted  CardEventType = "review.submitted"
+
+	ArtifactCollected CardEventType = "artifact.collected"
 )
 
 // CardEvent is an entry of the card timeline.

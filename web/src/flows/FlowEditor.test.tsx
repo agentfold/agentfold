@@ -201,11 +201,11 @@ describe('FlowEditor', () => {
       event: 'card_entered_lane',
     })
 
-    await userEvent.click(screen.getByRole('button', { name: '+ Review' }))
+    await userEvent.click(screen.getByRole('button', { name: '+ Agente' }))
     connect({
       source: 'trigger',
       sourceHandle: 'next',
-      target: 'review-1',
+      target: 'agent-1',
       targetHandle: null,
     })
     await userEvent.click(screen.getByRole('button', { name: 'Remover nó' }))
@@ -214,6 +214,37 @@ describe('FlowEditor', () => {
 
     nodesChange([{ type: 'position', id: 'trigger', position: { x: 5, y: 5 } }])
     expect(props().nodes[0].position).toEqual({ x: 5, y: 5 })
+  })
+
+  it('drops the edges of outputs a gateway toggle removes', async () => {
+    await setup()
+    await userEvent.click(screen.getByRole('button', { name: '+ Agente' }))
+    await userEvent.click(screen.getByRole('button', { name: '+ Fim' }))
+    connect({
+      source: 'agent-1',
+      sourceHandle: 'done',
+      target: 'end-1',
+      targetHandle: null,
+    })
+    connect({
+      source: 'agent-1',
+      sourceHandle: 'failed',
+      target: 'end-1',
+      targetHandle: null,
+    })
+    connect({
+      source: 'trigger',
+      sourceHandle: 'next',
+      target: 'agent-1',
+      targetHandle: null,
+    })
+    nodesChange([{ type: 'select', id: 'agent-1', selected: true }])
+    nodesChange([{ type: 'select', id: 'end-1', selected: false }])
+    await userEvent.click(screen.getByLabelText(/Gateway/))
+    expect(props().edges.map((e) => e.id)).toEqual([
+      'agent-1.failed',
+      'trigger.next',
+    ])
   })
 
   it('tracks edge changes', async () => {

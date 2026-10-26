@@ -73,6 +73,7 @@ func toNodeRun(n service.RunNode) openapi.NodeRun {
 	out := openapi.NodeRun{
 		Id: n.ID, FlowRunId: n.FlowRunID, NodeKey: n.NodeKey, NodeType: string(n.Type), Iteration: n.Iteration,
 		Status: openapi.NodeRunStatus(n.Status), OutputHandle: n.OutputHandle, Error: n.Error, Summary: n.Summary,
+		Decision: openapi.NodeRunDecision(n.Decision), Feedback: n.Feedback,
 		TokensIn: n.TokensIn, TokensOut: n.TokensOut, CacheRead: n.CacheRead, CacheWrite: n.CacheWrite,
 		CostUsd: n.CostUSD, Turns: n.Turns, DurationMs: n.DurationMS,
 		CreatedAt: n.CreatedAt, StartedAt: n.StartedAt, FinishedAt: n.FinishedAt,
@@ -98,6 +99,27 @@ func toNodeOutput(o domain.NodeOutput) openapi.NodeOutput {
 	return openapi.NodeOutput{
 		Id: o.ID, NodeRunId: o.NodeRunID, Kind: openapi.NodeOutputKind(o.Kind), Text: o.Text, Tool: o.Tool,
 		IsError: o.IsError, CreatedAt: o.CreatedAt,
+	}
+}
+
+func toArtifact(a service.ArtifactDetail) openapi.Artifact {
+	return openapi.Artifact{
+		Id: a.ID, CardId: a.CardID, Name: a.Name, Frozen: a.FrozenAt != nil, Revising: a.Revising,
+		Versions: mapAll(a.Versions, toArtifactVersion), Messages: mapAll(a.Messages, toArtifactMessage),
+		CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt,
+	}
+}
+
+func toArtifactVersion(v domain.ArtifactVersion) openapi.ArtifactVersion {
+	return openapi.ArtifactVersion{
+		Version: v.Version, Path: v.Path, Content: v.Content, NodeRunId: v.NodeRunID, CreatedAt: v.CreatedAt,
+	}
+}
+
+func toArtifactMessage(m domain.ArtifactMessage) openapi.ArtifactMessage {
+	return openapi.ArtifactMessage{
+		Id: m.ID, ArtifactId: m.ArtifactID, Version: m.Version, Role: openapi.ArtifactMessageRole(m.Role),
+		Text: m.Text, FlowRunId: m.FlowRunID, CreatedAt: m.CreatedAt,
 	}
 }
 

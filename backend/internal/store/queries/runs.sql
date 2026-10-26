@@ -67,8 +67,8 @@ UPDATE node_runs SET summary = $2 WHERE id = $1 RETURNING *;
 -- name: SetNodeRunOutput :one
 UPDATE node_runs SET structured_output = $2 WHERE id = $1 RETURNING *;
 
--- name: SetNodeRunReview :one
-UPDATE node_runs SET review_approved = $2 WHERE id = $1 RETURNING *;
+-- name: SetNodeRunDecision :one
+UPDATE node_runs SET decision = $2, feedback = $3 WHERE id = $1 RETURNING *;
 
 -- name: GetNodeRunForUpdate :one
 SELECT * FROM node_runs WHERE id = $1 FOR UPDATE;

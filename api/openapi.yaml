@@ -522,6 +522,58 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/NodeOutput" }
         default: { $ref: "#/components/responses/Error" }
+  /cards/{id}/artifacts:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: listCardArtifacts
+      tags: [artifacts]
+      responses:
+        "200":
+          description: The artifacts agents collected on the card, with their versions and review chats, oldest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Artifact" }
+        default: { $ref: "#/components/responses/Error" }
+  /artifacts/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    get:
+      operationId: getArtifact
+      tags: [artifacts]
+      responses:
+        "200":
+          description: The artifact with its versions and review chat.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Artifact" }
+        default: { $ref: "#/components/responses/Error" }
+  /artifacts/{id}/messages:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      operationId: reviseArtifact
+      tags: [artifacts]
+      description: >
+        Sends a message of the review chat to the agent that collected the
+        artifact: the agent resumes its session, updates the file and the board
+        collects it again; the card stays where it is. Fails with
+        artifact_frozen once the card left the lane, and with card_busy while a
+        flow runs for the card.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ArtifactMessageInput" }
+      responses:
+        "201":
+          description: Sent; the revision runs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArtifactMessage" }
+        default: { $ref: "#/components/responses/Error" }
   /flow-runs/latest:
     get:
       operationId: listLatestFlowRuns
@@ -699,7 +751,7 @@ components:
       properties:
         code:
           type: string
-          enum: [bad_request, validation, not_found, conflict, in_use, invalid_reference, invalid_graph, card_busy, question_closed, internal]
+          enum: [bad_request, validation, not_found, conflict, in_use, invalid_reference, invalid_graph, card_busy, question_closed, artifact_frozen, internal]
         message: { type: string }
         field:
           type: string
@@ -824,7 +876,7 @@ components:
         A change to the board. `type` is "<entity>.<change>", with entity one of
         lane, project, card_type, card, flow, agent_profile, mcp_server,
         flow_run, node_run, node_output (id is the node run; no data),
-        card_event, question and change one of created,
+        card_event, question, artifact (no data) and change one of created,
         updated, moved, deleted, published.
       required: [type, id]
       properties:
@@ -842,7 +894,7 @@ components:
     NodeRun:
       type: object
       description: One execution of a node within a flow run.
-      required: [id, flow_run_id, node_key, node_type, iteration, status, output_handle, error, summary, output,
+      required: [id, flow_run_id, node_key, node_type, iteration, status, output_handle, error, summary, decision, feedback, output,
         tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, created_at, started_at, finished_at]
       properties:
         id: { type: string, format: uuid }
@@ -853,7 +905,7 @@ components:
           description: The type of the node in the flow version; empty if it is gone.
         iteration:
           type: integer
-          description: How many times the run entered the node (review rounds re-enter agents).
+          description: How many times the run entered the node (gateway rejections re-enter agents).
         status:
           type: string
           enum: [queued, running, awaiting_input, done, failed]
@@ -864,13 +916,20 @@ components:
         summary:
           type: string
           description: What the agent reported with report_done.
+        decision:
+          type: string
+          enum: ["", approved, rejected]
+          description: How a gateway node decided; empty for other nodes and while it runs.
+        feedback:
+          type: string
+          description: The reason of approve or the feedback of reject.
         output:
           type: object
           nullable: true
           additionalProperties: true
           description: >
-            The node output handed to the next node: the agent result, summary and
-            structured output, or the review verdict and comments.
+            The node output handed to the next node: the agent result, summary,
+            structured output and gateway decision.
         tokens_in: { type: integer, format: int64 }
         tokens_out: { type: integer, format: int64 }
         cache_read: { type: integer, format: int64 }
@@ -943,7 +1002,8 @@ components:
         card_id: { type: string, format: uuid }
         trigger:
           type: string
-          enum: [card_created, card_entered_lane]
+          enum: [card_created, card_entered_lane, artifact_revision]
+          description: artifact_revision runs revise an artifact from its review chat.
         status:
           type: string
           enum: [running, waiting, done, failed, canceled]
@@ -1029,8 +1089,8 @@ components:
           type: string
           description: >
             Output of the source node: trigger and move_card have "next";
-            agent has "done" and "failed"; review has "approved",
-            "changes_requested" and "max_rounds_exceeded"; end has none.
+            agent has "done" and "failed", or with the gateway on "approved",
+            "rejected", "max_rounds_exceeded" and "failed"; end has none.
         target: { type: string }
     Position:
       type: object
@@ -1045,7 +1105,6 @@ components:
       oneOf:
         - $ref: "#/components/schemas/TriggerNode"
         - $ref: "#/components/schemas/AgentNode"
-        - $ref: "#/components/schemas/ReviewNode"
         - $ref: "#/components/schemas/MoveCardNode"
         - $ref: "#/components/schemas/EndNode"
       discriminator:
@@ -1053,7 +1112,6 @@ components:
         mapping:
           trigger: "#/components/schemas/TriggerNode"
           agent: "#/components/schemas/AgentNode"
-          review: "#/components/schemas/ReviewNode"
           move_card: "#/components/schemas/MoveCardNode"
           end: "#/components/schemas/EndNode"
     TriggerNode:
@@ -1072,14 +1130,6 @@ components:
         type: { type: string, enum: [agent] }
         position: { $ref: "#/components/schemas/Position" }
         config: { $ref: "#/components/schemas/AgentConfig" }
-    ReviewNode:
-      type: object
-      required: [id, type, position, config]
-      properties:
-        id: { type: string }
-        type: { type: string, enum: [review] }
-        position: { $ref: "#/components/schemas/Position" }
-        config: { $ref: "#/components/schemas/ReviewConfig" }
     MoveCardNode:
       type: object
       required: [id, type, position, config]
@@ -1144,27 +1194,90 @@ components:
           minimum: 1
         model:
           type: string
-    ReviewConfig:
-      type: object
-      description: Runs a reviewer on the work of the previous agent.
-      properties:
-        profile_id:
-          type: string
-          format: uuid
-          description: Agent profile the reviewer runs as. Required to publish.
-        prompt:
-          type: string
-          description: Review prompt. Required to publish.
-        allowed_tools:
-          type: array
-          items: { type: string }
-        disallowed_tools:
-          type: array
-          items: { type: string }
+        read_only:
+          type: boolean
+          description: Blocks the editing tools, as for a reviewer.
+        gateway:
+          type: boolean
+          description: >
+            The agent decides with the approve or reject tools; the node outputs
+            become approved, rejected, max_rounds_exceeded and failed.
         max_rounds:
           type: integer
           minimum: 1
-          description: Rounds of changes before the max_rounds_exceeded output. Required to publish.
+          description: Rejections before the max_rounds_exceeded output. Required with the gateway on.
+        artifacts:
+          type: array
+          items: { $ref: "#/components/schemas/ArtifactSpec" }
+    ArtifactSpec:
+      type: object
+      description: A file of the card workspace the node collects into the card when it finishes.
+      required: [name, path]
+      properties:
+        name: { type: string }
+        path:
+          type: string
+          description: Relative to the card workspace.
+    Artifact:
+      type: object
+      description: >
+        A file an agent node collected on the card, with its versions and review
+        chat. Moving the card to another lane freezes it.
+      required: [id, card_id, name, frozen, revising, versions, messages, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        card_id: { type: string, format: uuid }
+        name: { type: string }
+        frozen:
+          type: boolean
+          description: The card left the lane; the artifact can no longer be revised.
+        revising:
+          type: boolean
+          description: The agent is revising it now.
+        versions:
+          type: array
+          description: Oldest first.
+          items: { $ref: "#/components/schemas/ArtifactVersion" }
+        messages:
+          type: array
+          description: The review chat, oldest first.
+          items: { $ref: "#/components/schemas/ArtifactMessage" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ArtifactVersion:
+      type: object
+      required: [version, path, content, node_run_id, created_at]
+      properties:
+        version: { type: integer }
+        path: { type: string }
+        content: { type: string }
+        node_run_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+    ArtifactMessage:
+      type: object
+      required: [id, artifact_id, version, role, text, flow_run_id, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        artifact_id: { type: string, format: uuid }
+        version:
+          type: integer
+          description: The version the human was reading, or the agent revised.
+        role: { type: string, enum: [human, agent] }
+        text: { type: string }
+        flow_run_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: The revision run the message belongs to.
+        created_at: { type: string, format: date-time }
+    ArtifactMessageInput:
+      type: object
+      required: [text, version]
+      properties:
+        text: { type: string }
+        version:
+          type: integer
+          description: The version the human is reading.
     MoveCardConfig:
       type: object
       description: Moves the card to a lane.

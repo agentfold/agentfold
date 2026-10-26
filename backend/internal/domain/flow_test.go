@@ -31,20 +31,20 @@ func edge(id, source, handle, target string) Edge {
 	return Edge{ID: id, Source: source, SourceHandle: handle, Target: target}
 }
 
-// validGraph is trigger -> dev <-> review -> move -> end.
+// validGraph is trigger -> dev <-> gateway -> move -> end.
 func validGraph() Graph {
 	return Graph{
 		Nodes: []Node{
 			node("t", NodeTrigger, `{"event":"card_entered_lane","lane_id":"`+laneID.String()+`","card_type_ids":["`+typeID.String()+`"]}`),
 			node("dev", NodeAgent, `{`+profile+`,"mcp_server_ids":["`+mcpID.String()+`"],"prompt":"do it","max_turns":5,"output_schema":{"type":"object"}}`),
-			node("rev", NodeReview, `{`+profile+`,"prompt":"check","max_rounds":3}`),
+			node("rev", NodeAgent, `{`+profile+`,"prompt":"check","read_only":true,"gateway":true,"max_rounds":3,"artifacts":[{"name":"Plano","path":"docs/plan.md"}]}`),
 			node("move", NodeMoveCard, `{"lane_id":"`+laneID.String()+`"}`),
 			node("end", NodeEnd, ``),
 		},
 		Edges: []Edge{
 			edge("e1", "t", "next", "dev"),
 			edge("e2", "dev", "done", "rev"),
-			edge("e3", "rev", "changes_requested", "dev"),
+			edge("e3", "rev", "rejected", "dev"),
 			edge("e4", "rev", "approved", "move"),
 			edge("e5", "move", "next", "end"),
 		},
@@ -144,10 +144,16 @@ func TestConfigProblems(t *testing.T) {
 		{"agent with invalid schema", NodeAgent, `{` + profile + `,"prompt":"p","output_schema":{"type":1}}`, []string{"o schema de saída é inválido: "}},
 		{"agent with null schema", NodeAgent, `{` + profile + `,"prompt":"p","output_schema":null}`, nil},
 		{"agent with bad JSON", NodeAgent, `[]`, []string{"configuração inválida"}},
-		{"review with bad values", NodeReview, `{"prompt":"","max_rounds":0}`, []string{
-			"escolha o perfil do agente", "o prompt de review é obrigatório", "max_rounds precisa ser pelo menos 1",
+		{"gateway without rounds", NodeAgent, `{` + profile + `,"prompt":"p","gateway":true}`, []string{
+			"o gateway precisa de um máximo de rodadas de pelo menos 1",
 		}},
-		{"review with bad JSON", NodeReview, `[]`, []string{"configuração inválida"}},
+		{"agent with bad artifacts", NodeAgent, `{` + profile + `,"prompt":"p","artifacts":[{"name":" ","path":"a.md"},{"name":"A","path":"../a.md"},` +
+			`{"name":"B","path":"/b.md"},{"name":"C","path":"c.md"},{"name":"C","path":"d.md"}]}`, []string{
+			"todo artefato precisa de um nome",
+			`o arquivo do artefato "A" precisa ser um caminho relativo dentro do workspace`,
+			`o arquivo do artefato "B" precisa ser um caminho relativo dentro do workspace`,
+			`o artefato "C" aparece mais de uma vez`,
+		}},
 		{"move without lane", NodeMoveCard, `{}`, []string{"escolha a baia de destino"}},
 		{"move with bad JSON", NodeMoveCard, `[]`, []string{"configuração inválida"}},
 	}

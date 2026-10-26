@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
@@ -152,33 +152,64 @@ describe('NodeConfigForm', () => {
     expect(result.config).toEqual({ output_schema: undefined })
   })
 
-  it('configures a review', async () => {
-    const result = setup('review', {
-      prompt: 'Check',
+  it('turns the gateway and read-only mode on and off', async () => {
+    const result = setup('agent', { prompt: 'Check' })
+    expect(screen.queryByLabelText('Máx. de rodadas')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByLabelText(/Somente leitura/))
+    await userEvent.click(screen.getByLabelText(/Gateway/))
+    expect(result.config).toMatchObject({
+      read_only: true,
+      gateway: true,
       max_rounds: 3,
-      allowed_tools: ['Read'],
     })
-    expect(screen.getByLabelText('Tools liberadas')).toHaveValue('Read')
     const rounds = screen.getByLabelText('Máx. de rodadas')
     await userEvent.clear(rounds)
     expect(result.config).toMatchObject({ max_rounds: undefined })
     await userEvent.type(rounds, '5')
-    await userEvent.selectOptions(
-      screen.getByLabelText('Perfil do agente'),
-      'dev',
-    )
-    await userEvent.type(screen.getByLabelText('Prompt de review'), '!')
-    expect(result.config).toMatchObject({
-      prompt: 'Check!',
-      max_rounds: 5,
-      profile_id: dev.id,
+    expect(result.config).toMatchObject({ max_rounds: 5 })
+
+    await userEvent.click(screen.getByLabelText(/Somente leitura/))
+    await userEvent.click(screen.getByLabelText(/Gateway/))
+    expect(result.config).toEqual({
+      prompt: 'Check',
+      read_only: undefined,
+      gateway: undefined,
+      max_rounds: undefined,
     })
   })
 
-  it('starts a review from an empty config', () => {
-    setup('review', {})
-    expect(screen.getByLabelText('Prompt de review')).toHaveValue('')
-    expect(screen.getByLabelText('Máx. de rodadas')).toHaveValue(null)
+  it('keeps the rounds of a gateway turned on again', async () => {
+    const result = setup('agent', { max_rounds: 4 })
+    await userEvent.click(screen.getByLabelText(/Gateway/))
+    expect(result.config).toEqual({ gateway: true, max_rounds: 4 })
+  })
+
+  it('lists the artifacts to collect', async () => {
+    const result = setup('agent', {})
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Adicionar artefato' }),
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Adicionar artefato' }),
+    )
+    const first = screen.getByRole('group', { name: 'Artefato 1' })
+    const second = screen.getByRole('group', { name: 'Artefato 2' })
+    await userEvent.type(within(first).getByLabelText('Nome'), 'Plano')
+    await userEvent.type(within(first).getByLabelText('Arquivo'), 'plan.md')
+    expect(result.config).toEqual({
+      artifacts: [
+        { name: 'Plano', path: 'plan.md' },
+        { name: '', path: '' },
+      ],
+    })
+    await userEvent.click(
+      within(second).getByRole('button', { name: 'Remover' }),
+    )
+    expect(result.config).toEqual({
+      artifacts: [{ name: 'Plano', path: 'plan.md' }],
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Remover' }))
+    expect(result.config).toEqual({ artifacts: undefined })
   })
 
   it('configures a card move', async () => {

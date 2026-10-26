@@ -1,1 +1,45 @@
 @import 'tailwindcss';
+
+/* Rendered Markdown (artifacts). */
+@layer components {
+  .markdown {
+    @apply flex flex-col gap-3 text-sm leading-relaxed text-slate-800;
+  }
+  .markdown h1 {
+    @apply text-xl font-semibold;
+  }
+  .markdown h2 {
+    @apply text-lg font-semibold;
+  }
+  .markdown h3 {
+    @apply text-base font-semibold;
+  }
+  .markdown ul {
+    @apply list-disc pl-5;
+  }
+  .markdown ol {
+    @apply list-decimal pl-5;
+  }
+  .markdown a {
+    @apply text-indigo-600 underline;
+  }
+  .markdown code {
+    @apply rounded bg-slate-100 px-1 font-mono text-xs;
+  }
+  .markdown pre {
+    @apply overflow-auto rounded bg-slate-100 p-2;
+  }
+  .markdown pre code {
+    @apply bg-transparent p-0;
+  }
+  .markdown blockquote {
+    @apply border-l-4 border-slate-200 pl-3 text-slate-600;
+  }
+  .markdown table {
+    @apply border-collapse text-left;
+  }
+  .markdown th,
+  .markdown td {
+    @apply border border-slate-200 px-2 py-1;
+  }
+}

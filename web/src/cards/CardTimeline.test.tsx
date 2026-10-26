@@ -25,6 +25,11 @@ describe('describe', () => {
     ['card.moved', { to_lane_id: 'l2' }, 'Movido para Doing'],
     ['flow.started', { flow_name: 'dev' }, 'Fluxo dev iniciado'],
     [
+      'flow.started',
+      { flow_name: 'plan', trigger: 'artifact_revision' },
+      'Fluxo plan iniciado para revisar um artefato',
+    ],
+    [
       'flow.skipped',
       { flow_name: 'dev' },
       'Fluxo dev já está rodando: disparo ignorado',
@@ -69,11 +74,11 @@ describe('describe', () => {
       'node.finished',
       {
         node_key: 'r',
-        node_type: 'review',
+        node_type: 'agent',
         status: 'done',
-        output_handle: 'approved',
+        output_handle: 'rejected',
       },
-      'Review r concluído (aprovado)',
+      'Agente r concluído (rejeitado)',
     ],
     [
       'node.finished',
@@ -106,28 +111,9 @@ describe('describe', () => {
       'Respondido "Which DB?": Postgres',
     ],
     [
-      'review.submitted',
-      { node_key: 'rev', round: 2, approved: true, comments: [] },
-      'Review rev (rodada 2) aprovou',
-    ],
-    [
-      'review.submitted',
-      {
-        node_key: 'rev',
-        round: 1,
-        approved: false,
-        comments: [
-          { file: 'a.go', line: 3, body: 'tests' },
-          { file: 'b.go', body: 'name' },
-          { body: 'docs' },
-        ],
-      },
-      'Review rev (rodada 1) pediu mudanças: a.go:3: tests; b.go: name; docs',
-    ],
-    [
-      'review.submitted',
-      { node_key: 'rev', round: 1, approved: false },
-      'Review rev (rodada 1) pediu mudanças: ',
+      'artifact.collected',
+      { name: 'Plano', version: 2 },
+      'Artefato Plano coletado (versão 2)',
     ],
     ['something.else', {}, 'something.else'],
   ])('%s %j', (type, payload, want) => {

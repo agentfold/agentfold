@@ -33,7 +33,9 @@ type fakeStore struct {
 	continued map[uuid.UUID]bool
 	jobs      []store.NewJob
 	// answered makes ResumeIfAnswered resume.
-	answered  bool
+	answered bool
+	// replies are the revision replies by run.
+	replies   map[uuid.UUID]string
 	errs      map[string]error
 	failAfter map[string]int
 }
@@ -46,6 +48,7 @@ func newFakeStore() *fakeStore {
 		runs:      map[uuid.UUID]domain.FlowRun{},
 		nodeRuns:  map[uuid.UUID]domain.NodeRun{},
 		continued: map[uuid.UUID]bool{},
+		replies:   map[uuid.UUID]string{},
 		errs:      map[string]error{},
 		failAfter: map[string]int{},
 	}
@@ -239,6 +242,14 @@ func (f *fakeStore) ResumeIfAnswered(_ context.Context, id uuid.UUID) (domain.Fl
 	r.Status = domain.RunRunning
 	f.runs[r.ID] = r
 	return r, true, nil
+}
+
+func (f *fakeStore) AddRevisionReply(_ context.Context, flowRunID uuid.UUID, text string) (domain.ArtifactMessage, error) {
+	if err := f.err("AddRevisionReply"); err != nil {
+		return domain.ArtifactMessage{}, err
+	}
+	f.replies[flowRunID] = text
+	return domain.ArtifactMessage{ArtifactID: flowRunID, Role: domain.RoleAgent, Text: text}, nil
 }
 
 // lastNodeRun returns the node run created last.
@@ -644,16 +655,92 @@ func TestFinishingAnEndedRun(t *testing.T) {
 	}
 }
 
-func TestPromptFrom(t *testing.T) {
-	for in, want := range map[string]string{
-		`{"result": "fix it"}`: "fix it",
-		`{"other": 1}`:         `{"other": 1}`,
-		`[1]`:                  `[1]`,
-		``:                     ``,
+func TestBoardNodesHandOnTheirInput(t *testing.T) {
+	e := newEnv(t)
+	e.addFlow("dev", graph{
+		nodes:   []string{"t:trigger", "dev:agent", "move:move_card", "rev:agent"},
+		configs: map[string]any{"t": triggerCfg(domain.EventCardCreated, nil), "move": map[string]any{"lane_id": e.doing}},
+		edges:   []string{"t.next>dev", "dev.done>move", "move.next>rev"},
+	})
+	e.trigger(e.created())
+	e.agents.result = func(domain.NodeRun) domain.NodeResult { return done("implemented") }
+	if err := e.runAgent(); err != nil {
+		t.Fatal(err)
+	}
+	if p := e.store.jobs[1].Payload.(agent.Payload); p.Prompt != "implemented" {
+		t.Fatalf("the agent after the move got %+v", p)
+	}
+}
+
+// revision starts a revision run of node "dev" of the flow, as the store
+// does, and returns its node run.
+func (e *env) revision() domain.NodeRun {
+	e.t.Helper()
+	flow := e.store.flows[0]
+	r := domain.FlowRun{ID: uuid.New(), FlowID: flow.Version.FlowID, FlowVersionID: flow.Version.ID, CardID: e.card.ID,
+		Trigger: domain.TriggerRevision, Status: domain.RunRunning}
+	e.store.runs[r.ID] = r
+	nr, _ := e.store.CreateNodeRun(context.Background(), r.ID, "dev", 1, nil)
+	e.store.jobs = append(e.store.jobs, store.NewJob{Kind: agent.JobKind, Payload: agent.Payload{NodeRunID: nr.ID, Prompt: "revise"}})
+	return nr
+}
+
+func TestRevisionEndsWithTheNode(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		result domain.NodeResult
+		reply  string
+		status domain.RunStatus
+	}{
+		{"answer", done("updated the plan"), "updated the plan", domain.RunDone},
+		{"empty answer", done(" "), "Revisão concluída.", domain.RunDone},
+		{"failed", domain.NodeResult{Status: domain.NodeFailed, OutputHandle: "failed", Error: "no file"}, "A revisão falhou: no file", domain.RunFailed},
 	} {
-		if got := promptFrom(json.RawMessage(in)); got != want {
-			t.Errorf("promptFrom(%s) = %q, want %q", in, got, want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEnv(t)
+			e.addFlow("plan", graph{
+				nodes:   []string{"t:trigger", "dev:agent", "move:move_card"},
+				configs: map[string]any{"t": triggerCfg(domain.EventCardCreated, nil), "move": map[string]any{"lane_id": e.doing}},
+				edges:   []string{"t.next>dev", "dev.done>move"},
+			})
+			nr := e.revision()
+			e.agents.result = func(domain.NodeRun) domain.NodeResult { return tc.result }
+			if err := e.runAgent(); err != nil {
+				t.Fatal(err)
+			}
+			run := e.store.runs[nr.FlowRunID]
+			if run.Status != tc.status || e.store.replies[run.ID] != tc.reply {
+				t.Fatalf("run %+v, reply %q", run, e.store.replies[run.ID])
+			}
+			if e.store.cards[e.card.ID].LaneID != e.todo {
+				t.Fatal("the revision followed the node output")
+			}
+			if !slices.Contains(e.pub.types(), "artifact.updated") {
+				t.Fatalf("published %q", e.pub.types())
+			}
+		})
+	}
+}
+
+func TestRevisionReplies(t *testing.T) {
+	if got := revisionReply(domain.NodeRun{Status: domain.NodeDone, Output: json.RawMessage(`{"result":""}`), Summary: "rewrote it"}); got != "rewrote it" {
+		t.Errorf("summary reply %q", got)
+	}
+	e := newEnv(t)
+	e.addFlow("plan", graph{nodes: []string{"t:trigger", "dev:agent"}, edges: []string{"t.next>dev"}})
+	nr := e.revision()
+	e.agents.result = func(domain.NodeRun) domain.NodeResult { return done("ok") }
+	e.store.errs["AddRevisionReply"] = domain.ErrNotFound
+	if err := e.runAgent(); err != nil || e.store.runs[nr.FlowRunID].Status != domain.RunDone {
+		t.Fatalf("a revision without its request still ends: %v", err)
+	}
+	nr = e.revision()
+	e.store.errs["AddRevisionReply"] = errBoom
+	if err := e.runAgent(); !errors.Is(err, errBoom) {
+		t.Fatalf("got %v", err)
+	}
+	if e.store.runs[nr.FlowRunID].Status != domain.RunDone {
+		t.Fatal("the run did not end without the reply")
 	}
 }
 
@@ -823,15 +910,15 @@ func TestWaitingAfterTheRunEnded(t *testing.T) {
 	}
 }
 
-func TestReviewLoop(t *testing.T) {
+func TestGatewayLoop(t *testing.T) {
 	e := newEnv(t)
 	e.addFlow("impl", graph{
-		nodes:   []string{"t:trigger", "dev:agent", "rev:review", "end:end"},
-		configs: map[string]any{"t": triggerCfg(domain.EventCardCreated, nil)},
-		edges:   []string{"t.next>dev", "dev.done>rev", "rev.changes_requested>dev", "rev.approved>end"},
+		nodes:   []string{"t:trigger", "dev:agent", "rev:agent", "end:end"},
+		configs: map[string]any{"t": triggerCfg(domain.EventCardCreated, nil), "rev": map[string]any{"gateway": true, "max_rounds": 3}},
+		edges:   []string{"t.next>dev", "dev.done>rev", "rev.rejected>dev", "rev.approved>end"},
 	})
 	e.trigger(e.created())
-	verdicts := []string{"changes_requested", "approved"}
+	verdicts := []string{"rejected", "approved"}
 	e.agents.result = func(nr domain.NodeRun) domain.NodeResult {
 		if nr.NodeKey == "rev" {
 			v := verdicts[0]
@@ -849,7 +936,10 @@ func TestReviewLoop(t *testing.T) {
 	if run := e.onlyRun(); run.Status != domain.RunDone {
 		t.Fatalf("run %+v", run)
 	}
-	if p := e.store.jobs[2].Payload.(agent.Payload); p.Prompt != "review: changes_requested" {
+	if p := e.store.jobs[1].Payload.(agent.Payload); p.Prompt != "ok" {
+		t.Fatalf("the gateway got %+v", p)
+	}
+	if p := e.store.jobs[2].Payload.(agent.Payload); p.Prompt != "review: rejected" {
 		t.Fatalf("dev resumed with %+v", p)
 	}
 	types := e.store.timelineTypes()

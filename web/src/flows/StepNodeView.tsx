@@ -2,8 +2,8 @@ import { Handle, Position, type NodeProps } from '@xyflow/react'
 
 import {
   kindLabels,
+  nodeOutputs,
   outputLabels,
-  outputs,
   summary,
   type StepData,
   type StepNode,
@@ -12,14 +12,13 @@ import {
 const accents: Record<StepData['kind'], string> = {
   trigger: 'bg-amber-500',
   agent: 'bg-indigo-500',
-  review: 'bg-violet-500',
   move_card: 'bg-teal-500',
   end: 'bg-slate-500',
 }
 
 /** How a step is drawn on the canvas: inputs on the left, outputs on the right. */
 export function StepNodeView({ data, selected }: NodeProps<StepNode>) {
-  const outs = outputs[data.kind]
+  const outs = nodeOutputs(data)
   const problems = data.problems ?? []
   return (
     <div

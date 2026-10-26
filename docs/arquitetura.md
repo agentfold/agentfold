@@ -96,10 +96,12 @@ interfaces para viabilizar 100% de cobertura com fakes.
 | `flows` | id, name, enabled, draft jsonb (rascunho editável) |
 | `flow_versions` | id, flow_id, version, graph jsonb (nós com config + arestas por saída), published_at |
 | `flow_runs` | id, flow_version_id, card_id, trigger, status, started_at, finished_at |
-| `node_runs` | id, flow_run_id, node_key, status, iteration, input jsonb, output jsonb, session_id?, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error |
+| `node_runs` | id, flow_run_id, node_key, status, iteration, input jsonb, output jsonb, session_id?, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, summary?, structured_output?, decision? (`approved`/`rejected`), feedback? |
 | `agent_sessions` | id, flow_run_id, node_key, profile_id, claude_session_id (escolhido pelo board via `--session-id`) |
 | `questions` | id, card_id, node_run_id, text, answer?, answered_at? |
-| `review_comments` | id, card_id, node_run_id, round, file?, line?, body |
+| `artifacts` | id, card_id, name (único por card), node_run_id (quem coletou a última versão), frozen_at? |
+| `artifact_versions` | id, artifact_id, version, path, content, node_run_id |
+| `artifact_messages` | id, artifact_id, version, role (`human`/`agent`), text, flow_run_id? (o run de revisão) |
 | `jobs` | id, kind, payload jsonb, requirements jsonb, status, run_at, attempts, locked_by, lease_until, last_error |
 
 Fluxos são **versionados**: um FlowRun em andamento continua na versão em que começou.
@@ -111,8 +113,7 @@ Fluxos são **versionados**: um FlowRun em andamento continua na versão em que 
 | Nó | Config | Saídas |
 |---|---|---|
 | **Trigger** | `card_created` ou `card_entered_lane(lane)`, filtro opcional por tipo de card | `next` |
-| **Agent** | perfil, prompt inicial, tools permitidas/bloqueadas, MCPs externos, schema de saída (opcional), max_turns, modelo | `done`, `failed` |
-| **Review** | perfil, prompt de review, tools, `max_rounds` | `approved`, `changes_requested`, `max_rounds_exceeded` |
+| **Agent** | perfil, prompt inicial, tools permitidas/bloqueadas, MCPs externos, schema de saída (opcional), max_turns, modelo, somente leitura, gateway (+ `max_rounds`), artefatos (nome + arquivo) | `done`, `failed`; com gateway: `approved`, `rejected`, `max_rounds_exceeded`, `failed` |
 | **MoveCard** | baia destino | `next` |
 | **End** | — | — |
 
@@ -120,7 +121,6 @@ Fluxos são **versionados**: um FlowRun em andamento continua na versão em que 
 
 | Nó | Config | Saídas |
 |---|---|---|
-| **Approval** | texto/campos exibidos ao humano (ex.: saída estruturada do nó anterior) | `approved`, `rejected` (com comentário) |
 | **CreateCards** | origem dos itens (saída estruturada), tipo de card, baia inicial, mapeamento item → título/descrição/projeto | `next` |
 | **WaitChildren** | condição de conclusão dos filhos (baia alcançada ou fluxo encerrado) | `all_done`, `some_failed` |
 
@@ -130,12 +130,29 @@ no fluxo do pai), outros agentes.
 Saídas de nós ficam em `node_runs.output` e são acessíveis aos nós seguintes do mesmo FlowRun
 (ex.: `CreateCards` lê a saída estruturada do Agent).
 
-### 4.1 Regra de reentrada (o loop de review)
+### 4.1 Saída como entrada e reentrada (o loop do gateway)
 
-A aresta `changes_requested` do Review aponta de volta para o nó Agent de desenvolvimento.
-Regra genérica da engine: **ao entrar num nó Agent que já tem sessão neste FlowRun, a engine
-retoma a sessão (`--resume`) usando a saída do nó anterior (os comentários) como prompt.**
-Assim o loop fica visível no desenho e não é um caso especial.
+**A saída de um nó é a entrada do seguinte, como mensagem na sessão do agente:** a saída
+estruturada em JSON quando existe, senão o texto final (no `reject`, o feedback). Na primeira
+entrada a mensagem é o prompt do nó, o card e essa entrada (`## Input`); **ao entrar de novo num nó
+Agent que já tem sessão neste FlowRun, a engine retoma a sessão (`--resume`) só com a entrada.**
+MoveCard e End repassam a entrada que receberam.
+
+Revisão é um nó Agent com o **gateway** ligado: o agente decide com as tools `approve(reason?)` ou
+`reject(feedback)`, e o system prompt ganha a instrução de chamar uma delas. Ligando `rejected` de
+volta ao dev, ele recebe o feedback na mesma sessão; `max_rounds` limita as rejeições do run. O
+loop fica visível no desenho e não é um caso especial.
+
+### 4.1.1 Artefatos e revisão humana
+
+Um nó Agent pode declarar artefatos (nome + arquivo do workspace, ex.: "Plano" ← `plan.md`). Quando
+o agente termina, o worker lê os arquivos (texto, até 1 MiB) e grava uma versão nova de cada
+artefato do card; arquivo ausente falha o nó. Na aba Artefatos o humano lê a versão (Markdown) e
+conversa com o agente que a gerou: cada mensagem abre um run de revisão (`trigger =
+artifact_revision`) que retoma a sessão desse nó, recoleta os arquivos e termina sem seguir as
+saídas do fluxo; o card não se move. A aprovação é mover o card: sair da baia congela os
+artefatos (salvo os de um run ainda ativo, que é quem move o card). Recoletar só acontece quando
+um nó do fluxo declara o mesmo nome.
 
 ### 4.2 Perguntas do agente
 
@@ -156,13 +173,13 @@ segredos injetados no momento da execução. Tools do board expostas ao agente:
 |---|---|
 | `ask_human(questions[])` | registra dúvidas e pausa o nó |
 | `submit_output(json)` | saída estruturada, validada contra o schema configurado no nó |
-| `submit_review(approved, comments[])` | saída estruturada do revisor |
+| `approve(reason?)` / `reject(feedback)` | decisão de um nó com gateway |
 | `report_done(summary)` | resumo final do trabalho |
 | `get_card()` | contexto do card (título, descrição, histórico relevante) |
 
-Se o agente terminar sem chamar `report_done`/`submit_review`, o resultado final do
-`stream-json` é usado; para Review sem `submit_review` o nó falha, e para Agent com schema sem
-`submit_output` também.
+Se o agente terminar sem chamar `report_done`, o resultado final do `stream-json` é usado; um nó
+com gateway que termina sem `approve`/`reject` falha, e um Agent com schema sem `submit_output`
+também.
 
 O endpoint `/mcp` é stateless: requisições com `Authorization: Bearer <token do NodeRun>` (válido só
 enquanto o nó roda) recebem as tools acima; sem token, recebem as tools de integração.
@@ -273,7 +290,8 @@ em dólar é estimativa.
 ## 8. Frontend
 
 - **Board** — baias, cards, drag & drop, painel do card (descrição, linha do tempo,
-  perguntas pendentes com campo de resposta, comentários de review, consumo, saída do agente ao vivo).
+  perguntas pendentes com campo de resposta, decisões de gateway, artefatos com chat de revisão,
+  consumo, saída do agente ao vivo).
 - **Editor de fluxo** — ReactFlow; paleta de nós, painel de configuração do nó selecionado,
   validação do grafo, publicar versão.
 - **Baias** — CRUD de baias globais e do fluxo.
@@ -292,8 +310,8 @@ em dólar é estimativa.
 
 **Dentro**
 1. CRUD de baias, projetos, tipos de card e cards (projeto opcional, card pai).
-2. Editor de fluxo com Trigger, Agent, Review, MoveCard, End; versionamento.
-3. Engine linear com desvios condicionais e reentrada (loop de review).
+2. Editor de fluxo com Trigger, Agent (com gateway e artefatos), MoveCard, End; versionamento.
+3. Engine linear com desvios condicionais e reentrada (loop do gateway).
 4. Worker + fila Postgres + Runner do MVP.
 5. Perguntas do agente, saída estruturada e retomada de sessão.
 6. Cadastro de MCPs externos e seleção por nó Agent.
@@ -327,7 +345,7 @@ Trigger → Agent (MCP Sourcegraph; submit_output: [{project, plano}])
 
 **Fluxo "Implementação"** — gatilho: card criado do tipo `implementação`
 ```
-Trigger → Agent (dev, worktree do projeto) ⇄ Review → [PR, futuro] → MoveCard(Pronto)
+Trigger → Agent (dev, worktree do projeto) ⇄ Agent (gateway, somente leitura) → [PR, futuro] → MoveCard(Pronto)
 ```
 
 O agente referencia repositórios pelo nome; o cadastro de projetos mapeia esse nome para a pasta

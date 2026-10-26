@@ -32,6 +32,7 @@ import {
   isEdit,
   kindLabels,
   newStep,
+  nodeOutputs,
   toApi,
   type NodeKind,
   type StepConfig,
@@ -48,7 +49,7 @@ export function FlowEditor({ flowId }: { flowId: string }) {
   return <DraftEditor flow={flow.data} />
 }
 
-const palette: NodeKind[] = ['agent', 'review', 'move_card', 'end']
+const palette: NodeKind[] = ['agent', 'move_card', 'end']
 
 /**
  * Edits the draft locally; "Salvar" sends it to the server, which answers
@@ -100,10 +101,18 @@ function DraftEditor({ flow }: { flow: Flow }) {
     edit()
   }
   const selected = nodes.find((n) => n.selected)
-  const setConfig = (id: string, config: StepConfig) => {
+  // Turning the gateway on or off changes the outputs: edges leaving
+  // from outputs the node no longer has go away.
+  const setConfig = (node: StepNode, config: StepConfig) => {
+    const outs = nodeOutputs({ ...node.data, config })
+    setEdges((current) =>
+      current.filter(
+        (e) => e.source !== node.id || outs.includes(String(e.sourceHandle)),
+      ),
+    )
     setNodes((current) =>
       current.map((n) =>
-        n.id === id ? { ...n, data: { ...n.data, config } } : n,
+        n.id === node.id ? { ...n, data: { ...n.data, config } } : n,
       ),
     )
     edit()
@@ -250,7 +259,7 @@ function DraftEditor({ flow }: { flow: Flow }) {
                 profiles={profiles.data ?? []}
                 mcpServers={mcpServers.data ?? []}
                 onChange={(config) => {
-                  setConfig(selected.id, config)
+                  setConfig(selected, config)
                 }}
               />
             </section>

@@ -18,9 +18,11 @@ type (
 	doneInput struct {
 		Summary string `json:"summary" jsonschema:"a short summary of what you did"`
 	}
-	reviewInput struct {
-		Approved bool                 `json:"approved" jsonschema:"true when the work is done; false asks the developer for changes"`
-		Comments []domain.ReviewInput `json:"comments,omitempty" jsonschema:"what must change: file and line when they apply, and the comment body"`
+	approveInput struct {
+		Reason string `json:"reason,omitempty" jsonschema:"why the work can move forward"`
+	}
+	rejectInput struct {
+		Feedback string `json:"feedback" jsonschema:"what is wrong, where (file and line when it applies) and what to change"`
 	}
 )
 
@@ -40,17 +42,6 @@ func agentServer(board Board, run service.AgentRun) *sdk.Server {
 			}
 			return text("The questions were sent. End your turn now, without going on; you will be resumed with the answers."), nil, nil
 		})
-	if run.Node.Type == domain.NodeReview {
-		addTool(s, "submit_review",
-			"Submits your review: approved, or the comments the developer must address. Call it once, at the end.",
-			func(ctx context.Context, _ *sdk.CallToolRequest, in reviewInput) (*sdk.CallToolResult, any, error) {
-				if err := board.SubmitReview(ctx, run, in.Approved, in.Comments); err != nil {
-					return nil, nil, err
-				}
-				return text("Review recorded."), nil, nil
-			})
-		return s
-	}
 	addTool(s, "report_done", "Reports what you did, when you finish.",
 		func(ctx context.Context, _ *sdk.CallToolRequest, in doneInput) (*sdk.CallToolResult, any, error) {
 			if err := board.ReportDone(ctx, run, in.Summary); err != nil {
@@ -59,10 +50,33 @@ func agentServer(board Board, run service.AgentRun) *sdk.Server {
 			return text("Summary recorded."), nil, nil
 		})
 	var cfg domain.AgentConfig
-	if json.Unmarshal(run.Node.Config, &cfg) == nil && cfg.HasOutputSchema() {
+	_ = json.Unmarshal(run.Node.Config, &cfg) // published configs are valid
+	if cfg.HasOutputSchema() {
 		addSubmitOutput(s, board, run, cfg.OutputSchema)
 	}
+	if cfg.Gateway {
+		addGateway(s, board, run)
+	}
 	return s
+}
+
+// addGateway adds the tools a gateway node decides with.
+func addGateway(s *sdk.Server, board Board, run service.AgentRun) {
+	addTool(s, "approve", "Approves the work: the flow moves forward. Call it once, at the end, instead of reject.",
+		func(ctx context.Context, _ *sdk.CallToolRequest, in approveInput) (*sdk.CallToolResult, any, error) {
+			if err := board.Decide(ctx, run, domain.DecisionApproved, in.Reason); err != nil {
+				return nil, nil, err
+			}
+			return text("Approved. Finish now."), nil, nil
+		})
+	addTool(s, "reject",
+		"Rejects the work: the flow takes it back with your feedback. Call it once, at the end, instead of approve.",
+		func(ctx context.Context, _ *sdk.CallToolRequest, in rejectInput) (*sdk.CallToolResult, any, error) {
+			if err := board.Decide(ctx, run, domain.DecisionRejected, in.Feedback); err != nil {
+				return nil, nil, err
+			}
+			return text("Rejected. Finish now."), nil, nil
+		})
 }
 
 // addSubmitOutput adds the tool that takes the structured output of the

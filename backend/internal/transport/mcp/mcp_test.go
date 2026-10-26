@@ -61,8 +61,8 @@ func (b *fakeBoard) SubmitOutput(_ context.Context, _ service.AgentRun, output j
 	return b.call("SubmitOutput", string(output))
 }
 
-func (b *fakeBoard) SubmitReview(_ context.Context, _ service.AgentRun, approved bool, comments []domain.ReviewInput) error {
-	return b.call("SubmitReview", map[string]any{"approved": approved, "comments": comments})
+func (b *fakeBoard) Decide(_ context.Context, _ service.AgentRun, decision, feedback string) error {
+	return b.call("Decide", decision+":"+feedback)
 }
 
 func (b *fakeBoard) ListLanes(context.Context) ([]domain.Lane, error) {
@@ -238,21 +238,25 @@ func TestSubmitOutputTool(t *testing.T) {
 	}
 }
 
-func TestReviewTools(t *testing.T) {
+func TestGatewayTools(t *testing.T) {
 	board := newBoard()
-	board.runs["tok"] = agentRun(domain.NodeReview, `{}`)
+	board.runs["tok"] = agentRun(domain.NodeAgent, `{"gateway":true}`)
 	cs := session(t, board, "Bearer tok")
-	if got := toolNames(t, cs); !slices.Equal(got, []string{"ask_human", "get_card", "submit_review"}) {
+	if got := toolNames(t, cs); !slices.Equal(got, []string{"approve", "ask_human", "get_card", "reject", "report_done"}) {
 		t.Fatalf("tools %v", got)
 	}
-	out, isErr := call(t, cs, "submit_review", map[string]any{"approved": false, "comments": []map[string]any{{"file": "a.go", "line": 2, "body": "tests"}}})
-	review := board.args["SubmitReview"].(map[string]any)
-	if isErr || review["approved"] != false || review["comments"].([]domain.ReviewInput)[0].File != "a.go" {
-		t.Fatalf("submit_review: %s, %v", out, review)
+	if out, isErr := call(t, cs, "reject", map[string]any{"feedback": "add tests"}); isErr || board.args["Decide"] != "rejected:add tests" {
+		t.Fatalf("reject: %s, %v", out, board.args["Decide"])
 	}
-	board.errs["SubmitReview"] = errBoard
-	if _, isErr := call(t, cs, "submit_review", map[string]any{"approved": true}); !isErr {
-		t.Fatal("expected a tool error")
+	if out, isErr := call(t, cs, "approve", map[string]any{"reason": "fine"}); isErr || board.args["Decide"] != "approved:fine" {
+		t.Fatalf("approve: %s, %v", out, board.args["Decide"])
+	}
+	board.errs["Decide"] = errBoard
+	if _, isErr := call(t, cs, "reject", map[string]any{"feedback": "x"}); !isErr {
+		t.Fatal("reject: expected a tool error")
+	}
+	if _, isErr := call(t, cs, "approve", map[string]any{}); !isErr {
+		t.Fatal("approve: expected a tool error")
 	}
 }
 

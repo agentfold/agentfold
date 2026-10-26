@@ -102,7 +102,9 @@ func TestEntityOfWorkerRuns(t *testing.T) {
 	if _, err := s.Entity(ctx, "node_run.updated", id); err != nil || repo.calls[0] != "GetNodeRun" {
 		t.Fatalf("node_run: %v, %v", repo.calls, err)
 	}
-	if v, err := s.Entity(ctx, "node_output.created", id); err != nil || v != nil {
-		t.Fatalf("node_output: %v, %v", v, err)
+	for _, typ := range []string{"node_output.created", "artifact.updated"} {
+		if v, err := s.Entity(ctx, typ, id); err != nil || v != nil {
+			t.Fatalf("%s: %v, %v", typ, v, err)
+		}
 	}
 }

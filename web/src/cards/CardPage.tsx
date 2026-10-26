@@ -14,6 +14,7 @@ import { Button } from '../components/Button'
 import { ErrorMessage } from '../components/ErrorMessage'
 import { QueryStatus } from '../components/Loading'
 import { goTo, pageHref } from '../route'
+import { ArtifactsPanel } from './ArtifactsPanel'
 import { CardForm } from './CardForm'
 import { CardQuestions } from './CardQuestions'
 import { CardTimeline } from './CardTimeline'
@@ -23,6 +24,7 @@ import { UsagePanel } from './UsagePanel'
 const tabs = [
   { id: 'runs', label: 'Execução' },
   { id: 'details', label: 'Detalhes' },
+  { id: 'artifacts', label: 'Artefatos' },
   { id: 'timeline', label: 'Linha do tempo' },
   { id: 'usage', label: 'Consumo' },
 ] as const
@@ -126,6 +128,7 @@ export function CardPage({ cardId }: { cardId: string }) {
             }}
           />
         )}
+        {tab === 'artifacts' && <ArtifactsPanel cardId={card.id} />}
         {tab === 'timeline' && <CardTimeline cardId={card.id} />}
         {tab === 'usage' && <UsagePanel runs={runs.data} />}
       </div>

@@ -3,6 +3,7 @@ package domain
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -55,18 +56,31 @@ type NodeType string
 const (
 	NodeTrigger  NodeType = "trigger"
 	NodeAgent    NodeType = "agent"
-	NodeReview   NodeType = "review"
 	NodeMoveCard NodeType = "move_card"
 	NodeEnd      NodeType = "end"
 )
 
-// Outputs lists the outputs (edge source handles) of each node type.
+// Outputs lists the outputs (edge source handles) of each node type. Agent
+// nodes with the gateway on have GatewayOutputs instead.
 var Outputs = map[NodeType][]string{
 	NodeTrigger:  {"next"},
 	NodeAgent:    {"done", "failed"},
-	NodeReview:   {"approved", "changes_requested", "max_rounds_exceeded"},
 	NodeMoveCard: {"next"},
 	NodeEnd:      {},
+}
+
+// GatewayOutputs are the outputs of an agent node with the gateway on.
+var GatewayOutputs = []string{"approved", "rejected", "max_rounds_exceeded", "failed"}
+
+// NodeOutputs returns the outputs of a node of a known type.
+func NodeOutputs(n Node) []string {
+	if n.Type == NodeAgent {
+		var c AgentConfig
+		if json.Unmarshal(n.Config, &c) == nil && c.Gateway {
+			return GatewayOutputs
+		}
+	}
+	return Outputs[n.Type]
 }
 
 // Graph is the content of a flow: nodes and the edges between their outputs
@@ -114,7 +128,8 @@ type TriggerConfig struct {
 }
 
 // AgentConfig runs an agent session on the card as a profile, with optional
-// external MCP servers.
+// external MCP servers. With the gateway on, the agent decides whether the
+// work moves on (approve or reject); MaxRounds bounds the rejections.
 type AgentConfig struct {
 	ProfileID       *uuid.UUID      `json:"profile_id,omitempty"`
 	McpServerIDs    []uuid.UUID     `json:"mcp_server_ids,omitempty"`
@@ -124,15 +139,17 @@ type AgentConfig struct {
 	OutputSchema    json.RawMessage `json:"output_schema,omitempty"`
 	MaxTurns        *int            `json:"max_turns,omitempty"`
 	Model           string          `json:"model,omitempty"`
+	ReadOnly        bool            `json:"read_only,omitempty"`
+	Gateway         bool            `json:"gateway,omitempty"`
+	MaxRounds       int             `json:"max_rounds,omitempty"`
+	Artifacts       []ArtifactSpec  `json:"artifacts,omitempty"`
 }
 
-// ReviewConfig runs a reviewer agent on the work of the previous agent.
-type ReviewConfig struct {
-	ProfileID       *uuid.UUID `json:"profile_id,omitempty"`
-	Prompt          string     `json:"prompt"`
-	AllowedTools    []string   `json:"allowed_tools,omitempty"`
-	DisallowedTools []string   `json:"disallowed_tools,omitempty"`
-	MaxRounds       int        `json:"max_rounds"`
+// ArtifactSpec is a file of the card workspace an agent node collects into
+// the card when it finishes. Path is relative to the workspace.
+type ArtifactSpec struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
 }
 
 // MoveCardConfig moves the card to a lane.
@@ -228,7 +245,7 @@ func (v *validator) checkEdges(edges []Edge) {
 			v.edge(e.ID, "id de ligação vazio ou repetido")
 		case !okSource || !okTarget:
 			v.edge(e.ID, "ligação com nó inexistente")
-		case !hasOutput(source.Type, e.SourceHandle):
+		case !slices.Contains(NodeOutputs(source), e.SourceHandle):
 			v.edge(e.ID, "o nó %s não tem a saída %q", e.Source, e.SourceHandle)
 		case target.Type == NodeTrigger:
 			v.edge(e.ID, "o gatilho não pode ser destino de ligação")
@@ -282,15 +299,6 @@ func (v *validator) sortedNodes() []Node {
 	return out
 }
 
-func hasOutput(t NodeType, handle string) bool {
-	for _, o := range Outputs[t] {
-		if o == handle {
-			return true
-		}
-	}
-	return false
-}
-
 // configProblems validates the config of a node of a known type.
 func (v *validator) configProblems(n Node) []string {
 	config := n.Config
@@ -310,12 +318,6 @@ func (v *validator) configProblems(n Node) []string {
 			return []string{invalidConfig(err)}
 		}
 		return append(v.profileProblems(c.ProfileID), append(v.mcpProblems(c.McpServerIDs), agentProblems(c)...)...)
-	case NodeReview:
-		var c ReviewConfig
-		if err := json.Unmarshal(config, &c); err != nil {
-			return []string{invalidConfig(err)}
-		}
-		return append(v.profileProblems(c.ProfileID), reviewProblems(c)...)
 	case NodeMoveCard:
 		var c MoveCardConfig
 		if err := json.Unmarshal(config, &c); err != nil {
@@ -384,16 +386,26 @@ func agentProblems(c AgentConfig) []string {
 			out = append(out, "o schema de saída é inválido: "+err.Error())
 		}
 	}
-	return out
+	if c.Gateway && c.MaxRounds < 1 {
+		out = append(out, "o gateway precisa de um máximo de rodadas de pelo menos 1")
+	}
+	return append(out, artifactProblems(c.Artifacts)...)
 }
 
-func reviewProblems(c ReviewConfig) []string {
+func artifactProblems(specs []ArtifactSpec) []string {
 	var out []string
-	if strings.TrimSpace(c.Prompt) == "" {
-		out = append(out, "o prompt de review é obrigatório")
-	}
-	if c.MaxRounds < 1 {
-		out = append(out, "max_rounds precisa ser pelo menos 1")
+	names := map[string]bool{}
+	for _, a := range specs {
+		name := strings.TrimSpace(a.Name)
+		switch {
+		case name == "":
+			out = append(out, "todo artefato precisa de um nome")
+		case names[name]:
+			out = append(out, fmt.Sprintf("o artefato %q aparece mais de uma vez", name))
+		case !filepath.IsLocal(a.Path):
+			out = append(out, fmt.Sprintf("o arquivo do artefato %q precisa ser um caminho relativo dentro do workspace", name))
+		}
+		names[name] = true
 	}
 	return out
 }

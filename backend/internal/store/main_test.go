@@ -62,7 +62,7 @@ func run(m *testing.M) (int, error) {
 // newStore returns a Store over an empty database.
 func newStore(t *testing.T) *Store {
 	t.Helper()
-	_, err := pool.Exec(context.Background(), "TRUNCATE jobs, node_run_output, review_comments, questions, agent_sessions, node_runs, flow_runs, mcp_servers, agent_profiles, flow_versions, flows, card_events, cards, card_types, projects, lanes")
+	_, err := pool.Exec(context.Background(), "TRUNCATE jobs, node_run_output, artifact_messages, artifact_versions, artifacts, questions, agent_sessions, node_runs, flow_runs, mcp_servers, agent_profiles, flow_versions, flows, card_events, cards, card_types, projects, lanes")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,13 +215,6 @@ func (f *failing) SetFlowRunStatus(ctx context.Context, arg sqlcgen.SetFlowRunSt
 	return f.Querier.SetFlowRunStatus(ctx, arg)
 }
 
-func (f *failing) InsertReviewComment(ctx context.Context, arg sqlcgen.InsertReviewCommentParams) (sqlcgen.ReviewComment, error) {
-	if err := f.hit("InsertReviewComment"); err != nil {
-		return sqlcgen.ReviewComment{}, err
-	}
-	return f.Querier.InsertReviewComment(ctx, arg)
-}
-
 func (f *failing) DeliverQuestions(ctx context.Context, nodeRunID uuid.UUID) error {
 	if err := f.hit("DeliverQuestions"); err != nil {
 		return err
@@ -234,13 +227,6 @@ func (f *failing) QueueNodeRun(ctx context.Context, id uuid.UUID) error {
 		return err
 	}
 	return f.Querier.QueueNodeRun(ctx, id)
-}
-
-func (f *failing) DeleteReviewComments(ctx context.Context, nodeRunID uuid.UUID) error {
-	if err := f.hit("DeleteReviewComments"); err != nil {
-		return err
-	}
-	return f.Querier.DeleteReviewComments(ctx, nodeRunID)
 }
 
 func (f *failing) FailOpenNodeRuns(ctx context.Context, flowRunID uuid.UUID) error {
@@ -262,4 +248,102 @@ func (f *failing) CancelRunJobs(ctx context.Context, flowRunID uuid.UUID) error 
 		return err
 	}
 	return f.Querier.CancelRunJobs(ctx, flowRunID)
+}
+
+func (f *failing) UpsertArtifact(ctx context.Context, arg sqlcgen.UpsertArtifactParams) (sqlcgen.Artifact, error) {
+	if err := f.hit("UpsertArtifact"); err != nil {
+		return sqlcgen.Artifact{}, err
+	}
+	return f.Querier.UpsertArtifact(ctx, arg)
+}
+
+func (f *failing) LatestArtifactVersion(ctx context.Context, artifactID uuid.UUID) (sqlcgen.ArtifactVersion, error) {
+	if err := f.hit("LatestArtifactVersion"); err != nil {
+		return sqlcgen.ArtifactVersion{}, err
+	}
+	return f.Querier.LatestArtifactVersion(ctx, artifactID)
+}
+
+func (f *failing) InsertArtifactVersion(ctx context.Context, arg sqlcgen.InsertArtifactVersionParams) (sqlcgen.ArtifactVersion, error) {
+	if err := f.hit("InsertArtifactVersion"); err != nil {
+		return sqlcgen.ArtifactVersion{}, err
+	}
+	return f.Querier.InsertArtifactVersion(ctx, arg)
+}
+
+func (f *failing) GetArtifactForUpdate(ctx context.Context, id uuid.UUID) (sqlcgen.Artifact, error) {
+	if err := f.hit("GetArtifactForUpdate"); err != nil {
+		return sqlcgen.Artifact{}, err
+	}
+	return f.Querier.GetArtifactForUpdate(ctx, id)
+}
+
+func (f *failing) GetNodeRun(ctx context.Context, id uuid.UUID) (sqlcgen.NodeRun, error) {
+	if err := f.hit("GetNodeRun"); err != nil {
+		return sqlcgen.NodeRun{}, err
+	}
+	return f.Querier.GetNodeRun(ctx, id)
+}
+
+func (f *failing) GetFlowRun(ctx context.Context, id uuid.UUID) (sqlcgen.GetFlowRunRow, error) {
+	if err := f.hit("GetFlowRun"); err != nil {
+		return sqlcgen.GetFlowRunRow{}, err
+	}
+	return f.Querier.GetFlowRun(ctx, id)
+}
+
+func (f *failing) CardHasActiveRun(ctx context.Context, cardID uuid.UUID) (bool, error) {
+	if err := f.hit("CardHasActiveRun"); err != nil {
+		return false, err
+	}
+	return f.Querier.CardHasActiveRun(ctx, cardID)
+}
+
+func (f *failing) InsertFlowRun(ctx context.Context, arg sqlcgen.InsertFlowRunParams) (sqlcgen.FlowRun, error) {
+	if err := f.hit("InsertFlowRun"); err != nil {
+		return sqlcgen.FlowRun{}, err
+	}
+	return f.Querier.InsertFlowRun(ctx, arg)
+}
+
+func (f *failing) InsertNodeRun(ctx context.Context, arg sqlcgen.InsertNodeRunParams) (sqlcgen.NodeRun, error) {
+	if err := f.hit("InsertNodeRun"); err != nil {
+		return sqlcgen.NodeRun{}, err
+	}
+	return f.Querier.InsertNodeRun(ctx, arg)
+}
+
+func (f *failing) GetAgentSession(ctx context.Context, arg sqlcgen.GetAgentSessionParams) (sqlcgen.AgentSession, error) {
+	if err := f.hit("GetAgentSession"); err != nil {
+		return sqlcgen.AgentSession{}, err
+	}
+	return f.Querier.GetAgentSession(ctx, arg)
+}
+
+func (f *failing) InsertAgentSession(ctx context.Context, arg sqlcgen.InsertAgentSessionParams) (sqlcgen.AgentSession, error) {
+	if err := f.hit("InsertAgentSession"); err != nil {
+		return sqlcgen.AgentSession{}, err
+	}
+	return f.Querier.InsertAgentSession(ctx, arg)
+}
+
+func (f *failing) InsertArtifactMessage(ctx context.Context, arg sqlcgen.InsertArtifactMessageParams) (sqlcgen.ArtifactMessage, error) {
+	if err := f.hit("InsertArtifactMessage"); err != nil {
+		return sqlcgen.ArtifactMessage{}, err
+	}
+	return f.Querier.InsertArtifactMessage(ctx, arg)
+}
+
+func (f *failing) GetRevisionMessage(ctx context.Context, flowRunID *uuid.UUID) (sqlcgen.ArtifactMessage, error) {
+	if err := f.hit("GetRevisionMessage"); err != nil {
+		return sqlcgen.ArtifactMessage{}, err
+	}
+	return f.Querier.GetRevisionMessage(ctx, flowRunID)
+}
+
+func (f *failing) FreezeCardArtifacts(ctx context.Context, cardID uuid.UUID) ([]sqlcgen.Artifact, error) {
+	if err := f.hit("FreezeCardArtifacts"); err != nil {
+		return nil, err
+	}
+	return f.Querier.FreezeCardArtifacts(ctx, cardID)
 }

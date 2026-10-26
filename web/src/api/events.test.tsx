@@ -19,7 +19,10 @@ describe('useBoardEvents', () => {
 
     events.emit('card.moved')
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['cards'] })
-    expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['cardEvents'] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['cardEvents'] })
+    expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['artifacts'] })
+    events.emit('artifact.updated')
+    expect(invalidate).toHaveBeenCalledTimes(4)
     events.emit('lane.deleted')
     expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['lanes'] })
     events.emit('project.updated')

@@ -39,6 +39,8 @@ export const keys = {
   nodeOutput: ['nodeOutput'],
   nodeOutputOf: (id: string) => ['nodeOutput', id],
   cardQuestions: (id: string) => ['questions', id],
+  artifacts: ['artifacts'],
+  cardArtifacts: (id: string) => ['artifacts', id],
 } as const
 
 const byId = (id: string) => ({ params: { path: { id } } })
@@ -117,6 +119,15 @@ export function useNodeOutput(id: string) {
   return useQuery({
     queryKey: keys.nodeOutputOf(id),
     queryFn: () => unwrap(client.GET('/node-runs/{id}/output', byId(id))),
+  })
+}
+
+/** The artifacts agents collected on a card, with versions and chats. */
+export function useCardArtifacts(id: string) {
+  const { client } = useApi()
+  return useQuery({
+    queryKey: keys.cardArtifacts(id),
+    queryFn: () => unwrap(client.GET('/cards/{id}/artifacts', byId(id))),
   })
 }
 
@@ -379,6 +390,21 @@ export function useAnswerQuestion() {
         client.POST('/questions/{id}/answer', {
           ...byId(id),
           body: { answer },
+        }),
+      ),
+  )
+}
+
+/** Sends a review chat message: the agent revises the artifact. */
+export function useReviseArtifact() {
+  const { client } = useApi()
+  return useChange(
+    keys.artifacts,
+    ({ id, text, version }: { id: string; text: string; version: number }) =>
+      unwrap(
+        client.POST('/artifacts/{id}/messages', {
+          ...byId(id),
+          body: { text, version },
         }),
       ),
   )

@@ -29,6 +29,36 @@ type AgentSession struct {
 	CreatedAt       time.Time
 }
 
+type Artifact struct {
+	ID        uuid.UUID
+	CardID    uuid.UUID
+	Name      string
+	NodeRunID uuid.UUID
+	FrozenAt  *time.Time
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type ArtifactMessage struct {
+	ID         uuid.UUID
+	ArtifactID uuid.UUID
+	Version    int32
+	Role       string
+	Text       string
+	FlowRunID  *uuid.UUID
+	CreatedAt  time.Time
+}
+
+type ArtifactVersion struct {
+	ID         uuid.UUID
+	ArtifactID uuid.UUID
+	Version    int32
+	Path       string
+	Content    string
+	NodeRunID  uuid.UUID
+	CreatedAt  time.Time
+}
+
 type Card struct {
 	ID           uuid.UUID
 	Title        string
@@ -145,7 +175,8 @@ type NodeRun struct {
 	TokenHash        []byte
 	Summary          *string
 	StructuredOutput []byte
-	ReviewApproved   *bool
+	Decision         *string
+	Feedback         *string
 }
 
 type NodeRunOutput struct {
@@ -175,15 +206,4 @@ type Question struct {
 	AnsweredAt  *time.Time
 	DeliveredAt *time.Time
 	CreatedAt   time.Time
-}
-
-type ReviewComment struct {
-	ID        uuid.UUID
-	CardID    uuid.UUID
-	NodeRunID uuid.UUID
-	Round     int32
-	File      *string
-	Line      *int32
-	Body      string
-	CreatedAt time.Time
 }

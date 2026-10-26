@@ -56,7 +56,14 @@ type Repository interface {
 	RunningNodeRunByToken(ctx context.Context, tokenHash []byte) (domain.NodeRun, error)
 	SetNodeRunSummary(ctx context.Context, id uuid.UUID, summary string) (domain.NodeRun, error)
 	SetNodeRunOutput(ctx context.Context, id uuid.UUID, output json.RawMessage) (domain.NodeRun, error)
-	SubmitReview(ctx context.Context, nr domain.NodeRun, cardID uuid.UUID, approved bool, comments []domain.ReviewInput) ([]domain.ReviewComment, error)
+	SetNodeRunDecision(ctx context.Context, id uuid.UUID, decision, feedback string) (domain.NodeRun, error)
+
+	GetArtifact(ctx context.Context, id uuid.UUID) (domain.Artifact, error)
+	ListCardArtifacts(ctx context.Context, cardID uuid.UUID) ([]domain.Artifact, error)
+	ListArtifactVersions(ctx context.Context, artifactID uuid.UUID) ([]domain.ArtifactVersion, error)
+	ListArtifactMessages(ctx context.Context, artifactID uuid.UUID) ([]domain.ArtifactMessage, error)
+	ArtifactRevising(ctx context.Context, artifactID uuid.UUID) (bool, error)
+	StartRevision(ctx context.Context, artifactID uuid.UUID, version int, text string) (domain.ArtifactMessage, domain.FlowRun, error)
 
 	AddQuestions(ctx context.Context, cardID, nodeRunID uuid.UUID, texts []string) ([]domain.Question, error)
 	ListCardQuestions(ctx context.Context, cardID uuid.UUID) ([]domain.Question, error)

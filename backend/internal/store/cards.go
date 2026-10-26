@@ -186,6 +186,9 @@ func (s *Store) MoveCard(ctx context.Context, id, laneID uuid.UUID, position int
 			_, err = addEvent(ctx, q, id, domain.CardMoved, payload)
 			return err
 		}
+		if _, err := q.FreezeCardArtifacts(ctx, id); err != nil {
+			return err
+		}
 		return addTriggerEvent(ctx, q, id, domain.CardMoved, payload)
 	})
 	return card, err

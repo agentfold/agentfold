@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -99,10 +100,13 @@ type NodeRun struct {
 	// What the agent reported through the board tools while the node ran.
 	Summary          string
 	StructuredOutput json.RawMessage
-	ReviewApproved   *bool
-	CreatedAt        time.Time
-	StartedAt        *time.Time
-	FinishedAt       *time.Time
+	// Decision is how a gateway decided, approved or rejected; empty
+	// otherwise. Feedback is the reason or what must change.
+	Decision   string
+	Feedback   string
+	CreatedAt  time.Time
+	StartedAt  *time.Time
+	FinishedAt *time.Time
 }
 
 // NodeResult is how a node run ended.
@@ -114,15 +118,45 @@ type NodeResult struct {
 	Usage
 }
 
-// JobAgentRun is the queue job that runs an agent or review node.
+// Gateway decisions.
+const (
+	DecisionApproved = "approved"
+	DecisionRejected = "rejected"
+)
+
+// JobAgentRun is the queue job that runs an agent node.
 const JobAgentRun = "agent.run"
 
 // AgentJob is the payload of an agent.run job.
 type AgentJob struct {
 	NodeRunID uuid.UUID `json:"node_run_id"`
-	// Prompt continues an existing session of the node (answers, review
-	// comments); the first run of a node uses its configured prompt.
+	// Prompt is the message for the agent: what the node before handed on,
+	// answers to its questions or a revision request. A new session starts
+	// with the node prompt and the card, followed by it.
 	Prompt string `json:"prompt,omitempty"`
+}
+
+// TriggerRevision is the trigger of the runs that revise an artifact: they
+// resume the node that collected it and end with it, without following
+// its outputs.
+const TriggerRevision = "artifact_revision"
+
+// MessageFrom is what an output hands to the next agent: the structured
+// output when there is one, else the result text.
+func MessageFrom(output json.RawMessage) string {
+	var v struct {
+		Result string          `json:"result"`
+		Output json.RawMessage `json:"output"`
+	}
+	if json.Unmarshal(output, &v) != nil {
+		return ""
+	}
+	if len(v.Output) > 0 && string(v.Output) != "null" {
+		var b bytes.Buffer
+		_ = json.Indent(&b, v.Output, "", "  ") // decoded above: valid JSON
+		return b.String()
+	}
+	return v.Result
 }
 
 // Question is something an agent asked a human. Its node waits until every
@@ -141,25 +175,6 @@ type Question struct {
 // EntityID returns the question id.
 func (q Question) EntityID() uuid.UUID { return q.ID }
 
-// ReviewComment is a change a reviewer asks for.
-type ReviewComment struct {
-	ID        uuid.UUID
-	CardID    uuid.UUID
-	NodeRunID uuid.UUID
-	Round     int
-	File      string
-	Line      *int
-	Body      string
-	CreatedAt time.Time
-}
-
-// ReviewInput is a comment as the reviewer submits it.
-type ReviewInput struct {
-	File string `json:"file,omitempty"`
-	Line *int   `json:"line,omitempty"`
-	Body string `json:"body"`
-}
-
 // AnswersPrompt is the prompt that resumes an agent with the answers to its
 // questions.
 func AnswersPrompt(questions []Question) string {
@@ -171,28 +186,6 @@ func AnswersPrompt(questions []Question) string {
 			answer = *q.Answer
 		}
 		fmt.Fprintf(&b, "\n%d. %s\nAnswer: %s\n", i+1, q.Text, answer)
-	}
-	return b.String()
-}
-
-// ReviewPrompt is the text a review hands to the next node: the comments
-// to address, or that the work was approved.
-func ReviewPrompt(approved bool, comments []ReviewComment) string {
-	if approved {
-		return "The review approved the changes."
-	}
-	var b strings.Builder
-	b.WriteString("The review asked for changes. Address every comment:\n")
-	for _, c := range comments {
-		b.WriteString("\n- ")
-		if c.File != "" {
-			b.WriteString(c.File)
-			if c.Line != nil {
-				fmt.Fprintf(&b, ":%d", *c.Line)
-			}
-			b.WriteString(": ")
-		}
-		b.WriteString(c.Body)
 	}
 	return b.String()
 }
@@ -218,4 +211,55 @@ type NodeOutput struct {
 	Tool      string
 	IsError   bool
 	CreatedAt time.Time
+}
+
+// Artifact is a file of the card workspace an agent node collected, by
+// name. Its review chat resumes that node until the card leaves the lane.
+type Artifact struct {
+	ID        uuid.UUID
+	CardID    uuid.UUID
+	Name      string
+	NodeRunID uuid.UUID
+	FrozenAt  *time.Time
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// EntityID returns the artifact id.
+func (a Artifact) EntityID() uuid.UUID { return a.ID }
+
+// ArtifactVersion is the content of an artifact as one run collected it.
+type ArtifactVersion struct {
+	ID         uuid.UUID
+	ArtifactID uuid.UUID
+	Version    int
+	Path       string
+	Content    string
+	NodeRunID  uuid.UUID
+	CreatedAt  time.Time
+}
+
+// Artifact message roles.
+const (
+	RoleHuman = "human"
+	RoleAgent = "agent"
+)
+
+// ArtifactMessage is a message of the review chat of an artifact.
+type ArtifactMessage struct {
+	ID         uuid.UUID
+	ArtifactID uuid.UUID
+	// Version is the one the human was reading, or the agent revised.
+	Version   int
+	Role      string
+	Text      string
+	FlowRunID *uuid.UUID
+	CreatedAt time.Time
+}
+
+// RevisionPrompt is the message that resumes the agent of an artifact with
+// what the human asked in its review chat.
+func RevisionPrompt(name, path string, version int, text string) string {
+	return fmt.Sprintf("A human reviewed version %d of the artifact %q (the file %s) and asks:\n\n%s\n\n"+
+		"Update %s to address it, then finish; the board collects the file again.", version, name, path, text, path)
 }

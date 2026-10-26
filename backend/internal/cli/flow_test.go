@@ -114,8 +114,8 @@ func (s *stack) setUpBoard(t *testing.T) {
 }
 
 // flow publishes and enables a flow triggered by cards entering Doing:
-// trigger -> nodes in order (by their "next"/"done"/"approved" outputs),
-// plus the extra edges.
+// trigger -> nodes in order (by their first output: "next", "done" or
+// "approved"), plus the extra edges.
 func (s *stack) flow(t *testing.T, nodes []domain.Node, extra ...domain.Edge) {
 	t.Helper()
 	ctx := context.Background()
@@ -124,10 +124,7 @@ func (s *stack) flow(t *testing.T, nodes []domain.Node, extra ...domain.Edge) {
 	}}, nodes...)}
 	for i := 1; i < len(graph.Nodes); i++ {
 		prev := graph.Nodes[i-1]
-		handle := map[domain.NodeType]string{domain.NodeAgent: "done", domain.NodeReview: "approved"}[prev.Type]
-		if handle == "" {
-			handle = "next"
-		}
+		handle := domain.NodeOutputs(prev)[0]
 		graph.Edges = append(graph.Edges, domain.Edge{ID: prev.ID + "." + handle, Source: prev.ID, SourceHandle: handle, Target: graph.Nodes[i].ID})
 	}
 	graph.Edges = append(graph.Edges, extra...)
@@ -147,7 +144,15 @@ func (s *stack) flow(t *testing.T, nodes []domain.Node, extra ...domain.Edge) {
 }
 
 func (s *stack) agent(id, prompt string) domain.Node {
-	return domain.Node{ID: id, Type: domain.NodeAgent, Config: fmt.Appendf(nil, `{"profile_id":%q,"prompt":%q}`, s.profile, prompt)}
+	return s.agentWith(id, prompt, "")
+}
+
+// agentWith is an agent node with more config fields (`"k":v,…`).
+func (s *stack) agentWith(id, prompt, more string) domain.Node {
+	if more != "" {
+		more = "," + more
+	}
+	return domain.Node{ID: id, Type: domain.NodeAgent, Config: fmt.Appendf(nil, `{"profile_id":%q,"prompt":%q%s}`, s.profile, prompt, more)}
 }
 
 func (s *stack) moveTo(id string, lane uuid.UUID) domain.Node {
@@ -250,15 +255,14 @@ func TestFlowEndToEnd(t *testing.T) {
 	}
 }
 
-// TestReviewCycleEndToEnd: the developer agent asks a question and waits;
-// once answered it resumes and finishes; the reviewer asks for changes, the
-// developer resumes with the comments, and the second review approves.
-func TestReviewCycleEndToEnd(t *testing.T) {
+// TestGatewayCycleEndToEnd: the developer agent asks a question and waits;
+// once answered it resumes and finishes; the gateway rejects, the
+// developer resumes with the feedback, and the second round approves.
+func TestGatewayCycleEndToEnd(t *testing.T) {
 	s := newStack(t)
-	review := domain.Node{ID: "rev", Type: domain.NodeReview, Config: fmt.Appendf(nil,
-		`{"profile_id":%q,"prompt":"Review it [review:reject,approve]","max_rounds":3}`, s.profile)}
+	review := s.agentWith("rev", "Review it [gate:reject,approve]", `"gateway":true,"max_rounds":3,"read_only":true`)
 	s.flow(t, []domain.Node{s.agent("dev", "Implement it [ask:Which database?] [done:implemented]"), review, s.moveTo("move", s.done)},
-		domain.Edge{ID: "rev.changes", Source: "rev", SourceHandle: "changes_requested", Target: "dev"})
+		domain.Edge{ID: "rev.rejected", Source: "rev", SourceHandle: "rejected", Target: "dev"})
 	card := s.startCard(t)
 
 	s.waitRun(t, card, domain.RunWaiting)
@@ -282,7 +286,7 @@ func TestReviewCycleEndToEnd(t *testing.T) {
 		t.Fatalf("card %+v, %v", got, err)
 	}
 	types := s.timeline(t, card)
-	for typ, n := range map[string]int{"question.asked": 1, "question.answered": 1, "review.submitted": 2} {
+	for typ, n := range map[string]int{"question.asked": 1, "question.answered": 1, "node.finished": 5} {
 		if c := countOf(types, typ); c != n {
 			t.Fatalf("%d %s in %q", c, typ, types)
 		}
@@ -301,13 +305,96 @@ func TestReviewCycleEndToEnd(t *testing.T) {
 		runs = append(runs, fmt.Sprintf("%s#%d %s %s %d", key, iteration, status, handle, turns))
 	}
 	// The first developer run ran twice (asked, then resumed with the answer).
-	want := []string{"dev#1 done done 6", "rev#1 done changes_requested 3", "dev#2 done done 3", "rev#2 done approved 3", "move#1 done next 0"}
+	want := []string{"dev#1 done done 6", "rev#1 done rejected 3", "dev#2 done done 3", "rev#2 done approved 3", "move#1 done next 0"}
 	if !slices.Equal(runs, want) {
 		t.Fatalf("node runs %q", runs)
 	}
+	// Each agent gets what the node before handed on: the answers, the
+	// developer result, the gateway feedback.
+	var prompts []string
+	rows, err = s.pool.Query(context.Background(), `SELECT coalesce(payload->>'prompt', '') FROM jobs WHERE kind = 'agent.run' ORDER BY created_at`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			t.Fatal(err)
+		}
+		prompts = append(prompts, p)
+	}
+	if len(prompts) != 5 || prompts[0] != "" || !strings.Contains(prompts[1], "Answer: Postgres") || prompts[2] != "did it" || prompts[3] != "add tests" {
+		t.Fatalf("prompts %q", prompts)
+	}
+	s.stop(t)
+}
+
+// TestArtifactRevisionEndToEnd: a planner writes plan.md, collected as the
+// artifact "Plano"; a message in its review chat resumes the planner, which
+// writes a new version, while the card stays in Done; moving the card on
+// freezes the artifact.
+func TestArtifactRevisionEndToEnd(t *testing.T) {
+	s := newStack(t)
+	planner := s.agentWith("plan", "Plan it [write:plan.md:# Plano]", `"artifacts":[{"name":"Plano","path":"plan.md"}]`)
+	s.flow(t, []domain.Node{planner, s.moveTo("move", s.done)})
+	card := s.startCard(t)
+	s.waitRun(t, card, domain.RunDone)
+
+	url := s.base + "/api/cards/" + card.String() + "/artifacts"
+	artifacts := getJSON[[]map[string]any](t, url)
+	if len(artifacts) != 1 || artifacts[0]["name"] != "Plano" || artifacts[0]["frozen"] != false {
+		t.Fatalf("artifacts %v", artifacts)
+	}
+	versions := artifacts[0]["versions"].([]any)
+	if len(versions) != 1 || versions[0].(map[string]any)["content"] != "# Plano\n\nrun 1\n" {
+		t.Fatalf("versions %v", versions)
+	}
+	id := artifacts[0]["id"].(string)
+	msg := postStatus(t, s.base+"/api/artifacts/"+id+"/messages", `{"text":"Citação sobre \"Plano\": detalhe mais","version":1}`, http.StatusCreated)
+	if msg["role"] != "human" || msg["version"] != float64(1) {
+		t.Fatalf("message %v", msg)
+	}
+
+	deadline := time.Now().Add(30 * time.Second)
+	var artifact map[string]any
+	for time.Now().Before(deadline) {
+		artifact = getJSON[map[string]any](t, s.base+"/api/artifacts/"+id)
+		if len(artifact["messages"].([]any)) == 2 && artifact["revising"] == false {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	messages := artifact["messages"].([]any)
+	reply := messages[len(messages)-1].(map[string]any)
+	versions = artifact["versions"].([]any)
+	if reply["role"] != "agent" || reply["text"] != "did it" || reply["version"] != float64(2) || len(versions) != 2 ||
+		versions[1].(map[string]any)["content"] != "# Plano\n\nrun 2\n" {
+		t.Fatalf("after the revision: %v; worker log: %s", artifact, s.workerErr.String())
+	}
+	if got, _ := s.store.GetCard(context.Background(), card); got.LaneID != s.done {
+		t.Fatal("the revision moved the card")
+	}
+	var sessions int
+	if err := s.pool.QueryRow(context.Background(), `SELECT count(DISTINCT session_id) FROM node_runs WHERE node_key = 'plan'`).Scan(&sessions); err != nil || sessions != 1 {
+		t.Fatalf("the revision did not resume the session: %d, %v", sessions, err)
+	}
 	var prompt string
-	if err := s.pool.QueryRow(context.Background(), `SELECT payload->>'prompt' FROM jobs WHERE kind = 'agent.run' ORDER BY created_at OFFSET 1 LIMIT 1`).Scan(&prompt); err != nil || !strings.Contains(prompt, "Answer: Postgres") {
-		t.Fatalf("resume prompt %q, %v", prompt, err)
+	if err := s.pool.QueryRow(context.Background(), `SELECT payload->>'prompt' FROM jobs WHERE kind = 'agent.run' ORDER BY created_at DESC LIMIT 1`).Scan(&prompt); err != nil ||
+		!strings.Contains(prompt, "detalhe mais") {
+		t.Fatalf("revision prompt %q, %v", prompt, err)
+	}
+
+	postStatus(t, s.base+"/api/cards/"+card.String()+"/move", fmt.Sprintf(`{"lane_id":%q,"position":0}`, s.todo), http.StatusOK)
+	if artifact = getJSON[map[string]any](t, s.base+"/api/artifacts/"+id); artifact["frozen"] != true {
+		t.Fatalf("moving the card on did not freeze %v", artifact)
+	}
+	resp, err := http.Post(s.base+"/api/artifacts/"+id+"/messages", "application/json", strings.NewReader(`{"text":"x","version":2}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("revising a frozen artifact: %d", resp.StatusCode)
 	}
 	s.stop(t)
 }

@@ -14,9 +14,9 @@ const { nodes, edges } = fromApi({
     },
     {
       id: 'r',
-      type: 'review',
+      type: 'agent',
       position: { x: 300, y: 0 },
-      config: { max_rounds: 2 },
+      config: { prompt: 'Revise', gateway: true, max_rounds: 2 },
     },
     { id: 'e', type: 'end', position: { x: 600, y: 0 }, config: {} },
   ],
@@ -43,8 +43,10 @@ describe('FlowCanvas', () => {
     show(nodes)
     expect(screen.getByText('Gatilho')).toBeInTheDocument()
     expect(screen.getByText('Quando o card é criado')).toBeInTheDocument()
-    expect(screen.getByText('Até 2 rodadas')).toBeInTheDocument()
-    expect(screen.getByText('pedir mudanças')).toBeInTheDocument()
+    expect(
+      screen.getByText('Gateway, até 2 rodadas: Revise'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('rejeitado')).toBeInTheDocument()
     expect(screen.getByText('Encerra o fluxo')).toBeInTheDocument()
   })
 

@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -32,15 +33,42 @@ func TestPrompts(t *testing.T) {
 	if want := "Answers to your questions:\n\n1. DB?\nAnswer: Postgres\n\n2. Port?\nAnswer: \n"; got != want {
 		t.Errorf("AnswersPrompt = %q", got)
 	}
-	if got := ReviewPrompt(true, nil); got != "The review approved the changes." {
-		t.Errorf("approved: %q", got)
+	got = RevisionPrompt("Plano", "plan.md", 2, "more detail")
+	if want := "A human reviewed version 2 of the artifact \"Plano\" (the file plan.md) and asks:\n\nmore detail\n\n" +
+		"Update plan.md to address it, then finish; the board collects the file again."; got != want {
+		t.Errorf("RevisionPrompt = %q", got)
 	}
-	line := 3
-	got = ReviewPrompt(false, []ReviewComment{{File: "a.go", Line: &line, Body: "tests"}, {File: "b.go", Body: "name"}, {Body: "docs"}})
-	if want := "The review asked for changes. Address every comment:\n\n- a.go:3: tests\n- b.go: name\n- docs"; got != want {
-		t.Errorf("ReviewPrompt = %q", got)
-	}
-	if (Question{ID: [16]byte{1}}).EntityID() != [16]byte{1} {
+	if (Question{ID: [16]byte{1}}).EntityID() != [16]byte{1} || (Artifact{ID: [16]byte{2}}).EntityID() != [16]byte{2} {
 		t.Error("EntityID")
+	}
+}
+
+func TestMessageFrom(t *testing.T) {
+	for output, want := range map[string]string{
+		`{"result":"did it"}`:                      "did it",
+		`{"result":"did it","output":{"a":[1,2]}}`: "{\n  \"a\": [\n    1,\n    2\n  ]\n}",
+		`{"result":"did it","output":null}`:        "did it",
+		`{}`:                                       "",
+		`null`:                                     "",
+		`[1]`:                                      "",
+	} {
+		if got := MessageFrom(json.RawMessage(output)); got != want {
+			t.Errorf("MessageFrom(%s) = %q, want %q", output, got, want)
+		}
+	}
+	if got := MessageFrom(nil); got != "" {
+		t.Errorf("MessageFrom(nil) = %q", got)
+	}
+}
+
+func TestNodeOutputs(t *testing.T) {
+	if got := NodeOutputs(node("a", NodeAgent, `{"gateway":true}`)); !reflect.DeepEqual(got, GatewayOutputs) {
+		t.Errorf("gateway outputs %q", got)
+	}
+	if got := NodeOutputs(node("a", NodeAgent, `[]`)); !reflect.DeepEqual(got, []string{"done", "failed"}) {
+		t.Errorf("agent outputs %q", got)
+	}
+	if got := NodeOutputs(node("m", NodeMoveCard, `{}`)); !reflect.DeepEqual(got, []string{"next"}) {
+		t.Errorf("move outputs %q", got)
 	}
 }

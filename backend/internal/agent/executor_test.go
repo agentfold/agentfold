@@ -57,12 +57,32 @@ type fakeStore struct {
 	session  *uuid.UUID
 	started  bool
 	result   *domain.NodeResult
-	// tokenHash is what the run started with; pending and comments are what
-	// the agent left through the board tools.
+	// tokenHash is what the run started with; pending is what the agent
+	// left through the board tools.
 	tokenHash []byte
 	pending   int
-	comments  []domain.ReviewComment
 	outputs   []domain.NodeOutput
+	// artifacts are the saved artifacts by name; same makes SaveArtifact
+	// report the content unchanged.
+	artifacts map[string]string
+	same      bool
+	timeline  []domain.CardEventType
+}
+
+func (f *fakeStore) SaveArtifact(_ context.Context, _, _ uuid.UUID, name, path, content string) (domain.Artifact, int, bool, error) {
+	if err := f.err("SaveArtifact"); err != nil {
+		return domain.Artifact{}, 0, false, err
+	}
+	if f.artifacts == nil {
+		f.artifacts = map[string]string{}
+	}
+	f.artifacts[name] = path + ":" + content
+	return domain.Artifact{ID: uuid.New(), Name: name}, 1, !f.same, nil
+}
+
+func (f *fakeStore) AddCardEvent(_ context.Context, cardID uuid.UUID, typ domain.CardEventType, _ any) (domain.CardEvent, error) {
+	f.timeline = append(f.timeline, typ)
+	return domain.CardEvent{ID: uuid.New(), CardID: cardID, Type: typ}, f.err("AddCardEvent")
 }
 
 func (f *fakeStore) AddNodeOutput(_ context.Context, _ uuid.UUID, entries []domain.NodeOutput) error {
@@ -89,10 +109,6 @@ func (f *fakeStore) GetNodeRun(context.Context, uuid.UUID) (domain.NodeRun, erro
 
 func (f *fakeStore) PendingQuestions(context.Context, uuid.UUID) (int, error) {
 	return f.pending, f.err("PendingQuestions")
-}
-
-func (f *fakeStore) ListReviewComments(context.Context, uuid.UUID) ([]domain.ReviewComment, error) {
-	return f.comments, f.err("ListReviewComments")
 }
 
 func (f *fakeStore) GetFlowRun(context.Context, uuid.UUID) (domain.FlowRun, error) {
@@ -245,7 +261,7 @@ func argsOf(call map[string]any) string {
 
 func TestFirstRun(t *testing.T) {
 	s := newSetup(t)
-	if err := s.handle(t, "ignored on the first run"); err != nil {
+	if err := s.handle(t, "what the node before did"); err != nil {
 		t.Fatal(err)
 	}
 	r := s.store.result
@@ -258,7 +274,8 @@ func TestFirstRun(t *testing.T) {
 
 	call := s.call(t)
 	args := argsOf(call)
-	if !strings.Contains(args, "--session-id "+s.store.session.String()) || !strings.Contains(args, "Implement it\n\n## Card\n\n# Add login\n\nWith OAuth.") {
+	if !strings.Contains(args, "--session-id "+s.store.session.String()) ||
+		!strings.Contains(args, "Implement it\n\n## Card\n\n# Add login\n\nWith OAuth.\n\n## Input\n\nwhat the node before did") {
 		t.Fatalf("args: %s", args)
 	}
 	if call["oauth_token"] != "sk-ant-oat-secret" || call["api_key"] != "" || call["config_dir"] != filepath.Join(s.cardDir(), "claude") {
@@ -293,12 +310,12 @@ func TestResume(t *testing.T) {
 	session := uuid.New()
 	s.store.session = &session
 	s.store.profile.CredentialKind = domain.CredentialAPIKey
-	if err := s.handle(t, "Fix the review comments"); err != nil {
+	if err := s.handle(t, "add tests"); err != nil {
 		t.Fatal(err)
 	}
 	call := s.call(t)
 	args := argsOf(call)
-	if !strings.Contains(args, "-p Fix the review comments") || !strings.Contains(args, "--resume "+session.String()) {
+	if !strings.Contains(args, "-p add tests --") || !strings.Contains(args, "--resume "+session.String()) {
 		t.Fatalf("args: %s", args)
 	}
 	if call["api_key"] != "sk-ant-oat-secret" || call["oauth_token"] != "" {
@@ -398,9 +415,6 @@ func TestRunFailures(t *testing.T) {
 		{"version", func(s setup) { s.store.errs["GetFlowVersion"] = errStore }, "store failed"},
 		{"node missing", func(s setup) { s.store.run.NodeKey = "other" }, `node "other" not found`},
 		{"not an agent", func(s setup) { s.store.version.Graph.Nodes[0].Type = domain.NodeEnd }, `is a end node, not an agent`},
-		{"bad review config", func(s setup) {
-			s.store.version.Graph.Nodes[0] = domain.Node{ID: "dev", Type: domain.NodeReview, Config: json.RawMessage(`[]`)}
-		}, "cannot unmarshal"},
 		{"bad config", func(s setup) { s.store.version.Graph.Nodes[0].Config = json.RawMessage(`[]`) }, "cannot unmarshal"},
 		{"card", func(s setup) { s.store.errs["GetCard"] = errStore }, "store failed"},
 		{"project", func(s setup) {
@@ -435,10 +449,18 @@ func TestRunFailures(t *testing.T) {
 		{"start", func(s setup) { s.store.errs["StartNodeRun"] = errStore }, "store failed"},
 		{"reports", func(s setup) { s.store.errs["GetNodeRun after"] = errStore }, "store failed"},
 		{"questions", func(s setup) { s.store.errs["PendingQuestions"] = errStore }, "store failed"},
-		{"comments", func(s setup) {
-			s.store.version.Graph.Nodes[0].Type = domain.NodeReview
-			s.store.errs["ListReviewComments"] = errStore
+		{"artifact", func(s setup) {
+			withArtifact(t, s, "plan.md", "# Plan")
+			s.store.errs["SaveArtifact"] = errStore
 		}, "store failed"},
+		{"artifact event", func(s setup) {
+			withArtifact(t, s, "plan.md", "# Plan")
+			s.store.errs["AddCardEvent"] = errStore
+		}, "store failed"},
+		{"workspace root", func(s setup) {
+			withArtifact(t, s, "plan.md", "# Plan")
+			s.exec.Runner = removing{s.exec.Runner}
+		}, "no such file"},
 		{"log file", func(s setup) {
 			_ = os.MkdirAll(filepath.Join(s.cardDir(), "logs", s.store.run.ID.String()+".jsonl"), 0o700)
 		}, "is a directory"},
@@ -523,24 +545,103 @@ func TestWaitingForAnswers(t *testing.T) {
 	}
 }
 
-func TestReviewNode(t *testing.T) {
+func TestGatewayNode(t *testing.T) {
 	s := newSetup(t)
-	cfg := `{"profile_id":"` + s.store.profile.ID.String() + `","prompt":"Review it","max_rounds":2,"disallowed_tools":["WebFetch"]}`
-	s.store.version.Graph.Nodes[0] = domain.Node{ID: "dev", Type: domain.NodeReview, Config: json.RawMessage(cfg)}
-	approved := false
-	s.store.run.ReviewApproved = &approved
-	s.store.run.Iteration = 1
-	s.store.comments = []domain.ReviewComment{{File: "a.go", Body: "add tests"}}
+	cfg := `{"profile_id":"` + s.store.profile.ID.String() + `","prompt":"Review it","gateway":true,"max_rounds":2,"read_only":true,"disallowed_tools":["WebFetch"]}`
+	s.store.version.Graph.Nodes[0].Config = json.RawMessage(cfg)
+	s.store.run.Decision, s.store.run.Feedback, s.store.run.Iteration = domain.DecisionRejected, "add tests", 1
 	if err := s.handle(t, ""); err != nil {
 		t.Fatal(err)
 	}
-	if r := s.store.result; r.OutputHandle != "changes_requested" || !strings.Contains(string(r.Output), "a.go: add tests") {
+	if r := s.store.result; r.OutputHandle != "rejected" || string(r.Output) != `{"decision":"rejected","result":"add tests","round":1}` {
 		t.Fatalf("result %+v (%s)", r, r.Output)
 	}
 	args := argsOf(s.call(t))
-	if !strings.Contains(args, "--disallowedTools WebFetch,Edit,MultiEdit,Write,NotebookEdit,") || !strings.Contains(args, "calling submit_review") {
+	if !strings.Contains(args, "--disallowedTools WebFetch,Edit,MultiEdit,Write,NotebookEdit,") || !strings.Contains(args, "call exactly one board tool") ||
+		!strings.Contains(args, "Do not edit files") {
 		t.Fatalf("args: %s", args)
 	}
+}
+
+// withArtifact makes the node collect path as "Plano", and the agent leave
+// content there (nothing when content is empty).
+func withArtifact(t *testing.T, s setup, path, content string) {
+	t.Helper()
+	var config domain.AgentConfig
+	_ = json.Unmarshal(s.store.version.Graph.Nodes[0].Config, &config)
+	config.Artifacts = []domain.ArtifactSpec{{Name: " Plano ", Path: path}}
+	s.store.version.Graph.Nodes[0].Config, _ = json.Marshal(config)
+	dir := filepath.Join(s.cardDir(), "workspace")
+	if err := os.MkdirAll(filepath.Join(dir, "docs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if content != "" {
+		if err := os.WriteFile(filepath.Join(dir, path), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestArtifacts(t *testing.T) {
+	s := newSetup(t)
+	withArtifact(t, s, "docs/plan.md", "# Plan")
+	if err := s.handle(t, ""); err != nil {
+		t.Fatal(err)
+	}
+	if s.store.result.Status != domain.NodeDone || s.store.artifacts["Plano"] != "docs/plan.md:# Plan" {
+		t.Fatalf("result %+v, artifacts %v", s.store.result, s.store.artifacts)
+	}
+	if !slices.Contains(s.pub.types, "artifact.updated") || !slices.Equal(s.store.timeline, []domain.CardEventType{domain.ArtifactCollected}) {
+		t.Fatalf("published %v, timeline %v", s.pub.types, s.store.timeline)
+	}
+
+	// The same content again adds no timeline entry.
+	s.store.same, s.store.timeline = true, nil
+	s.store.run.Status = domain.NodeQueued
+	if err := s.handle(t, ""); err != nil || len(s.store.timeline) != 0 {
+		t.Fatalf("timeline %v, %v", s.store.timeline, err)
+	}
+}
+
+func TestArtifactsThatFailTheNode(t *testing.T) {
+	for name, tc := range map[string]struct {
+		path, content, want string
+	}{
+		"missing": {"plan.md", "", "the file does not exist"},
+		"outside": {"../plan.md", "", "path escapes"},
+		"too big": {"plan.md", strings.Repeat("x", maxArtifactSize+1), "larger than"},
+		"binary":  {"plan.md", "a\x00b", "not text"},
+		"invalid": {"plan.md", "\xff", "not text"},
+		"dir":     {"docs", "", "is a directory"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := newSetup(t)
+			withArtifact(t, s, tc.path, tc.content)
+			if err := s.handle(t, ""); err != nil {
+				t.Fatal(err)
+			}
+			r := s.store.result
+			if r.Status != domain.NodeFailed || r.OutputHandle != "failed" || !strings.Contains(r.Error, `the artifact "Plano" could not be collected`) ||
+				!strings.Contains(r.Error, tc.want) {
+				t.Fatalf("result %+v", r)
+			}
+		})
+	}
+	s := newSetup(t)
+	withArtifact(t, s, "plan.md", "")
+	s.store.pending = 1
+	if err := s.handle(t, ""); err != nil || s.store.result.Status != domain.NodeAwaitingInput {
+		t.Fatalf("a node waiting for answers collects nothing yet: %+v, %v", s.store.result, err)
+	}
+}
+
+// removing removes the workspace once the agent ran.
+type removing struct{ runner.Runner }
+
+func (r removing) Run(ctx context.Context, spec runner.Spec, line func([]byte)) error {
+	err := r.Runner.Run(ctx, spec, line)
+	_ = os.RemoveAll(spec.Workspace.Dir)
+	return err
 }
 
 func TestOutputThatCannotBeKept(t *testing.T) {

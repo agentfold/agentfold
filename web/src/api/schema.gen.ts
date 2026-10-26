@@ -399,6 +399,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cards/{id}/artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["listCardArtifacts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/artifacts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getArtifact"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/artifacts/{id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Sends a message of the review chat to the agent that collected the artifact: the agent resumes its session, updates the file and the board collects it again; the card stays where it is. Fails with artifact_frozen once the card left the lane, and with card_busy while a flow runs for the card. */
+        post: operations["reviseArtifact"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/flow-runs/latest": {
         parameters: {
             query?: never;
@@ -507,7 +562,7 @@ export interface components {
     schemas: {
         Error: {
             /** @enum {string} */
-            code: "bad_request" | "validation" | "not_found" | "conflict" | "in_use" | "invalid_reference" | "invalid_graph" | "card_busy" | "question_closed" | "internal";
+            code: "bad_request" | "validation" | "not_found" | "conflict" | "in_use" | "invalid_reference" | "invalid_graph" | "card_busy" | "question_closed" | "artifact_frozen" | "internal";
             message: string;
             /** @description Invalid field, for validation errors. */
             field?: string;
@@ -620,7 +675,7 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
-        /** @description A change to the board. `type` is "<entity>.<change>", with entity one of lane, project, card_type, card, flow, agent_profile, mcp_server, flow_run, node_run, node_output (id is the node run; no data), card_event, question and change one of created, updated, moved, deleted, published. */
+        /** @description A change to the board. `type` is "<entity>.<change>", with entity one of lane, project, card_type, card, flow, agent_profile, mcp_server, flow_run, node_run, node_output (id is the node run; no data), card_event, question, artifact (no data) and change one of created, updated, moved, deleted, published. */
         BoardEvent: {
             /** @example card.moved */
             type: string;
@@ -643,7 +698,7 @@ export interface components {
             node_key: string;
             /** @description The type of the node in the flow version; empty if it is gone. */
             node_type: string;
-            /** @description How many times the run entered the node (review rounds re-enter agents). */
+            /** @description How many times the run entered the node (gateway rejections re-enter agents). */
             iteration: number;
             /** @enum {string} */
             status: "queued" | "running" | "awaiting_input" | "done" | "failed";
@@ -652,7 +707,14 @@ export interface components {
             error: string;
             /** @description What the agent reported with report_done. */
             summary: string;
-            /** @description The node output handed to the next node: the agent result, summary and structured output, or the review verdict and comments. */
+            /**
+             * @description How a gateway node decided; empty for other nodes and while it runs.
+             * @enum {string}
+             */
+            decision: "" | "approved" | "rejected";
+            /** @description The reason of approve or the feedback of reject. */
+            feedback: string;
+            /** @description The node output handed to the next node: the agent result, summary, structured output and gateway decision. */
             output: {
                 [key: string]: unknown;
             } | null;
@@ -729,8 +791,11 @@ export interface components {
             flow_name: string;
             /** Format: uuid */
             card_id: string;
-            /** @enum {string} */
-            trigger: "card_created" | "card_entered_lane";
+            /**
+             * @description artifact_revision runs revise an artifact from its review chat.
+             * @enum {string}
+             */
+            trigger: "card_created" | "card_entered_lane" | "artifact_revision";
             /**
              * @description While running or waiting, the card can only be moved by the flow.
              * @enum {string}
@@ -791,7 +856,7 @@ export interface components {
         FlowEdge: {
             id: string;
             source: string;
-            /** @description Output of the source node: trigger and move_card have "next"; agent has "done" and "failed"; review has "approved", "changes_requested" and "max_rounds_exceeded"; end has none. */
+            /** @description Output of the source node: trigger and move_card have "next"; agent has "done" and "failed", or with the gateway on "approved", "rejected", "max_rounds_exceeded" and "failed"; end has none. */
             source_handle: string;
             target: string;
         };
@@ -800,7 +865,7 @@ export interface components {
             y: number;
         };
         /** @description A step of the flow. Configs may be incomplete in drafts; publishing reports what is missing. */
-        FlowNode: components["schemas"]["TriggerNode"] | components["schemas"]["AgentNode"] | components["schemas"]["ReviewNode"] | components["schemas"]["MoveCardNode"] | components["schemas"]["EndNode"];
+        FlowNode: components["schemas"]["TriggerNode"] | components["schemas"]["AgentNode"] | components["schemas"]["MoveCardNode"] | components["schemas"]["EndNode"];
         TriggerNode: {
             id: string;
             /**
@@ -820,16 +885,6 @@ export interface components {
             type: "agent";
             position: components["schemas"]["Position"];
             config: components["schemas"]["AgentConfig"];
-        };
-        ReviewNode: {
-            id: string;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "review";
-            position: components["schemas"]["Position"];
-            config: components["schemas"]["ReviewConfig"];
         };
         MoveCardNode: {
             id: string;
@@ -882,20 +937,71 @@ export interface components {
             } | null;
             max_turns?: number;
             model?: string;
+            /** @description Blocks the editing tools, as for a reviewer. */
+            read_only?: boolean;
+            /** @description The agent decides with the approve or reject tools; the node outputs become approved, rejected, max_rounds_exceeded and failed. */
+            gateway?: boolean;
+            /** @description Rejections before the max_rounds_exceeded output. Required with the gateway on. */
+            max_rounds?: number;
+            artifacts?: components["schemas"]["ArtifactSpec"][];
         };
-        /** @description Runs a reviewer on the work of the previous agent. */
-        ReviewConfig: {
+        /** @description A file of the card workspace the node collects into the card when it finishes. */
+        ArtifactSpec: {
+            name: string;
+            /** @description Relative to the card workspace. */
+            path: string;
+        };
+        /** @description A file an agent node collected on the card, with its versions and review chat. Moving the card to another lane freezes it. */
+        Artifact: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            card_id: string;
+            name: string;
+            /** @description The card left the lane; the artifact can no longer be revised. */
+            frozen: boolean;
+            /** @description The agent is revising it now. */
+            revising: boolean;
+            /** @description Oldest first. */
+            versions: components["schemas"]["ArtifactVersion"][];
+            /** @description The review chat, oldest first. */
+            messages: components["schemas"]["ArtifactMessage"][];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ArtifactVersion: {
+            version: number;
+            path: string;
+            content: string;
+            /** Format: uuid */
+            node_run_id: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        ArtifactMessage: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            artifact_id: string;
+            /** @description The version the human was reading, or the agent revised. */
+            version: number;
+            /** @enum {string} */
+            role: "human" | "agent";
+            text: string;
             /**
              * Format: uuid
-             * @description Agent profile the reviewer runs as. Required to publish.
+             * @description The revision run the message belongs to.
              */
-            profile_id?: string;
-            /** @description Review prompt. Required to publish. */
-            prompt?: string;
-            allowed_tools?: string[];
-            disallowed_tools?: string[];
-            /** @description Rounds of changes before the max_rounds_exceeded output. Required to publish. */
-            max_rounds?: number;
+            flow_run_id: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        ArtifactMessageInput: {
+            text: string;
+            /** @description The version the human is reading. */
+            version: number;
         };
         /** @description Moves the card to a lane. */
         MoveCardConfig: {
@@ -1862,6 +1968,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NodeOutput"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listCardArtifacts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The artifacts agents collected on the card, with their versions and review chats, oldest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Artifact"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getArtifact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The artifact with its versions and review chat. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Artifact"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    reviseArtifact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArtifactMessageInput"];
+            };
+        };
+        responses: {
+            /** @description Sent; the revision runs. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactMessage"];
                 };
             };
             default: components["responses"]["Error"];

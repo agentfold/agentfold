@@ -68,8 +68,13 @@ func toNodeRun(r sqlcgen.NodeRun) domain.NodeRun {
 	if r.Summary != nil {
 		n.Summary = *r.Summary
 	}
+	if r.Decision != nil {
+		n.Decision = *r.Decision
+	}
+	if r.Feedback != nil {
+		n.Feedback = *r.Feedback
+	}
 	n.StructuredOutput = r.StructuredOutput
-	n.ReviewApproved = r.ReviewApproved
 	return n
 }
 
@@ -199,6 +204,13 @@ func (s *Store) SetNodeRunSummary(ctx context.Context, id uuid.UUID, summary str
 // SetNodeRunOutput records the structured output an agent submitted.
 func (s *Store) SetNodeRunOutput(ctx context.Context, id uuid.UUID, output json.RawMessage) (domain.NodeRun, error) {
 	row, err := s.q.SetNodeRunOutput(ctx, sqlcgen.SetNodeRunOutputParams{ID: id, StructuredOutput: output})
+	return mapRow(row, err, toNodeRun)
+}
+
+// SetNodeRunDecision records how a gateway decided, replacing an earlier
+// decision of the same run.
+func (s *Store) SetNodeRunDecision(ctx context.Context, id uuid.UUID, decision, feedback string) (domain.NodeRun, error) {
+	row, err := s.q.SetNodeRunDecision(ctx, sqlcgen.SetNodeRunDecisionParams{ID: id, Decision: &decision, Feedback: optional(feedback)})
 	return mapRow(row, err, toNodeRun)
 }
 

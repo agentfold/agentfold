@@ -24,6 +24,7 @@ type stubBoard struct {
 	version   domain.FlowVersion
 	profile   domain.AgentProfile
 	mcp       domain.McpServer
+	artifact  service.ArtifactDetail
 
 	call string
 	args []any
@@ -144,6 +145,18 @@ func (b *stubBoard) ListCardQuestions(_ context.Context, cardID uuid.UUID) ([]do
 
 func (b *stubBoard) AnswerQuestion(_ context.Context, id uuid.UUID, answer string) (domain.Question, error) {
 	return b.question, b.record("AnswerQuestion", id, answer)
+}
+
+func (b *stubBoard) ListCardArtifacts(_ context.Context, cardID uuid.UUID) ([]service.ArtifactDetail, error) {
+	return []service.ArtifactDetail{b.artifact}, b.record("ListCardArtifacts", cardID)
+}
+
+func (b *stubBoard) GetArtifact(_ context.Context, id uuid.UUID) (service.ArtifactDetail, error) {
+	return b.artifact, b.record("GetArtifact", id)
+}
+
+func (b *stubBoard) ReviseArtifact(_ context.Context, id uuid.UUID, version int, text string) (domain.ArtifactMessage, error) {
+	return b.artifact.Messages[0], b.record("ReviseArtifact", id, version, text)
 }
 
 func (b *stubBoard) ListLatestFlowRuns(context.Context) ([]domain.FlowRun, error) {

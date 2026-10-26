@@ -194,35 +194,15 @@ func TestResumeFailures(t *testing.T) {
 	})
 }
 
-func TestSubmitReview(t *testing.T) {
+func TestSetNodeRunDecision(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
-	run, nr := runningNode(t, s)
-	line := 7
-	saved, err := s.SubmitReview(ctx, nr, run.CardID, false, []domain.ReviewInput{
-		{File: "main.go", Line: &line, Body: "add tests"},
-		{Body: "rename it"},
-	})
-	if err != nil || len(saved) != 2 || saved[0].File != "main.go" || *saved[0].Line != 7 || saved[1].Line != nil || saved[0].Round != 1 {
-		t.Fatalf("SubmitReview = %+v, %v", saved, err)
+	_, nr := runningNode(t, s)
+	got, err := s.SetNodeRunDecision(ctx, nr.ID, domain.DecisionRejected, "add tests")
+	if err != nil || got.Decision != domain.DecisionRejected || got.Feedback != "add tests" {
+		t.Fatalf("SetNodeRunDecision = %+v, %v", got, err)
 	}
-	if _, err := s.SubmitReview(ctx, nr, run.CardID, true, nil); err != nil {
-		t.Fatal(err)
-	}
-	comments, err := s.ListReviewComments(ctx, nr.ID)
-	if err != nil || len(comments) != 0 {
-		t.Fatalf("resubmitting replaces the comments: %+v, %v", comments, err)
-	}
-	if got, _ := s.GetNodeRun(ctx, nr.ID); got.ReviewApproved == nil || !*got.ReviewApproved {
-		t.Fatalf("node %+v", got)
-	}
-	if _, err := s.ListReviewComments(cancelled(), nr.ID); err == nil {
-		t.Error("ListReviewComments: expected error")
-	}
-	for _, method := range []string{"DeleteReviewComments", "InsertReviewComment"} {
-		failOn(s, method, 1)
-		if _, err := s.SubmitReview(ctx, nr, run.CardID, false, []domain.ReviewInput{{Body: "x"}}); !errors.Is(err, errInjected) {
-			t.Fatalf("%s: got %v", method, err)
-		}
+	if got, err = s.SetNodeRunDecision(ctx, nr.ID, domain.DecisionApproved, ""); err != nil || got.Decision != domain.DecisionApproved || got.Feedback != "" {
+		t.Fatalf("a later decision replaces it: %+v, %v", got, err)
 	}
 }

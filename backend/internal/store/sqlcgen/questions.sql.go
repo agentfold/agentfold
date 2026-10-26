@@ -36,15 +36,6 @@ func (q *Queries) AnswerQuestion(ctx context.Context, arg AnswerQuestionParams) 
 	return i, err
 }
 
-const deleteReviewComments = `-- name: DeleteReviewComments :exec
-DELETE FROM review_comments WHERE node_run_id = $1
-`
-
-func (q *Queries) DeleteReviewComments(ctx context.Context, nodeRunID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteReviewComments, nodeRunID)
-	return err
-}
-
 const deliverQuestions = `-- name: DeliverQuestions :exec
 UPDATE questions SET delivered_at = now() WHERE node_run_id = $1 AND delivered_at IS NULL
 `
@@ -100,42 +91,6 @@ func (q *Queries) InsertQuestion(ctx context.Context, arg InsertQuestionParams) 
 	return i, err
 }
 
-const insertReviewComment = `-- name: InsertReviewComment :one
-INSERT INTO review_comments (card_id, node_run_id, round, file, line, body) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, card_id, node_run_id, round, file, line, body, created_at
-`
-
-type InsertReviewCommentParams struct {
-	CardID    uuid.UUID
-	NodeRunID uuid.UUID
-	Round     int32
-	File      *string
-	Line      *int32
-	Body      string
-}
-
-func (q *Queries) InsertReviewComment(ctx context.Context, arg InsertReviewCommentParams) (ReviewComment, error) {
-	row := q.db.QueryRow(ctx, insertReviewComment,
-		arg.CardID,
-		arg.NodeRunID,
-		arg.Round,
-		arg.File,
-		arg.Line,
-		arg.Body,
-	)
-	var i ReviewComment
-	err := row.Scan(
-		&i.ID,
-		&i.CardID,
-		&i.NodeRunID,
-		&i.Round,
-		&i.File,
-		&i.Line,
-		&i.Body,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const listCardQuestions = `-- name: ListCardQuestions :many
 SELECT id, card_id, node_run_id, text, answer, answered_at, delivered_at, created_at FROM questions WHERE card_id = $1 ORDER BY created_at, id
 `
@@ -157,39 +112,6 @@ func (q *Queries) ListCardQuestions(ctx context.Context, cardID uuid.UUID) ([]Qu
 			&i.Answer,
 			&i.AnsweredAt,
 			&i.DeliveredAt,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listReviewComments = `-- name: ListReviewComments :many
-SELECT id, card_id, node_run_id, round, file, line, body, created_at FROM review_comments WHERE node_run_id = $1 ORDER BY created_at, id
-`
-
-func (q *Queries) ListReviewComments(ctx context.Context, nodeRunID uuid.UUID) ([]ReviewComment, error) {
-	rows, err := q.db.Query(ctx, listReviewComments, nodeRunID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ReviewComment
-	for rows.Next() {
-		var i ReviewComment
-		if err := rows.Scan(
-			&i.ID,
-			&i.CardID,
-			&i.NodeRunID,
-			&i.Round,
-			&i.File,
-			&i.Line,
-			&i.Body,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

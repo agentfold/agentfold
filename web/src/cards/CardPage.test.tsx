@@ -138,6 +138,10 @@ describe('CardPage', () => {
     expect(
       screen.getByText('Nenhum agente rodou para este card.'),
     ).toBeInTheDocument()
+    await userEvent.click(tab('Artefatos'))
+    expect(
+      await screen.findByText('Nenhum artefato coletado neste card.'),
+    ).toBeInTheDocument()
   })
 
   it('shows unknown cards and load failures', async () => {
@@ -156,16 +160,15 @@ describe('CardPage', () => {
 
 describe('RunsPanel', () => {
   it('shows the nodes of the chosen run and what the agents did', async () => {
-    const review = nodeRun('rev', 'review', {
+    const review = nodeRun('rev', 'agent', {
       iteration: 2,
-      output_handle: 'changes_requested',
-      output: {
-        comments: [
-          { file: 'a.go', line: 3, body: 'add tests' },
-          { file: 'b.go', body: 'rename' },
-          { body: 'docs' },
-        ],
-      },
+      output_handle: 'rejected',
+      decision: 'rejected',
+      feedback: 'add tests',
+    })
+    const approved = nodeRun('gate', 'agent', {
+      output_handle: 'approved',
+      decision: 'approved',
     })
     const dev = nodeRun('dev', 'agent', {
       status: 'running',
@@ -178,9 +181,12 @@ describe('RunsPanel', () => {
       output_handle: '',
     })
     const { backend } = setup((id) => [
-      runDetail(id, 'running', [dev, review, failed], { flow_name: 'impl' }),
+      runDetail(id, 'running', [dev, review, approved, failed], {
+        flow_name: 'impl',
+      }),
       runDetail(id, 'failed', [nodeRun('old', 'agent')], {
         flow_name: 'old',
+        trigger: 'artifact_revision',
         error: 'no result',
       }),
     ])
@@ -216,9 +222,11 @@ describe('RunsPanel', () => {
 
     const reviewNode = screen.getByRole('article', { name: 'rev 2' })
     expect(reviewNode).toHaveTextContent('2ª vez')
-    expect(reviewNode).toHaveTextContent('saída: mudanças pedidas')
-    expect(reviewNode).toHaveTextContent('a.go:3 add tests')
-    expect(reviewNode).toHaveTextContent('b.go rename')
+    expect(reviewNode).toHaveTextContent('saída: rejeitado')
+    expect(reviewNode).toHaveTextContent('Rejeitou: add tests')
+    expect(screen.getByRole('article', { name: 'gate 1' })).toHaveTextContent(
+      'Aprovou',
+    )
     await userEvent.click(
       within(reviewNode).getByRole('button', { name: 'Ver saída do agente' }),
     )
@@ -236,6 +244,7 @@ describe('RunsPanel', () => {
       backend.state.cardRuns[1].id,
     )
     expect(screen.getByText(/: no result/)).toBeInTheDocument()
+    expect(screen.getByText('old (revisão de artefato)')).toBeInTheDocument()
     expect(screen.getByRole('article', { name: 'old 1' })).toHaveTextContent(
       'saída: concluído',
     )

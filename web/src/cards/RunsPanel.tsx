@@ -5,7 +5,7 @@ import { SelectField } from '../components/Field'
 import { Button } from '../components/Button'
 import { kindLabels, outputLabels } from '../flows/graph'
 import { outcomes } from './timeline'
-import { formatTime } from './format'
+import { formatTime, runLabel } from './format'
 import { NodeTranscript } from './NodeTranscript'
 
 const runStatus: Record<FlowRunDetail['status'], string> = {
@@ -52,12 +52,12 @@ export function RunsPanel({ runs }: { runs: FlowRunDetail[] }) {
           onChange={setSelected}
           options={runs.map((r) => ({
             value: r.id,
-            label: `${r.flow_name} · ${formatTime(r.started_at)} · ${runStatus[r.status]}`,
+            label: `${runLabel(r)} · ${formatTime(r.started_at)} · ${runStatus[r.status]}`,
           }))}
         />
       )}
       <p className="text-sm text-slate-600">
-        Fluxo <strong className="font-medium">{run.flow_name}</strong>{' '}
+        Fluxo <strong className="font-medium">{runLabel(run)}</strong>{' '}
         {runStatus[run.status]}, iniciado em {formatTime(run.started_at)}
         {run.error && <span className="text-red-700">: {run.error}</span>}
       </p>
@@ -72,23 +72,14 @@ export function RunsPanel({ runs }: { runs: FlowRunDetail[] }) {
   )
 }
 
-interface Comment {
-  file?: string
-  line?: number
-  body: string
-}
-
 function NodeRunItem({ node }: { node: NodeRun }) {
   // The output of the node running now shows from the start.
   const [showOutput, setShowOutput] = useState(node.status === 'running')
   const label = (kindLabels as Record<string, string | undefined>)[
     node.node_type
   ]
-  const isAgent = node.node_type === 'agent' || node.node_type === 'review'
+  const isAgent = node.node_type === 'agent'
   const output = node.output ?? {}
-  const comments = (
-    Array.isArray(output.comments) ? output.comments : []
-  ) as Comment[]
   const handle =
     outcomes[node.output_handle] ?? outputLabels[node.output_handle]
   return (
@@ -121,23 +112,14 @@ function NodeRunItem({ node }: { node: NodeRun }) {
           {node.summary}
         </p>
       )}
-      {comments.length > 0 && (
-        <div className="text-sm">
-          <p className="font-medium">Comentários do review:</p>
-          <ul className="list-inside list-disc text-slate-700">
-            {comments.map((c, i) => (
-              <li key={i}>
-                {c.file && (
-                  <code className="text-xs">
-                    {c.file}
-                    {c.line === undefined ? '' : `:${String(c.line)}`}
-                  </code>
-                )}{' '}
-                {c.body}
-              </li>
-            ))}
-          </ul>
-        </div>
+      {node.decision && (
+        <p className="text-sm text-slate-700">
+          <span className="font-medium">
+            {node.decision === 'approved' ? 'Aprovou' : 'Rejeitou'}
+            {node.feedback ? ': ' : ''}
+          </span>
+          <span className="whitespace-pre-wrap">{node.feedback}</span>
+        </p>
       )}
       {output.output !== undefined && (
         <div className="text-sm">
