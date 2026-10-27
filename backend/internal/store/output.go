@@ -60,7 +60,16 @@ func (s *Store) CancelFlowRun(ctx context.Context, id uuid.UUID) (domain.FlowRun
 		if err := q.CloseRunQuestions(ctx, id); err != nil {
 			return err
 		}
-		return q.CancelRunJobs(ctx, id)
+		if err := q.CancelRunJobs(ctx, id); err != nil {
+			return err
+		}
+		card, err := q.GetCard(ctx, run.CardID)
+		if err != nil || card.ParentCardID == nil {
+			return err
+		}
+		// A canceled child may settle the parent's WaitChildren node.
+		_, err = insertJob(ctx, q, NewJob{Kind: domain.JobChildChanged, Payload: domain.ChildChangedJob{CardID: card.ID}})
+		return err
 	})
 	return run, err
 }

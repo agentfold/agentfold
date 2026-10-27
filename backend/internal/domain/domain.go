@@ -105,6 +105,8 @@ const (
 	QuestionAnswered CardEventType = "question.answered"
 
 	ArtifactCollected CardEventType = "artifact.collected"
+
+	ChildrenCreated CardEventType = "children.created"
 )
 
 // CardEvent is an entry of the card timeline.

@@ -7,6 +7,7 @@ import {
   cardEvent,
   cardType,
   createFakeBackend,
+  flowRun,
   lane,
   nodeOutput,
   nodeRun,
@@ -53,7 +54,7 @@ describe('CardPage', () => {
       await screen.findByRole('heading', { name: 'Login' }),
     ).toBeInTheDocument()
     expect(screen.getByText('Todo · task · web')).toBeInTheDocument()
-    expect(screen.getByText('Aguardando resposta · dev')).toBeInTheDocument()
+    expect(screen.getByText('Aguardando · dev')).toBeInTheDocument()
     expect(
       await screen.findByRole('region', { name: 'Perguntas do agente' }),
     ).toBeInTheDocument()
@@ -127,6 +128,57 @@ describe('CardPage', () => {
     await waitFor(() => {
       expect(window.location.hash).toBe('#/board')
     })
+  })
+
+  it('shows the child cards and the parent', async () => {
+    const todo = lane('Todo', 0)
+    const task = cardType('task')
+    const parent = card('Chat', todo.id, task.id, 0)
+    const api = card('API', todo.id, task.id, 1, {
+      parent_card_id: parent.id,
+    })
+    const web = card('Web', 'gone', task.id, 2, { parent_card_id: parent.id })
+    const backend = createFakeBackend({
+      lanes: [todo],
+      cardTypes: [task],
+      cards: [parent, api, web],
+      runs: [flowRun(api.id, 'done', { flow_name: 'impl' })],
+    })
+    renderWithApi(<CardPage cardId={parent.id} />, backend)
+    const family = await screen.findByRole('region', {
+      name: 'Cards relacionados',
+    })
+    expect(
+      await within(family).findByText(
+        'Cards filhos · 1/2 com o fluxo concluído',
+      ),
+    ).toBeInTheDocument()
+    expect(within(family).getByText('Concluído · impl')).toBeInTheDocument()
+    expect(within(family).getByRole('link', { name: 'Web' })).toHaveAttribute(
+      'href',
+      `#/cards/${web.id}`,
+    )
+    expect(within(family).getByText('Todo')).toBeInTheDocument()
+  })
+
+  it('links a child card to its parent', async () => {
+    const todo = lane('Todo', 0)
+    const task = cardType('task')
+    const parent = card('Chat', todo.id, task.id, 0)
+    const api = card('API', todo.id, task.id, 1, {
+      parent_card_id: parent.id,
+    })
+    const backend = createFakeBackend({
+      lanes: [todo],
+      cardTypes: [task],
+      cards: [parent, api],
+    })
+    renderWithApi(<CardPage cardId={api.id} />, backend)
+    expect(await screen.findByRole('link', { name: 'Chat' })).toHaveAttribute(
+      'href',
+      `#/cards/${parent.id}`,
+    )
+    expect(screen.queryByText(/Cards filhos/)).not.toBeInTheDocument()
   })
 
   it('shows a card without runs', async () => {

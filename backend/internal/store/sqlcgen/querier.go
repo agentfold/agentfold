@@ -130,6 +130,10 @@ type Querier interface {
 	UpdateMcpServer(ctx context.Context, arg UpdateMcpServerParams) (McpServer, error)
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) (Project, error)
 	UpsertArtifact(ctx context.Context, arg UpsertArtifactParams) (Artifact, error)
+	WaitNodeRun(ctx context.Context, id uuid.UUID) (NodeRun, error)
+	// WaitingChildrenNodeRun finds the WaitChildren node run a card's flow
+	// is waiting at, if any.
+	WaitingChildrenNodeRun(ctx context.Context, cardID uuid.UUID) (NodeRun, error)
 }
 
 var _ Querier = (*Queries)(nil)

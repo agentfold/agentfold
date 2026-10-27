@@ -49,7 +49,13 @@ export function FlowEditor({ flowId }: { flowId: string }) {
   return <DraftEditor flow={flow.data} />
 }
 
-const palette: NodeKind[] = ['agent', 'move_card', 'end']
+const palette: NodeKind[] = [
+  'agent',
+  'move_card',
+  'create_cards',
+  'wait_children',
+  'end',
+]
 
 /**
  * Edits the draft locally; "Salvar" sends it to the server, which answers

@@ -20,6 +20,8 @@
 //	                 one repeats); rejections ask to "add tests"
 //	[write:F:T]      writes T and the run number to the file F of the
 //	                 working directory on every run without questions
+//	[cards:A,B,…]    submit_output with a card titled A, B… (the output of
+//	                 a node before CreateCards)
 package main
 
 import (
@@ -97,7 +99,7 @@ func main() {
 	fmt.Println(string(result))
 }
 
-var marker = regexp.MustCompile(`\[(ask|done|output|gate|write):([^\]]*)\]`)
+var marker = regexp.MustCompile(`\[(ask|done|output|gate|write|cards):([^\]]*)\]`)
 
 // opencode plays `opencode run` and `opencode auth`.
 func opencode(args []string) {
@@ -212,6 +214,12 @@ func script(prompt, dir, session string, connect func() (*sdk.ClientSession, err
 			} else {
 				err = call("reject", map[string]any{"feedback": "add tests"})
 			}
+		case "cards":
+			var cards []map[string]string
+			for _, title := range strings.Split(c[2], ",") {
+				cards = append(cards, map[string]string{"title": title, "description": "Part " + title})
+			}
+			err = call("submit_output", map[string]any{"output": map[string]any{"cards": cards}})
 		case "write":
 			file, text, _ := strings.Cut(c[2], ":")
 			err = os.WriteFile(file, fmt.Appendf(nil, "%s\n\nrun %d\n", text, run), 0o600)

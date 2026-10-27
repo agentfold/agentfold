@@ -6,14 +6,22 @@ import type {
   ArtifactSpec,
   McpServer,
   CardType,
+  CreateCardsConfig,
   Lane,
   MoveCardConfig,
   TriggerConfig,
+  WaitChildrenConfig,
 } from '../api/client'
 import { agentKindLabels } from '../agents/labels'
 import { Button } from '../components/Button'
 import { SelectField, TextArea, TextField } from '../components/Field'
-import { formatTools, parseCount, parseSchema, parseTools } from './config'
+import {
+  childCardsSchema,
+  formatTools,
+  parseCount,
+  parseSchema,
+  parseTools,
+} from './config'
 import type { StepConfig, StepData } from './graph'
 
 interface Props {
@@ -63,6 +71,55 @@ export function NodeConfigForm({
           }}
           options={laneOptions(lanes)}
         />
+      )
+    case 'create_cards': {
+      const config = data.config as CreateCardsConfig
+      return (
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-slate-500">
+            Cria um card filho para cada item da lista <code>cards</code> que o
+            nó anterior entrega (a saída estruturada de um agente com o schema
+            de cards filhos). O projeto de cada card vai pelo nome.
+          </p>
+          <SelectField
+            label="Baia dos cards criados"
+            value={config.lane_id ?? ''}
+            onChange={(laneId) => {
+              onChange({ ...config, lane_id: laneId || undefined })
+            }}
+            options={laneOptions(lanes)}
+          />
+          <SelectField
+            label="Tipo dos cards criados"
+            value={config.card_type_id ?? ''}
+            onChange={(typeId) => {
+              onChange({ ...config, card_type_id: typeId || undefined })
+            }}
+            options={[
+              { value: '', label: 'Escolha o tipo' },
+              ...cardTypes.map((t) => ({ value: t.id, label: t.name })),
+            ]}
+          />
+        </div>
+      )
+    }
+    case 'wait_children':
+      return (
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-slate-500">
+            O fluxo espera até todos os cards filhos chegarem à baia final
+            (todos concluídos), ou até a última execução de algum filho falhar
+            ou ser cancelada (algum falhou).
+          </p>
+          <SelectField
+            label="Baia em que o filho conta como concluído"
+            value={(data.config as WaitChildrenConfig).done_lane_id ?? ''}
+            onChange={(laneId) => {
+              onChange(laneId ? { done_lane_id: laneId } : {})
+            }}
+            options={laneOptions(lanes)}
+          />
+        </div>
       )
     case 'end':
       return (
@@ -476,6 +533,17 @@ function SchemaField({ schema, onChange }: SchemaFieldProps) {
           JSON inválido: precisa ser um objeto.
         </p>
       )}
+      <Button
+        variant="ghost"
+        className="self-start"
+        onClick={() => {
+          setText(JSON.stringify(childCardsSchema, null, 2))
+          setInvalid(false)
+          onChange(childCardsSchema)
+        }}
+      >
+        Usar o schema de cards filhos
+      </Button>
     </div>
   )
 }

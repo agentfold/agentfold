@@ -170,6 +170,14 @@ describe('summary', () => {
       'Gateway, até ? rodadas: Revise',
     ],
     [{ kind: 'move_card', config: {} }, 'Move o card de baia'],
+    [
+      { kind: 'create_cards', config: {} },
+      'Cria um card filho por item da saída anterior',
+    ],
+    [
+      { kind: 'wait_children', config: {} },
+      'Espera os cards filhos chegarem à baia final',
+    ],
     [{ kind: 'end', config: {} }, 'Encerra o fluxo'],
   ] as const)('describes %j', (data, want) => {
     expect(summary(data)).toBe(want)

@@ -192,8 +192,9 @@ func runWorker(ctx context.Context, args []string, stdout, stderr io.Writer) err
 		ID:           host + "-" + strconv.Itoa(os.Getpid()),
 		Capabilities: map[string]string{"host": host},
 		Handlers: map[string]worker.Handler{
-			domain.JobFlowTrigger: flows.HandleTrigger,
-			agent.JobKind:         flows.HandleAgent,
+			domain.JobFlowTrigger:  flows.HandleTrigger,
+			agent.JobKind:          flows.HandleAgent,
+			domain.JobChildChanged: flows.HandleChildChanged,
 		},
 		Lease: jobLease,
 		Beat:  jobBeat,

@@ -90,3 +90,13 @@ SELECT * FROM agent_sessions WHERE flow_run_id = $1 AND node_key = $2;
 
 -- name: InsertAgentSession :one
 INSERT INTO agent_sessions (flow_run_id, node_key, profile_id, claude_session_id) VALUES ($1, $2, $3, $4) RETURNING *;
+
+-- name: WaitNodeRun :one
+UPDATE node_runs SET status = 'waiting' WHERE id = $1 AND status IN ('queued', 'running') RETURNING *;
+
+-- WaitingChildrenNodeRun finds the WaitChildren node run a card's flow
+-- is waiting at, if any.
+-- name: WaitingChildrenNodeRun :one
+SELECT n.* FROM node_runs n JOIN flow_runs r ON r.id = n.flow_run_id
+WHERE r.card_id = $1 AND r.status = 'waiting' AND n.status = 'waiting'
+ORDER BY n.created_at DESC LIMIT 1;

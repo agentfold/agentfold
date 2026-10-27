@@ -35,7 +35,13 @@ type fakeStore struct {
 	// answered makes ResumeIfAnswered resume.
 	answered bool
 	// replies are the revision replies by run.
-	replies   map[uuid.UUID]string
+	replies map[uuid.UUID]string
+	// projects, children (in creation order) and cardRuns (latest first)
+	// back the child card nodes; unsettled makes SettleWait lose the race.
+	projects  []domain.Project
+	children  []uuid.UUID
+	cardRuns  map[uuid.UUID][]domain.FlowRun
+	unsettled bool
 	errs      map[string]error
 	failAfter map[string]int
 }
@@ -799,6 +805,7 @@ func TestStoreErrors(t *testing.T) {
 		{method: "AddCardEvent:node.finished", after: 1, agent: true},
 		{method: "FinishFlowRun", agent: true},
 		{method: "AddCardEvent:flow.finished", agent: true},
+		{method: "GetCard", agent: true},
 	} {
 		t.Run(fmt.Sprintf("%s after %d", tc.method, tc.after), func(t *testing.T) {
 			e := newEnv(t)

@@ -811,3 +811,83 @@ func (q *Queries) StartNodeRun(ctx context.Context, arg StartNodeRunParams) (Nod
 	)
 	return i, err
 }
+
+const waitNodeRun = `-- name: WaitNodeRun :one
+UPDATE node_runs SET status = 'waiting' WHERE id = $1 AND status IN ('queued', 'running') RETURNING id, flow_run_id, node_key, iteration, status, input, output, output_handle, session_id, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, created_at, started_at, finished_at, continued_at, token_hash, summary, structured_output, decision, feedback
+`
+
+func (q *Queries) WaitNodeRun(ctx context.Context, id uuid.UUID) (NodeRun, error) {
+	row := q.db.QueryRow(ctx, waitNodeRun, id)
+	var i NodeRun
+	err := row.Scan(
+		&i.ID,
+		&i.FlowRunID,
+		&i.NodeKey,
+		&i.Iteration,
+		&i.Status,
+		&i.Input,
+		&i.Output,
+		&i.OutputHandle,
+		&i.SessionID,
+		&i.TokensIn,
+		&i.TokensOut,
+		&i.CacheRead,
+		&i.CacheWrite,
+		&i.CostUsd,
+		&i.Turns,
+		&i.DurationMs,
+		&i.Error,
+		&i.CreatedAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.ContinuedAt,
+		&i.TokenHash,
+		&i.Summary,
+		&i.StructuredOutput,
+		&i.Decision,
+		&i.Feedback,
+	)
+	return i, err
+}
+
+const waitingChildrenNodeRun = `-- name: WaitingChildrenNodeRun :one
+SELECT n.id, n.flow_run_id, n.node_key, n.iteration, n.status, n.input, n.output, n.output_handle, n.session_id, n.tokens_in, n.tokens_out, n.cache_read, n.cache_write, n.cost_usd, n.turns, n.duration_ms, n.error, n.created_at, n.started_at, n.finished_at, n.continued_at, n.token_hash, n.summary, n.structured_output, n.decision, n.feedback FROM node_runs n JOIN flow_runs r ON r.id = n.flow_run_id
+WHERE r.card_id = $1 AND r.status = 'waiting' AND n.status = 'waiting'
+ORDER BY n.created_at DESC LIMIT 1
+`
+
+// WaitingChildrenNodeRun finds the WaitChildren node run a card's flow
+// is waiting at, if any.
+func (q *Queries) WaitingChildrenNodeRun(ctx context.Context, cardID uuid.UUID) (NodeRun, error) {
+	row := q.db.QueryRow(ctx, waitingChildrenNodeRun, cardID)
+	var i NodeRun
+	err := row.Scan(
+		&i.ID,
+		&i.FlowRunID,
+		&i.NodeKey,
+		&i.Iteration,
+		&i.Status,
+		&i.Input,
+		&i.Output,
+		&i.OutputHandle,
+		&i.SessionID,
+		&i.TokensIn,
+		&i.TokensOut,
+		&i.CacheRead,
+		&i.CacheWrite,
+		&i.CostUsd,
+		&i.Turns,
+		&i.DurationMs,
+		&i.Error,
+		&i.CreatedAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.ContinuedAt,
+		&i.TokenHash,
+		&i.Summary,
+		&i.StructuredOutput,
+		&i.Decision,
+		&i.Feedback,
+	)
+	return i, err
+}

@@ -228,6 +228,58 @@ describe('NodeConfigForm', () => {
     expect(result.config).toEqual({})
   })
 
+  it('configures the cards to create', async () => {
+    const result = setup('create_cards', {})
+    expect(screen.getByText(/Cria um card filho/)).toBeInTheDocument()
+    await userEvent.selectOptions(
+      screen.getByLabelText('Baia dos cards criados'),
+      'Todo',
+    )
+    await userEvent.selectOptions(
+      screen.getByLabelText('Tipo dos cards criados'),
+      'task',
+    )
+    expect(result.config).toEqual({ lane_id: todo.id, card_type_id: task.id })
+    await userEvent.selectOptions(
+      screen.getByLabelText('Baia dos cards criados'),
+      'Escolha a baia',
+    )
+    await userEvent.selectOptions(
+      screen.getByLabelText('Tipo dos cards criados'),
+      'Escolha o tipo',
+    )
+    expect(result.config).toEqual({
+      lane_id: undefined,
+      card_type_id: undefined,
+    })
+  })
+
+  it('configures the wait for the children', async () => {
+    const result = setup('wait_children', {})
+    const lane = screen.getByLabelText(
+      'Baia em que o filho conta como concluído',
+    )
+    await userEvent.selectOptions(lane, 'Todo')
+    expect(result.config).toEqual({ done_lane_id: todo.id })
+    await userEvent.selectOptions(lane, 'Escolha a baia')
+    expect(result.config).toEqual({})
+  })
+
+  it('fills in the child cards schema', async () => {
+    const result = setup('agent', {})
+    await userEvent.type(screen.getByLabelText(/Schema de saída/), '[[')
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Usar o schema de cards filhos' }),
+    )
+    expect(screen.queryByText(/JSON inválido/)).not.toBeInTheDocument()
+    expect(
+      screen.getByLabelText<HTMLTextAreaElement>(/Schema de saída/).value,
+    ).toContain('"cards"')
+    expect(result.config).toMatchObject({
+      output_schema: { required: ['cards'] },
+    })
+  })
+
   it('has nothing to configure on the end', () => {
     setup('end', {})
     expect(screen.getByText(/Não tem configuração/)).toBeInTheDocument()

@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -58,6 +59,10 @@ const (
 	NodeAgent    NodeType = "agent"
 	NodeMoveCard NodeType = "move_card"
 	NodeEnd      NodeType = "end"
+	// NodeCreateCards creates child cards from the output of the node
+	// before; NodeWaitChildren waits until the children are done.
+	NodeCreateCards  NodeType = "create_cards"
+	NodeWaitChildren NodeType = "wait_children"
 )
 
 // Outputs lists the outputs (edge source handles) of each node type. Agent
@@ -67,6 +72,11 @@ var Outputs = map[NodeType][]string{
 	NodeAgent:    {"done", "failed"},
 	NodeMoveCard: {"next"},
 	NodeEnd:      {},
+	// failed: the input lists no valid cards, or names unknown projects.
+	NodeCreateCards: {"next", "failed"},
+	// some_failed: the last run of a child failed or was canceled before
+	// the child reached the done lane.
+	NodeWaitChildren: {"all_done", "some_failed"},
 }
 
 // GatewayOutputs are the outputs of an agent node with the gateway on.
@@ -155,6 +165,60 @@ type ArtifactSpec struct {
 // MoveCardConfig moves the card to a lane.
 type MoveCardConfig struct {
 	LaneID uuid.UUID `json:"lane_id"`
+}
+
+// CreateCardsConfig creates the child cards in a lane, with a card type.
+type CreateCardsConfig struct {
+	LaneID     uuid.UUID `json:"lane_id"`
+	CardTypeID uuid.UUID `json:"card_type_id"`
+}
+
+// WaitChildrenConfig waits until every child card is in the done lane.
+type WaitChildrenConfig struct {
+	DoneLaneID uuid.UUID `json:"done_lane_id"`
+}
+
+// ChildCardSpec is a card a CreateCards node creates. Project is the name
+// of a project, optional.
+type ChildCardSpec struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Project     string `json:"project"`
+}
+
+// ChildCardsSchema is the output schema an agent node before a
+// CreateCards node declares to hand on the cards to create.
+const ChildCardsSchema = `{"type":"object","required":["cards"],"properties":{"cards":{"type":"array","minItems":1,"items":{` +
+	`"type":"object","required":["title"],"properties":{"title":{"type":"string"},"description":{"type":"string"},"project":{"type":"string"}}}}}}`
+
+// ChildCardsFrom reads the cards to create from what the node before
+// handed on: the cards list of an agent's structured output, or of the
+// input itself.
+func ChildCardsFrom(input json.RawMessage) ([]ChildCardSpec, error) {
+	var in struct {
+		Cards  []ChildCardSpec `json:"cards"`
+		Output *struct {
+			Cards []ChildCardSpec `json:"cards"`
+		} `json:"output"`
+	}
+	if err := json.Unmarshal(input, &in); err != nil {
+		return nil, fmt.Errorf("a entrada não é um JSON com a lista cards: %w", err)
+	}
+	cards := in.Cards
+	if in.Output != nil {
+		cards = in.Output.Cards
+	}
+	if len(cards) == 0 {
+		return nil, errors.New("a entrada não tem cards para criar: o nó anterior precisa entregar a lista cards na saída estruturada")
+	}
+	for i := range cards {
+		c := &cards[i]
+		c.Title, c.Description, c.Project = strings.TrimSpace(c.Title), strings.TrimSpace(c.Description), strings.TrimSpace(c.Project)
+		if c.Title == "" {
+			return nil, fmt.Errorf("o card %d da lista não tem título", i+1)
+		}
+	}
+	return cards, nil
 }
 
 // GraphProblem is a reason a graph cannot be published.
@@ -325,6 +389,27 @@ func (v *validator) configProblems(n Node) []string {
 		}
 		if !v.refs.Lanes[c.LaneID] {
 			return []string{"escolha a baia de destino"}
+		}
+	case NodeCreateCards:
+		var c CreateCardsConfig
+		if err := json.Unmarshal(config, &c); err != nil {
+			return []string{invalidConfig(err)}
+		}
+		var out []string
+		if !v.refs.Lanes[c.LaneID] {
+			out = append(out, "escolha a baia dos cards criados")
+		}
+		if !v.refs.CardTypes[c.CardTypeID] {
+			out = append(out, "escolha o tipo dos cards criados")
+		}
+		return out
+	case NodeWaitChildren:
+		var c WaitChildrenConfig
+		if err := json.Unmarshal(config, &c); err != nil {
+			return []string{invalidConfig(err)}
+		}
+		if !v.refs.Lanes[c.DoneLaneID] {
+			return []string{"escolha a baia em que um card filho conta como concluído"}
 		}
 	}
 	return nil

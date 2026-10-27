@@ -117,12 +117,28 @@ Fluxos são **versionados**: um FlowRun em andamento continua na versão em que 
 | **MoveCard** | baia destino | `next` |
 | **End** | — | — |
 
-**Fase 2 (logo após o MVP):**
+**Fase 2 (F11, feita):**
 
 | Nó | Config | Saídas |
 |---|---|---|
-| **CreateCards** | origem dos itens (saída estruturada), tipo de card, baia inicial, mapeamento item → título/descrição/projeto | `next` |
-| **WaitChildren** | condição de conclusão dos filhos (baia alcançada ou fluxo encerrado) | `all_done`, `some_failed` |
+| **CreateCards** | baia e tipo dos cards criados; os itens vêm da lista `cards` (título, descrição, projeto pelo nome) que o nó anterior entrega | `next`, `failed` |
+| **WaitChildren** | baia em que um filho conta como concluído | `all_done`, `some_failed` |
+
+**CreateCards** lê a lista `cards` da saída estruturada do Agent anterior (o editor preenche o
+schema com "Usar o schema de cards filhos") e cria todos os filhos numa transação, ou nenhum:
+um projeto desconhecido ou uma lista vazia saem por `failed`. Os filhos disparam os próprios
+fluxos pela baia em que nascem, e a saída do nó lista os cards criados.
+
+**WaitChildren** olha os filhos do card: `all_done` quando todos estão na baia configurada,
+`some_failed` assim que a última execução de algum filho falha ou é cancelada antes de chegar
+lá (sem filhos, `all_done`). Enquanto isso o nó fica `waiting` e o FlowRun do pai `waiting`. O
+pai é reavaliado quando um filho entra numa baia (job `flow.trigger` do filho), quando o fluxo
+de um filho termina e quando a execução de um filho é cancelada (job `flow.child_changed`);
+`SettleWait` garante que só uma dessas reavaliações siga a saída.
+
+O `get_card` do MCP devolve os artefatos do card (última versão, e se estão congelados) e, num
+card filho, o card pai com os artefatos dele: o agente que divide o trabalho e os que
+implementam leem o plano aprovado.
 
 Futuro: `PR`, `Fork/Join` (paralelo dentro do fluxo), `WaitSignal` (review entre repositórios
 no fluxo do pai), outros agentes.

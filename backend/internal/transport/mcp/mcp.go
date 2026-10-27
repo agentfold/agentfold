@@ -39,6 +39,7 @@ type Board interface {
 	AnswerQuestion(ctx context.Context, id uuid.UUID, answer string) (domain.Question, error)
 	ListLatestFlowRuns(ctx context.Context) ([]domain.FlowRun, error)
 	GetRunDetail(ctx context.Context, id uuid.UUID) (service.RunDetail, error)
+	ListCardArtifacts(ctx context.Context, cardID uuid.UUID) ([]service.ArtifactDetail, error)
 }
 
 var implementation = &sdk.Implementation{Name: "orquestrator", Version: "0.1.0"}

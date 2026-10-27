@@ -115,6 +115,21 @@ describe('describe', () => {
       { name: 'Plano', version: 2 },
       'Artefato Plano coletado (versão 2)',
     ],
+    [
+      'children.created',
+      { cards: [{ title: 'API' }, { title: 'Web' }] },
+      '2 cards filhos criados: API, Web',
+    ],
+    ['children.created', {}, '0 cards filhos criados: '],
+    [
+      'node.finished',
+      {
+        node_key: 'wait',
+        node_type: 'wait_children',
+        output_handle: 'all_done',
+      },
+      'Esperar filhos wait concluído (todos os filhos concluídos)',
+    ],
     ['something.else', {}, 'something.else'],
   ])('%s %j', (type, payload, want) => {
     expect(text(type, payload)).toBe(want)

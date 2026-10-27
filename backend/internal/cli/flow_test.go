@@ -123,9 +123,15 @@ func (s *stack) setUpBoard(t *testing.T) {
 // "approved"), plus the extra edges.
 func (s *stack) flow(t *testing.T, nodes []domain.Node, extra ...domain.Edge) {
 	t.Helper()
+	s.flowOn(t, "dev", s.doing, nodes, extra...)
+}
+
+// flowOn is flow with its name and the lane that triggers it.
+func (s *stack) flowOn(t *testing.T, name string, lane uuid.UUID, nodes []domain.Node, extra ...domain.Edge) {
+	t.Helper()
 	ctx := context.Background()
 	graph := domain.Graph{Nodes: append([]domain.Node{{
-		ID: "t", Type: domain.NodeTrigger, Config: fmt.Appendf(nil, `{"event":"card_entered_lane","lane_id":%q}`, s.doing),
+		ID: "t", Type: domain.NodeTrigger, Config: fmt.Appendf(nil, `{"event":"card_entered_lane","lane_id":%q}`, lane),
 	}}, nodes...)}
 	for i := 1; i < len(graph.Nodes); i++ {
 		prev := graph.Nodes[i-1]
@@ -133,7 +139,7 @@ func (s *stack) flow(t *testing.T, nodes []domain.Node, extra ...domain.Edge) {
 		graph.Edges = append(graph.Edges, domain.Edge{ID: prev.ID + "." + handle, Source: prev.ID, SourceHandle: handle, Target: graph.Nodes[i].ID})
 	}
 	graph.Edges = append(graph.Edges, extra...)
-	f, err := s.board.CreateFlow(ctx, "dev")
+	f, err := s.board.CreateFlow(ctx, name)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,13 +149,14 @@ func (s *stack) flow(t *testing.T, nodes []domain.Node, extra ...domain.Edge) {
 	if _, err := s.board.PublishFlow(ctx, f.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.board.UpdateFlow(ctx, f.ID, domain.FlowInput{Name: "dev", Enabled: true}); err != nil {
+	if _, err := s.board.UpdateFlow(ctx, f.ID, domain.FlowInput{Name: name, Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func (s *stack) agent(id, prompt string) domain.Node {
-	return s.agentWith(id, prompt, "")
+// agent is the agent node "dev".
+func (s *stack) agent(prompt string) domain.Node {
+	return s.agentWith("dev", prompt, "")
 }
 
 // agentWith is an agent node with more config fields (`"k":v,…`).
@@ -225,7 +232,7 @@ func (s *stack) stop(t *testing.T) {
 // stream shows live.
 func TestFlowEndToEnd(t *testing.T) {
 	s := newStack(t)
-	s.flow(t, []domain.Node{s.agent("dev", "Implement it"), s.moveTo(s.done), {ID: "end", Type: domain.NodeEnd, Config: []byte(`{}`)}})
+	s.flow(t, []domain.Node{s.agent("Implement it"), s.moveTo(s.done), {ID: "end", Type: domain.NodeEnd, Config: []byte(`{}`)}})
 	card := s.startCard(t)
 	// The card is created and moved by hand, then the flow starts, its agent
 	// runs, it moves the card to Done and ends. The server and the worker
@@ -266,7 +273,7 @@ func TestFlowEndToEnd(t *testing.T) {
 func TestGatewayCycleEndToEnd(t *testing.T) {
 	s := newStack(t)
 	review := s.agentWith("rev", "Review it [gate:reject,approve]", `"gateway":true,"max_rounds":3,"read_only":true`)
-	s.flow(t, []domain.Node{s.agent("dev", "Implement it [ask:Which database?] [done:implemented]"), review, s.moveTo(s.done)},
+	s.flow(t, []domain.Node{s.agent("Implement it [ask:Which database?] [done:implemented]"), review, s.moveTo(s.done)},
 		domain.Edge{ID: "rev.rejected", Source: "rev", SourceHandle: "rejected", Target: "dev"})
 	card := s.startCard(t)
 
@@ -380,6 +387,49 @@ func TestOpencodeEndToEnd(t *testing.T) {
 	s.stop(t)
 }
 
+// TestChildCardsEndToEnd: a planner splits the card into two children,
+// which run their own flow from their lane; the parent waits and moves on
+// once both are done.
+func TestChildCardsEndToEnd(t *testing.T) {
+	s := newStack(t)
+	ctx := context.Background()
+	kids, err := s.board.CreateLane(ctx, domain.LaneInput{Name: "Kids"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.flowOn(t, "impl", kids.ID, []domain.Node{s.agent("Implement it [done:implemented]"), s.moveTo(s.done)})
+	planner := s.agentWith("plan", "Split it [cards:API,Web] [done:split]", `"output_schema":`+domain.ChildCardsSchema)
+	create := domain.Node{ID: "create", Type: domain.NodeCreateCards, Config: fmt.Appendf(nil, `{"lane_id":%q,"card_type_id":%q}`, kids.ID, s.typ)}
+	wait := domain.Node{ID: "wait", Type: domain.NodeWaitChildren, Config: fmt.Appendf(nil, `{"done_lane_id":%q}`, s.done)}
+	s.flow(t, []domain.Node{planner, create, wait, s.moveTo(s.done)})
+	card := s.startCard(t)
+
+	run := s.waitRun(t, card, domain.RunDone)
+	if run.FlowName != "dev" {
+		t.Fatalf("run %+v", run)
+	}
+	children, err := s.store.ListChildCards(ctx, card)
+	if err != nil || len(children) != 2 || children[0].Title != "API" || children[1].Description != "Part Web" {
+		t.Fatalf("children %+v, %v", children, err)
+	}
+	for _, c := range children {
+		if c.LaneID != s.done {
+			t.Fatalf("child %s is not done: %+v", c.Title, c)
+		}
+	}
+	if got, _ := s.store.GetCard(ctx, card); got.LaneID != s.done {
+		t.Fatalf("parent %+v", got)
+	}
+	var handle string
+	if err := s.pool.QueryRow(ctx, `SELECT output_handle FROM node_runs WHERE node_key = 'wait'`).Scan(&handle); err != nil || handle != "all_done" {
+		t.Fatalf("wait %q, %v", handle, err)
+	}
+	if c := countOf(s.timeline(t, card), "children.created"); c != 1 {
+		t.Fatalf("timeline %q", s.timeline(t, card))
+	}
+	s.stop(t)
+}
+
 // TestArtifactRevisionEndToEnd: a planner writes plan.md, collected as the
 // artifact "Plano"; a message in its review chat resumes the planner, which
 // writes a new version, while the card stays in Done; moving the card on
@@ -479,7 +529,7 @@ func getJSON[T any](t *testing.T, url string) T {
 // is running: the cards are free again and the agent is interrupted.
 func TestCancelEndToEnd(t *testing.T) {
 	s := newStack(t)
-	s.flow(t, []domain.Node{s.agent("dev", "Implement it [ask:Which database?] [sleep]")})
+	s.flow(t, []domain.Node{s.agent("Implement it [ask:Which database?] [sleep]")})
 	waiting := s.startCard(t)
 	run := s.waitRun(t, waiting, domain.RunWaiting)
 	canceled := postStatus(t, s.base+"/api/flow-runs/"+run.ID.String()+"/cancel", "", http.StatusOK)

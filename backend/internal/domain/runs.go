@@ -61,6 +61,16 @@ type TriggerJob struct {
 	CardEventID uuid.UUID `json:"card_event_id"`
 }
 
+// JobChildChanged is the queue job that wakes the WaitChildren node of a
+// card's parent when something the board does outside the engine (a
+// canceled run) may settle it.
+const JobChildChanged = "flow.child_changed"
+
+// ChildChangedJob is the payload of a flow.child_changed job.
+type ChildChangedJob struct {
+	CardID uuid.UUID `json:"card_id"`
+}
+
 // NodeStatus is the state of a node run.
 type NodeStatus string
 
@@ -69,8 +79,10 @@ const (
 	NodeQueued        NodeStatus = "queued"
 	NodeRunning       NodeStatus = "running"
 	NodeAwaitingInput NodeStatus = "awaiting_input"
-	NodeDone          NodeStatus = "done"
-	NodeFailed        NodeStatus = "failed"
+	// NodeWaiting is a WaitChildren node waiting for the child cards.
+	NodeWaiting NodeStatus = "waiting"
+	NodeDone    NodeStatus = "done"
+	NodeFailed  NodeStatus = "failed"
 )
 
 // Usage is what an agent run consumed.

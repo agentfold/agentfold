@@ -6,6 +6,7 @@ import {
   useCards,
   useCardTypes,
   useLanes,
+  useLatestRuns,
   useProjects,
 } from '../api/queries'
 import { isActive } from '../board/runs'
@@ -15,6 +16,7 @@ import { ErrorMessage } from '../components/ErrorMessage'
 import { QueryStatus } from '../components/Loading'
 import { goTo, pageHref } from '../route'
 import { ArtifactsPanel } from './ArtifactsPanel'
+import { CardFamily } from './CardFamily'
 import { CardForm } from './CardForm'
 import { CardQuestions } from './CardQuestions'
 import { CardTimeline } from './CardTimeline'
@@ -38,6 +40,7 @@ export function CardPage({ cardId }: { cardId: string }) {
   const lanes = useLanes()
   const cardTypes = useCardTypes()
   const projects = useProjects()
+  const latestRuns = useLatestRuns()
   const cancel = useCancelRun()
   const [tab, setTab] = useState<Tab>('runs')
 
@@ -94,6 +97,12 @@ export function CardPage({ cardId }: { cardId: string }) {
         )}
       </header>
       <ErrorMessage error={cancel.error} />
+      <CardFamily
+        card={card}
+        cards={cards.data}
+        laneName={(id) => lanes.data?.find((l) => l.id === id)?.name}
+        latestRuns={latestRuns.data}
+      />
       <CardQuestions cardId={card.id} />
       <nav role="tablist" className="flex gap-1 border-b border-slate-200">
         {tabs.map((t) => (

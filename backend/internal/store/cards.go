@@ -103,28 +103,51 @@ func (s *Store) GetCard(ctx context.Context, id uuid.UUID) (domain.Card, error) 
 func (s *Store) CreateCard(ctx context.Context, in domain.NewCard) (domain.Card, error) {
 	var card domain.Card
 	err := s.inTx(ctx, func(q sqlcgen.Querier) error {
-		if err := lockLane(ctx, q, in.LaneID); err != nil {
-			return err
-		}
-		count, err := q.CountCardsInLane(ctx, in.LaneID)
-		if err != nil {
-			return err
-		}
-		row, err := q.InsertCard(ctx, sqlcgen.InsertCardParams{
-			Title:        in.Title,
-			Description:  in.Description,
-			CardTypeID:   in.CardTypeID,
-			ProjectID:    in.ProjectID,
-			ParentCardID: in.ParentCardID,
-			LaneID:       in.LaneID,
-			Position:     count,
-		})
-		if card, err = mapRow(row, err, toCard); err != nil {
-			return err
-		}
-		return addTriggerEvent(ctx, q, card.ID, domain.CardCreated, cardCreatedPayload{LaneID: card.LaneID})
+		var err error
+		card, err = createCard(ctx, q, in)
+		return err
 	})
 	return card, err
+}
+
+// CreateChildCards creates the cards of a CreateCards node, all or none.
+func (s *Store) CreateChildCards(ctx context.Context, cards []domain.NewCard) ([]domain.Card, error) {
+	out := make([]domain.Card, len(cards))
+	err := s.inTx(ctx, func(q sqlcgen.Querier) error {
+		for i, in := range cards {
+			card, err := createCard(ctx, q, in)
+			if err != nil {
+				return err
+			}
+			out[i] = card
+		}
+		return nil
+	})
+	return out, err
+}
+
+func createCard(ctx context.Context, q sqlcgen.Querier, in domain.NewCard) (domain.Card, error) {
+	if err := lockLane(ctx, q, in.LaneID); err != nil {
+		return domain.Card{}, err
+	}
+	count, err := q.CountCardsInLane(ctx, in.LaneID)
+	if err != nil {
+		return domain.Card{}, err
+	}
+	row, err := q.InsertCard(ctx, sqlcgen.InsertCardParams{
+		Title:        in.Title,
+		Description:  in.Description,
+		CardTypeID:   in.CardTypeID,
+		ProjectID:    in.ProjectID,
+		ParentCardID: in.ParentCardID,
+		LaneID:       in.LaneID,
+		Position:     count,
+	})
+	card, err := mapRow(row, err, toCard)
+	if err != nil {
+		return card, err
+	}
+	return card, addTriggerEvent(ctx, q, card.ID, domain.CardCreated, cardCreatedPayload{LaneID: card.LaneID})
 }
 
 // UpdateCard changes the editable fields of a card and records the event.

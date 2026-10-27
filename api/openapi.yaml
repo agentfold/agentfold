@@ -908,7 +908,7 @@ components:
           description: How many times the run entered the node (gateway rejections re-enter agents).
         status:
           type: string
-          enum: [queued, running, awaiting_input, done, failed]
+          enum: [queued, running, awaiting_input, waiting, done, failed]
         output_handle:
           type: string
           description: The output the node left through; empty while it runs.
@@ -1090,7 +1090,9 @@ components:
           description: >
             Output of the source node: trigger and move_card have "next";
             agent has "done" and "failed", or with the gateway on "approved",
-            "rejected", "max_rounds_exceeded" and "failed"; end has none.
+            "rejected", "max_rounds_exceeded" and "failed"; create_cards has
+            "next" and "failed"; wait_children has "all_done" and
+            "some_failed"; end has none.
         target: { type: string }
     Position:
       type: object
@@ -1106,6 +1108,8 @@ components:
         - $ref: "#/components/schemas/TriggerNode"
         - $ref: "#/components/schemas/AgentNode"
         - $ref: "#/components/schemas/MoveCardNode"
+        - $ref: "#/components/schemas/CreateCardsNode"
+        - $ref: "#/components/schemas/WaitChildrenNode"
         - $ref: "#/components/schemas/EndNode"
       discriminator:
         propertyName: type
@@ -1113,6 +1117,8 @@ components:
           trigger: "#/components/schemas/TriggerNode"
           agent: "#/components/schemas/AgentNode"
           move_card: "#/components/schemas/MoveCardNode"
+          create_cards: "#/components/schemas/CreateCardsNode"
+          wait_children: "#/components/schemas/WaitChildrenNode"
           end: "#/components/schemas/EndNode"
     TriggerNode:
       type: object
@@ -1138,6 +1144,22 @@ components:
         type: { type: string, enum: [move_card] }
         position: { $ref: "#/components/schemas/Position" }
         config: { $ref: "#/components/schemas/MoveCardConfig" }
+    CreateCardsNode:
+      type: object
+      required: [id, type, position, config]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [create_cards] }
+        position: { $ref: "#/components/schemas/Position" }
+        config: { $ref: "#/components/schemas/CreateCardsConfig" }
+    WaitChildrenNode:
+      type: object
+      required: [id, type, position, config]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [wait_children] }
+        position: { $ref: "#/components/schemas/Position" }
+        config: { $ref: "#/components/schemas/WaitChildrenConfig" }
     EndNode:
       type: object
       required: [id, type, position, config]
@@ -1283,6 +1305,29 @@ components:
       description: Moves the card to a lane.
       properties:
         lane_id:
+          type: string
+          format: uuid
+          description: Required to publish.
+    CreateCardsConfig:
+      type: object
+      description: >
+        Creates a child card for each item of the "cards" list the node
+        before hands on (an agent's structured output, with title,
+        description and project by name).
+      properties:
+        lane_id:
+          type: string
+          format: uuid
+          description: Lane of the new cards. Required to publish.
+        card_type_id:
+          type: string
+          format: uuid
+          description: Type of the new cards. Required to publish.
+    WaitChildrenConfig:
+      type: object
+      description: Waits until every child card is in the done lane.
+      properties:
+        done_lane_id:
           type: string
           format: uuid
           description: Required to publish.

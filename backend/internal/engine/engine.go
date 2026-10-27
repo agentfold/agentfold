@@ -39,6 +39,13 @@ type Store interface {
 	ResumeIfAnswered(ctx context.Context, nodeRunID uuid.UUID) (domain.FlowRun, bool, error)
 	EnqueueJob(ctx context.Context, j store.NewJob) (uuid.UUID, error)
 	AddRevisionReply(ctx context.Context, flowRunID uuid.UUID, text string) (domain.ArtifactMessage, error)
+	ListProjects(ctx context.Context) ([]domain.Project, error)
+	CreateChildCards(ctx context.Context, cards []domain.NewCard) ([]domain.Card, error)
+	ListChildCards(ctx context.Context, parentID uuid.UUID) ([]domain.Card, error)
+	ListCardFlowRuns(ctx context.Context, cardID uuid.UUID) ([]domain.FlowRun, error)
+	WaitNodeRun(ctx context.Context, id uuid.UUID) (domain.NodeRun, error)
+	WaitingChildrenNodeRun(ctx context.Context, cardID uuid.UUID) (domain.NodeRun, error)
+	SettleWait(ctx context.Context, id uuid.UUID, r domain.NodeResult) (domain.NodeRun, bool, error)
 }
 
 // Publisher announces the changes the engine makes to the board.
@@ -63,7 +70,8 @@ type Engine struct {
 }
 
 // HandleTrigger runs flow.trigger jobs: it starts every runnable flow whose
-// trigger matches the card event.
+// trigger matches the card event. A child card entering a lane may settle
+// the WaitChildren node of its parent.
 func (e *Engine) HandleTrigger(ctx context.Context, payload json.RawMessage) error {
 	var p domain.TriggerJob
 	if err := json.Unmarshal(payload, &p); err != nil {
@@ -91,7 +99,7 @@ func (e *Engine) HandleTrigger(ctx context.Context, payload json.RawMessage) err
 			errs = append(errs, e.start(ctx, flow, card.ID, node, trigger.Event))
 		}
 	}
-	return errors.Join(errs...)
+	return errors.Join(append(errs, e.wakeParent(ctx, card))...)
 }
 
 // HandleAgent runs agent.run jobs: it runs the agent node, then follows its
@@ -255,6 +263,9 @@ func (e *Engine) advance(ctx context.Context, r *run, key string, input json.Raw
 		if err != nil {
 			return err
 		}
+		if result.Status == domain.NodeWaiting {
+			return e.waitChildren(ctx, r, nr)
+		}
 		if nr, err = e.Store.FinishNodeRun(ctx, nr.ID, result); err != nil {
 			return err
 		}
@@ -297,8 +308,9 @@ func (e *Engine) queueAgent(ctx context.Context, nr domain.NodeRun, input json.R
 	return err
 }
 
-// runBoardNode runs a node that does not need an agent. Board nodes hand
-// on the output of the node before, so agents after them still get it.
+// runBoardNode runs a node that does not need an agent. MoveCard and End
+// hand on the output of the node before, so agents after them still get
+// it. A WaitChildren node whose children are on their way waits.
 func (e *Engine) runBoardNode(ctx context.Context, r *run, node domain.Node, input json.RawMessage) (domain.NodeResult, error) {
 	var result domain.NodeResult
 	var err error
@@ -307,6 +319,14 @@ func (e *Engine) runBoardNode(ctx context.Context, r *run, node domain.Node, inp
 		result, err = e.moveCard(ctx, r, node)
 	case domain.NodeEnd:
 		result = domain.NodeResult{Status: domain.NodeDone}
+	case domain.NodeCreateCards:
+		return e.createCards(ctx, r, node, input)
+	case domain.NodeWaitChildren:
+		settled, err := e.childrenResult(ctx, r.CardID, node)
+		if settled == nil {
+			return domain.NodeResult{Status: domain.NodeWaiting}, err
+		}
+		return *settled, err
 	default:
 		return failed(fmt.Sprintf("o nó %s (%s) ainda não é suportado", node.ID, node.Type)), nil
 	}
@@ -362,9 +382,21 @@ func (e *Engine) finish(ctx context.Context, r *run, status domain.RunStatus, ms
 	}
 	fr.FlowName = r.FlowName
 	e.Pub.Publish(events.Event{Type: "flow_run.updated", ID: fr.ID, Data: fr})
-	return e.timeline(ctx, r.CardID, domain.FlowFinished, flowFinished{
+	err = e.timeline(ctx, r.CardID, domain.FlowFinished, flowFinished{
 		FlowRunID: r.ID, FlowName: r.FlowName, Status: status, Error: msg,
 	})
+	if err != nil {
+		return err
+	}
+	// A child that failed may settle the WaitChildren node of its parent.
+	card, err := e.Store.GetCard(ctx, r.CardID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil // deleted meanwhile
+	}
+	if err != nil {
+		return err
+	}
+	return e.wakeParent(ctx, card)
 }
 
 // nodeFinished records the end of a node run in the card timeline.

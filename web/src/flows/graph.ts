@@ -2,15 +2,22 @@ import type { Connection, Edge, Node, NodeChange } from '@xyflow/react'
 
 import type {
   AgentConfig,
+  CreateCardsConfig,
   FlowGraph,
   FlowNode,
   MoveCardConfig,
   TriggerConfig,
+  WaitChildrenConfig,
 } from '../api/client'
 
 export type NodeKind = FlowNode['type']
 export type StepConfig =
-  TriggerConfig | AgentConfig | MoveCardConfig | Record<string, never>
+  | TriggerConfig
+  | AgentConfig
+  | MoveCardConfig
+  | CreateCardsConfig
+  | WaitChildrenConfig
+  | Record<string, never>
 
 export interface StepData extends Record<string, unknown> {
   kind: NodeKind
@@ -26,6 +33,8 @@ export const kindLabels: Record<NodeKind, string> = {
   trigger: 'Gatilho',
   agent: 'Agente',
   move_card: 'Mover card',
+  create_cards: 'Criar cards',
+  wait_children: 'Esperar filhos',
   end: 'Fim',
 }
 
@@ -34,6 +43,8 @@ const outputs: Record<NodeKind, string[]> = {
   trigger: ['next'],
   agent: ['done', 'failed'],
   move_card: ['next'],
+  create_cards: ['next', 'failed'],
+  wait_children: ['all_done', 'some_failed'],
   end: [],
 }
 
@@ -54,6 +65,8 @@ export const outputLabels: Record<string, string> = {
   approved: 'aprovado',
   rejected: 'rejeitado',
   max_rounds_exceeded: 'limite de rodadas',
+  all_done: 'todos concluídos',
+  some_failed: 'algum falhou',
 }
 
 export function defaultConfig(kind: NodeKind): StepConfig {
@@ -200,6 +213,10 @@ export function summary({ kind, config }: StepData): string {
     }
     case 'move_card':
       return 'Move o card de baia'
+    case 'create_cards':
+      return 'Cria um card filho por item da saída anterior'
+    case 'wait_children':
+      return 'Espera os cards filhos chegarem à baia final'
     case 'end':
       return 'Encerra o fluxo'
   }

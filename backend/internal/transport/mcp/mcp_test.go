@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -23,12 +24,13 @@ var errBoard = errors.New("board failed")
 
 // fakeBoard records calls; errs fails them by name.
 type fakeBoard struct {
-	runs   map[string]service.AgentRun
-	calls  []string
-	args   map[string]any
-	errs   map[string]error
-	card   domain.Card
-	latest []domain.FlowRun
+	runs      map[string]service.AgentRun
+	calls     []string
+	args      map[string]any
+	errs      map[string]error
+	card      domain.Card
+	latest    []domain.FlowRun
+	artifacts []service.ArtifactDetail
 }
 
 func newBoard() *fakeBoard {
@@ -85,6 +87,10 @@ func (b *fakeBoard) ListCards(context.Context) ([]domain.Card, error) {
 
 func (b *fakeBoard) GetCard(_ context.Context, id uuid.UUID) (domain.Card, error) {
 	return b.card, b.call("GetCard", id)
+}
+
+func (b *fakeBoard) ListCardArtifacts(_ context.Context, id uuid.UUID) ([]service.ArtifactDetail, error) {
+	return b.artifacts, b.call("ListCardArtifacts", id)
 }
 
 func (b *fakeBoard) CreateCard(_ context.Context, in domain.NewCard) (domain.Card, error) {
@@ -194,9 +200,31 @@ func TestAgentTools(t *testing.T) {
 	if got := toolNames(t, cs); !slices.Equal(got, []string{"ask_human", "get_card", "report_done"}) {
 		t.Fatalf("tools %v", got)
 	}
-	if out, isErr := call(t, cs, "get_card", map[string]any{}); isErr || !strings.Contains(out, `"title":"Login"`) {
+	if out, isErr := call(t, cs, "get_card", map[string]any{}); isErr || !strings.Contains(out, `"title":"Login"`) || !strings.Contains(out, `"artifacts":[]`) || strings.Contains(out, `"parent"`) {
 		t.Fatalf("get_card: %s", out)
 	}
+	frozen := time.Now()
+	board.artifacts = []service.ArtifactDetail{{
+		Artifact: domain.Artifact{Name: "Plano", FrozenAt: &frozen},
+		Versions: []domain.ArtifactVersion{{Version: 1, Content: "old"}, {Version: 2, Path: "plano.md", Content: "# Plano"}},
+	}}
+	parent := uuid.New()
+	board.card.ParentCardID = &parent
+	out, isErr := call(t, cs, "get_card", map[string]any{})
+	if isErr || !strings.Contains(out, `{"content":"# Plano","frozen":true,"name":"Plano","path":"plano.md","version":2}`) || !strings.Contains(out, `"parent":{`) {
+		t.Fatalf("get_card with artifacts and parent: %s", out)
+	}
+	board.errs["ListCardArtifacts"] = errBoard
+	if out, isErr := call(t, cs, "get_card", map[string]any{}); !isErr {
+		t.Fatalf("get_card error: %s", out)
+	}
+	board.errs["ListCardArtifacts"] = nil
+	board.errs["GetCard"] = errBoard
+	if out, isErr := call(t, cs, "get_card", map[string]any{}); !isErr {
+		t.Fatalf("get_card without the card: %s", out)
+	}
+	board.errs["GetCard"] = nil
+	board.card.ParentCardID = nil
 	if out, isErr := call(t, cs, "ask_human", map[string]any{"questions": []string{"DB?"}}); isErr || !strings.Contains(out, "End your turn") {
 		t.Fatalf("ask_human: %s", out)
 	}

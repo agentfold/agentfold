@@ -108,6 +108,21 @@ func (e ArtifactMessageRole) Valid() bool {
 	}
 }
 
+// Defines values for CreateCardsNodeType.
+const (
+	CreateCards CreateCardsNodeType = "create_cards"
+)
+
+// Valid indicates whether the value is a known member of the CreateCardsNodeType enum.
+func (e CreateCardsNodeType) Valid() bool {
+	switch e {
+	case CreateCards:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EndNodeType.
 const (
 	End EndNodeType = "end"
@@ -367,6 +382,7 @@ const (
 	NodeRunStatusFailed        NodeRunStatus = "failed"
 	NodeRunStatusQueued        NodeRunStatus = "queued"
 	NodeRunStatusRunning       NodeRunStatus = "running"
+	NodeRunStatusWaiting       NodeRunStatus = "waiting"
 )
 
 // Valid indicates whether the value is a known member of the NodeRunStatus enum.
@@ -381,6 +397,8 @@ func (e NodeRunStatus) Valid() bool {
 	case NodeRunStatusQueued:
 		return true
 	case NodeRunStatusRunning:
+		return true
+	case NodeRunStatusWaiting:
 		return true
 	default:
 		return false
@@ -429,6 +447,21 @@ const (
 func (e TriggerNodeType) Valid() bool {
 	switch e {
 	case Trigger:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WaitChildrenNodeType.
+const (
+	WaitChildren WaitChildrenNodeType = "wait_children"
+)
+
+// Valid indicates whether the value is a known member of the WaitChildrenNodeType enum.
+func (e WaitChildrenNodeType) Valid() bool {
+	switch e {
+	case WaitChildren:
 		return true
 	default:
 		return false
@@ -638,6 +671,27 @@ type CardTypeInput struct {
 // Example: #3b82f6
 type Color = string
 
+// CreateCardsConfig Creates a child card for each item of the "cards" list the node before hands on (an agent's structured output, with title, description and project by name).
+type CreateCardsConfig struct {
+	// CardTypeId Type of the new cards. Required to publish.
+	CardTypeId *openapi_types.UUID `json:"card_type_id,omitempty"`
+
+	// LaneId Lane of the new cards. Required to publish.
+	LaneId *openapi_types.UUID `json:"lane_id,omitempty"`
+}
+
+// CreateCardsNode defines model for CreateCardsNode.
+type CreateCardsNode struct {
+	// Config Creates a child card for each item of the "cards" list the node before hands on (an agent's structured output, with title, description and project by name).
+	Config   CreateCardsConfig   `json:"config"`
+	Id       string              `json:"id"`
+	Position Position            `json:"position"`
+	Type     CreateCardsNodeType `json:"type"`
+}
+
+// CreateCardsNodeType defines model for CreateCardsNode.Type.
+type CreateCardsNodeType string
+
 // EndNode defines model for EndNode.
 type EndNode struct {
 	Config   map[string]interface{} `json:"config"`
@@ -687,7 +741,7 @@ type FlowEdge struct {
 	Id     string `json:"id"`
 	Source string `json:"source"`
 
-	// SourceHandle Output of the source node: trigger and move_card have "next"; agent has "done" and "failed", or with the gateway on "approved", "rejected", "max_rounds_exceeded" and "failed"; end has none.
+	// SourceHandle Output of the source node: trigger and move_card have "next"; agent has "done" and "failed", or with the gateway on "approved", "rejected", "max_rounds_exceeded" and "failed"; create_cards has "next" and "failed"; wait_children has "all_done" and "some_failed"; end has none.
 	SourceHandle string `json:"source_handle"`
 	Target       string `json:"target"`
 }
@@ -1029,6 +1083,24 @@ type TriggerNode struct {
 // TriggerNodeType defines model for TriggerNode.Type.
 type TriggerNodeType string
 
+// WaitChildrenConfig Waits until every child card is in the done lane.
+type WaitChildrenConfig struct {
+	// DoneLaneId Required to publish.
+	DoneLaneId *openapi_types.UUID `json:"done_lane_id,omitempty"`
+}
+
+// WaitChildrenNode defines model for WaitChildrenNode.
+type WaitChildrenNode struct {
+	// Config Waits until every child card is in the done lane.
+	Config   WaitChildrenConfig   `json:"config"`
+	Id       string               `json:"id"`
+	Position Position             `json:"position"`
+	Type     WaitChildrenNodeType `json:"type"`
+}
+
+// WaitChildrenNodeType defines model for WaitChildrenNode.Type.
+type WaitChildrenNodeType string
+
 // ID defines model for ID.
 type ID = openapi_types.UUID
 
@@ -1191,6 +1263,74 @@ func (t *FlowNode) MergeMoveCardNode(v MoveCardNode) error {
 	return err
 }
 
+// AsCreateCardsNode returns the union data inside the FlowNode as a CreateCardsNode
+func (t FlowNode) AsCreateCardsNode() (CreateCardsNode, error) {
+	var body CreateCardsNode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreateCardsNode overwrites any union data inside the FlowNode as the provided CreateCardsNode
+func (t *FlowNode) FromCreateCardsNode(v CreateCardsNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"create_cards"}`))
+	t.union = b
+	return err
+}
+
+// MergeCreateCardsNode performs a merge with any union data inside the FlowNode, using the provided CreateCardsNode
+func (t *FlowNode) MergeCreateCardsNode(v CreateCardsNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"create_cards"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsWaitChildrenNode returns the union data inside the FlowNode as a WaitChildrenNode
+func (t FlowNode) AsWaitChildrenNode() (WaitChildrenNode, error) {
+	var body WaitChildrenNode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromWaitChildrenNode overwrites any union data inside the FlowNode as the provided WaitChildrenNode
+func (t *FlowNode) FromWaitChildrenNode(v WaitChildrenNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"wait_children"}`))
+	t.union = b
+	return err
+}
+
+// MergeWaitChildrenNode performs a merge with any union data inside the FlowNode, using the provided WaitChildrenNode
+func (t *FlowNode) MergeWaitChildrenNode(v WaitChildrenNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"wait_children"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 // AsEndNode returns the union data inside the FlowNode as a EndNode
 func (t FlowNode) AsEndNode() (EndNode, error) {
 	var body EndNode
@@ -1241,12 +1381,16 @@ func (t FlowNode) ValueByDiscriminator() (interface{}, error) {
 	switch discriminator {
 	case "agent":
 		return t.AsAgentNode()
+	case "create_cards":
+		return t.AsCreateCardsNode()
 	case "end":
 		return t.AsEndNode()
 	case "move_card":
 		return t.AsMoveCardNode()
 	case "trigger":
 		return t.AsTriggerNode()
+	case "wait_children":
+		return t.AsWaitChildrenNode()
 	default:
 		return nil, errors.New("unknown discriminator value: " + discriminator)
 	}

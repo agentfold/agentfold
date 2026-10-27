@@ -701,7 +701,7 @@ export interface components {
             /** @description How many times the run entered the node (gateway rejections re-enter agents). */
             iteration: number;
             /** @enum {string} */
-            status: "queued" | "running" | "awaiting_input" | "done" | "failed";
+            status: "queued" | "running" | "awaiting_input" | "waiting" | "done" | "failed";
             /** @description The output the node left through; empty while it runs. */
             output_handle: string;
             error: string;
@@ -856,7 +856,7 @@ export interface components {
         FlowEdge: {
             id: string;
             source: string;
-            /** @description Output of the source node: trigger and move_card have "next"; agent has "done" and "failed", or with the gateway on "approved", "rejected", "max_rounds_exceeded" and "failed"; end has none. */
+            /** @description Output of the source node: trigger and move_card have "next"; agent has "done" and "failed", or with the gateway on "approved", "rejected", "max_rounds_exceeded" and "failed"; create_cards has "next" and "failed"; wait_children has "all_done" and "some_failed"; end has none. */
             source_handle: string;
             target: string;
         };
@@ -865,7 +865,7 @@ export interface components {
             y: number;
         };
         /** @description A step of the flow. Configs may be incomplete in drafts; publishing reports what is missing. */
-        FlowNode: components["schemas"]["TriggerNode"] | components["schemas"]["AgentNode"] | components["schemas"]["MoveCardNode"] | components["schemas"]["EndNode"];
+        FlowNode: components["schemas"]["TriggerNode"] | components["schemas"]["AgentNode"] | components["schemas"]["MoveCardNode"] | components["schemas"]["CreateCardsNode"] | components["schemas"]["WaitChildrenNode"] | components["schemas"]["EndNode"];
         TriggerNode: {
             id: string;
             /**
@@ -895,6 +895,26 @@ export interface components {
             type: "move_card";
             position: components["schemas"]["Position"];
             config: components["schemas"]["MoveCardConfig"];
+        };
+        CreateCardsNode: {
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "create_cards";
+            position: components["schemas"]["Position"];
+            config: components["schemas"]["CreateCardsConfig"];
+        };
+        WaitChildrenNode: {
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "wait_children";
+            position: components["schemas"]["Position"];
+            config: components["schemas"]["WaitChildrenConfig"];
         };
         EndNode: {
             id: string;
@@ -1010,6 +1030,27 @@ export interface components {
              * @description Required to publish.
              */
             lane_id?: string;
+        };
+        /** @description Creates a child card for each item of the "cards" list the node before hands on (an agent's structured output, with title, description and project by name). */
+        CreateCardsConfig: {
+            /**
+             * Format: uuid
+             * @description Lane of the new cards. Required to publish.
+             */
+            lane_id?: string;
+            /**
+             * Format: uuid
+             * @description Type of the new cards. Required to publish.
+             */
+            card_type_id?: string;
+        };
+        /** @description Waits until every child card is in the done lane. */
+        WaitChildrenConfig: {
+            /**
+             * Format: uuid
+             * @description Required to publish.
+             */
+            done_lane_id?: string;
         };
         AgentProfile: {
             /** Format: uuid */

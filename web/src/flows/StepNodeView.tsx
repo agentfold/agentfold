@@ -13,6 +13,8 @@ const accents: Record<StepData['kind'], string> = {
   trigger: 'bg-amber-500',
   agent: 'bg-indigo-500',
   move_card: 'bg-teal-500',
+  create_cards: 'bg-sky-500',
+  wait_children: 'bg-sky-700',
   end: 'bg-slate-500',
 }
 

@@ -347,3 +347,17 @@ func (f *failing) FreezeCardArtifacts(ctx context.Context, cardID uuid.UUID) ([]
 	}
 	return f.Querier.FreezeCardArtifacts(ctx, cardID)
 }
+
+func (f *failing) FinishNodeRun(ctx context.Context, arg sqlcgen.FinishNodeRunParams) (sqlcgen.NodeRun, error) {
+	if err := f.hit("FinishNodeRun"); err != nil {
+		return sqlcgen.NodeRun{}, err
+	}
+	return f.Querier.FinishNodeRun(ctx, arg)
+}
+
+func (f *failing) GetCard(ctx context.Context, id uuid.UUID) (sqlcgen.Card, error) {
+	if err := f.hit("GetCard"); err != nil {
+		return sqlcgen.Card{}, err
+	}
+	return f.Querier.GetCard(ctx, id)
+}

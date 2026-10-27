@@ -1,5 +1,6 @@
 import type { Card, CardType, FlowRun, Project } from '../api/client'
 import { ColorDot } from '../cardTypes/ColorDot'
+import { childProgress } from './children'
 import { RunBadge } from './RunBadge'
 
 /** Everything on the board a card refers to, by id. */
@@ -26,6 +27,11 @@ export function CardContent({ card, lookup }: Props) {
     ? lookup.cards.get(card.parent_card_id)
     : undefined
   const run = lookup.runs.get(card.id)
+  const { children, done } = childProgress(
+    card.id,
+    lookup.cards.values(),
+    lookup.runs,
+  )
 
   return (
     <>
@@ -46,6 +52,11 @@ export function CardContent({ card, lookup }: Props) {
         )}
         {project && (
           <span className="font-mono text-slate-500">{project.name}</span>
+        )}
+        {children.length > 0 && (
+          <span title="Filhos com o fluxo concluído">
+            Filhos {done}/{children.length}
+          </span>
         )}
       </span>
       {run && (

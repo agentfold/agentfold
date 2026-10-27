@@ -156,6 +156,12 @@ func TestConfigProblems(t *testing.T) {
 		}},
 		{"move without lane", NodeMoveCard, `{}`, []string{"escolha a baia de destino"}},
 		{"move with bad JSON", NodeMoveCard, `[]`, []string{"configuração inválida"}},
+		{"create cards", NodeCreateCards, `{"lane_id":"` + laneID.String() + `","card_type_id":"` + typeID.String() + `"}`, nil},
+		{"create cards without config", NodeCreateCards, `{}`, []string{"escolha a baia dos cards criados", "escolha o tipo dos cards criados"}},
+		{"create cards with bad JSON", NodeCreateCards, `[]`, []string{"configuração inválida"}},
+		{"wait children", NodeWaitChildren, `{"done_lane_id":"` + laneID.String() + `"}`, nil},
+		{"wait children without lane", NodeWaitChildren, `{}`, []string{"escolha a baia em que um card filho conta como concluído"}},
+		{"wait children with bad JSON", NodeWaitChildren, `[]`, []string{"configuração inválida"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -222,5 +228,33 @@ func TestNormalized(t *testing.T) {
 	full := validGraph()
 	if !reflect.DeepEqual(full.Normalized(), full) {
 		t.Fatal("a complete graph changed")
+	}
+}
+
+func TestChildCardsFrom(t *testing.T) {
+	cards, err := ChildCardsFrom(json.RawMessage(`{"result":"r","output":{"cards":[{"title":" API ","description":" d ","project":" chat-backend "},{"title":"Web"}]}}`))
+	want := []ChildCardSpec{{Title: "API", Description: "d", Project: "chat-backend"}, {Title: "Web"}}
+	if err != nil || !reflect.DeepEqual(cards, want) {
+		t.Fatalf("agent output: %+v, %v", cards, err)
+	}
+	if cards, err := ChildCardsFrom(json.RawMessage(`{"cards":[{"title":"A"}]}`)); err != nil || len(cards) != 1 {
+		t.Fatalf("plain input: %+v, %v", cards, err)
+	}
+	for in, want := range map[string]string{
+		``:                        "a entrada não é um JSON",
+		`{"result":"r"}`:          "a entrada não tem cards",
+		`{"output":{"cards":[]}}`: "a entrada não tem cards",
+		`{"cards":[{"title":"A"},{"title":" "}]}`: "o card 2 da lista não tem título",
+	} {
+		if _, err := ChildCardsFrom(json.RawMessage(in)); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: %v", in, err)
+		}
+	}
+	var schema map[string]any
+	if json.Unmarshal([]byte(ChildCardsSchema), &schema) != nil {
+		t.Fatal("ChildCardsSchema is not JSON")
+	}
+	if _, err := compileSchema(json.RawMessage(ChildCardsSchema)); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -20,6 +20,7 @@ const nodeStatus: Record<NodeRun['status'], string> = {
   queued: 'Na fila',
   running: 'Rodando',
   awaiting_input: 'Aguardando resposta',
+  waiting: 'Esperando os filhos',
   done: 'Concluído',
   failed: 'Falhou',
 }
@@ -28,6 +29,7 @@ const nodeStatusStyle: Record<NodeRun['status'], string> = {
   queued: 'bg-slate-100 text-slate-600',
   running: 'bg-indigo-50 text-indigo-700',
   awaiting_input: 'bg-amber-50 text-amber-800',
+  waiting: 'bg-amber-50 text-amber-800',
   done: 'bg-emerald-50 text-emerald-700',
   failed: 'bg-red-50 text-red-700',
 }

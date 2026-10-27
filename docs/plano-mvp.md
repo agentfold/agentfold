@@ -183,10 +183,17 @@ orquestrator/
 
 ## Fase 2 — Orquestração entre cards
 
-### F11 — CreateCards e WaitChildren
-- Nó `CreateCards`: um card filho por item da saída estruturada (tipo, baia, projeto por nome).
-- Nó `WaitChildren`: engine acorda o fluxo do pai a cada evento de filho; saídas `all_done` / `some_failed`.
-- UI: filhos listados no card pai, progresso agregado.
+### F11 — CreateCards e WaitChildren (feita antes da F9)
+- Nó `CreateCards`: um card filho por item da lista `cards` da saída estruturada do nó anterior
+  (título, descrição, projeto por nome), na baia e no tipo configurados, todos numa transação.
+- Nó `WaitChildren`: o nó e o FlowRun do pai ficam `waiting`; a engine reavalia a cada filho que
+  entra numa baia, termina um fluxo ou é cancelado. `all_done` quando todos estão na baia
+  configurada; `some_failed` quando a última execução de um filho falha ou é cancelada antes.
+- `get_card` devolve os artefatos do card e, num filho, o pai com os artefatos dele.
+- UI: nós no editor (com o botão que preenche o schema de cards filhos), filhos e link para o pai
+  na página do card, progresso "Filhos 1/2" no board (filhos com o último fluxo concluído).
+- **Pronto quando:** um planner divide o card em dois filhos, cada filho roda o próprio fluxo e
+  o pai segue com `all_done`, de ponta a ponta com o CLI falso.
 
 ### F12 — Smoke do cenário de referência
 - Fluxo "Proposta" (Sourcegraph → artefato revisado no chat → CreateCards → WaitChildren) e fluxo

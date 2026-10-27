@@ -12,6 +12,8 @@ export const outcomes: Record<string, string> = {
   approved: 'aprovado',
   rejected: 'rejeitado',
   max_rounds_exceeded: 'limite de rodadas atingido',
+  all_done: 'todos os filhos concluídos',
+  some_failed: 'algum filho falhou',
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
@@ -59,6 +61,12 @@ export function describeEvent(
       return `O nó ${str(p.node_key)} perguntou: ${str(p.text)}`
     case 'question.answered':
       return `Respondido "${str(p.text)}": ${str(p.answer)}`
+    case 'children.created': {
+      const cards = Array.isArray(p.cards)
+        ? (p.cards as { title?: unknown }[])
+        : []
+      return `${String(cards.length)} cards filhos criados: ${cards.map((c) => str(c.title)).join(', ')}`
+    }
     case 'artifact.collected':
       return `Artefato ${str(p.name)} coletado (versão ${String(p.version)})`
     default:

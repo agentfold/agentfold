@@ -222,9 +222,53 @@ func (s *Store) WaitFlowRun(ctx context.Context, id uuid.UUID) (domain.FlowRun, 
 	return mapRow(row, err, toFlowRun)
 }
 
+// WaitNodeRun holds a WaitChildren node run until the child cards settle.
+func (s *Store) WaitNodeRun(ctx context.Context, id uuid.UUID) (domain.NodeRun, error) {
+	row, err := s.q.WaitNodeRun(ctx, id)
+	return mapRow(row, err, toNodeRun)
+}
+
+// WaitingChildrenNodeRun returns the WaitChildren node run the flow of a
+// card waits at; ErrNotFound when it waits at none.
+func (s *Store) WaitingChildrenNodeRun(ctx context.Context, cardID uuid.UUID) (domain.NodeRun, error) {
+	row, err := s.q.WaitingChildrenNodeRun(ctx, cardID)
+	return mapRow(row, err, toNodeRun)
+}
+
+// SettleWait ends a waiting node run with r and sets its flow run running
+// again. It reports false, doing nothing, when the node run no longer
+// waits: someone else settled it, or its run was canceled.
+func (s *Store) SettleWait(ctx context.Context, id uuid.UUID, r domain.NodeResult) (domain.NodeRun, bool, error) {
+	var nr domain.NodeRun
+	settled := false
+	err := s.inTx(ctx, func(q sqlcgen.Querier) error {
+		row, err := q.GetNodeRunForUpdate(ctx, id)
+		if err != nil {
+			return mapErr(err)
+		}
+		if row.Status != string(domain.NodeWaiting) {
+			return nil
+		}
+		if _, err := q.SetFlowRunStatus(ctx, sqlcgen.SetFlowRunStatusParams{
+			ID: row.FlowRunID, Status: string(domain.RunRunning), FromStatus: string(domain.RunWaiting),
+		}); err != nil {
+			return mapErr(err)
+		}
+		row, err = q.FinishNodeRun(ctx, finishParams(id, r))
+		nr, settled = toNodeRun(row), err == nil
+		return err
+	})
+	return nr, settled, err
+}
+
 // FinishNodeRun records how a node run ended.
 func (s *Store) FinishNodeRun(ctx context.Context, id uuid.UUID, r domain.NodeResult) (domain.NodeRun, error) {
-	row, err := s.q.FinishNodeRun(ctx, sqlcgen.FinishNodeRunParams{
+	row, err := s.q.FinishNodeRun(ctx, finishParams(id, r))
+	return mapRow(row, err, toNodeRun)
+}
+
+func finishParams(id uuid.UUID, r domain.NodeResult) sqlcgen.FinishNodeRunParams {
+	return sqlcgen.FinishNodeRunParams{
 		ID:           id,
 		Status:       string(r.Status),
 		Output:       r.Output,
@@ -237,8 +281,7 @@ func (s *Store) FinishNodeRun(ctx context.Context, id uuid.UUID, r domain.NodeRe
 		CostUsd:      r.CostUSD,
 		Turns:        int32(r.Turns), //nolint:gosec // turn counts are small
 		DurationMs:   r.DurationMS,
-	})
-	return mapRow(row, err, toNodeRun)
+	}
 }
 
 // AgentSession returns the Claude session of an agent node in a run.

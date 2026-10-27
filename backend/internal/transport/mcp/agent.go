@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"orquestrator/internal/domain"
@@ -26,13 +27,54 @@ type (
 	}
 )
 
+// artifactView is the latest version of an artifact, as get_card shows it.
+type artifactView struct {
+	Name    string `json:"name"`
+	Version int    `json:"version"`
+	Path    string `json:"path"`
+	// Frozen artifacts were approved: the card left their lane.
+	Frozen  bool   `json:"frozen"`
+	Content string `json:"content"`
+}
+
+type cardArtifactsView struct {
+	cardView
+	Artifacts []artifactView `json:"artifacts"`
+}
+
+type agentCardView struct {
+	cardArtifactsView
+	Parent *cardArtifactsView `json:"parent,omitempty"`
+}
+
+// cardWithArtifacts is a card with the latest version of its artifacts.
+func cardWithArtifacts(ctx context.Context, board Board, id uuid.UUID) (cardArtifactsView, error) {
+	card, err := board.GetCard(ctx, id)
+	if err != nil {
+		return cardArtifactsView{}, err
+	}
+	artifacts, err := board.ListCardArtifacts(ctx, id)
+	view := cardArtifactsView{cardView: toCard(card), Artifacts: make([]artifactView, 0, len(artifacts))}
+	for _, a := range artifacts {
+		latest := a.Versions[len(a.Versions)-1] // artifacts have a version at least
+		view.Artifacts = append(view.Artifacts, artifactView{
+			Name: a.Name, Version: latest.Version, Path: latest.Path, Frozen: a.FrozenAt != nil, Content: latest.Content,
+		})
+	}
+	return view, err
+}
+
 // agentServer exposes the tools of the agent running a node.
 func agentServer(board Board, run service.AgentRun) *sdk.Server {
 	s := sdk.NewServer(implementation, nil)
-	addTool(s, "get_card", "The card you are working on.",
-		func(ctx context.Context, _ *sdk.CallToolRequest, _ noInput) (*sdk.CallToolResult, cardView, error) {
-			card, err := board.GetCard(ctx, run.FlowRun.CardID)
-			return nil, toCard(card), err
+	addTool(s, "get_card", "The card you are working on, with its artifacts (latest versions), and its parent card with the parent's artifacts, if it has one.",
+		func(ctx context.Context, _ *sdk.CallToolRequest, _ noInput) (*sdk.CallToolResult, agentCardView, error) {
+			view, err := cardWithArtifacts(ctx, board, run.FlowRun.CardID)
+			if err != nil || view.ParentCardID == nil {
+				return nil, agentCardView{cardArtifactsView: view}, err
+			}
+			parent, err := cardWithArtifacts(ctx, board, *view.ParentCardID)
+			return nil, agentCardView{cardArtifactsView: view, Parent: &parent}, err
 		})
 	addTool(s, "ask_human",
 		"Asks a human questions you cannot answer yourself. End your turn right after calling it: you are resumed with the answers.",
