@@ -114,9 +114,11 @@ describe('NodeConfigForm', () => {
     const result = setup('agent', {})
     const profile = screen.getByLabelText('Perfil do agente')
     expect(
-      screen.getByRole('option', { name: 'fresh (sem credencial)' }),
+      screen.getByRole('option', {
+        name: 'fresh · Claude Code (sem credencial)',
+      }),
     ).toBeInTheDocument()
-    await userEvent.selectOptions(profile, 'dev')
+    await userEvent.selectOptions(profile, dev.id)
     await userEvent.click(screen.getByLabelText('sg'))
     expect(result.config).toEqual({
       profile_id: dev.id,

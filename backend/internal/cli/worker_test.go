@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"orquestrator/internal/crypto"
+	"orquestrator/internal/domain"
 	"orquestrator/internal/events"
 	"orquestrator/internal/store"
 )
@@ -48,6 +49,9 @@ func TestAgentUsage(t *testing.T) {
 		{"agent", "logout", "claude"},
 		{"agent", "login", "claude", "extra"},
 		{"agent", "login", "claude", "--nope"},
+		{"agent", "login", "claude", "--integration", "x"},
+		{"agent", "login", "codex"},
+		{"agent", "login", "opencode", "--integration"},
 	} {
 		if code, _, stderr := run(args...); code != ExitError || stderr == "" {
 			t.Errorf("%v: code %d, stderr %q", args, code, stderr)
@@ -143,6 +147,41 @@ func TestAgentLoginErrors(t *testing.T) {
 	})
 }
 
+func TestAgentLoginOpencode(t *testing.T) {
+	pool := loginEnv(t, "true")
+	t.Setenv(envOpencodeBin, script(t, "opencode", `[ "$1 $2 $3" = "auth export openrouter" ] && printf '{"openrouter":{"type":"api","key":"k"}}'`))
+	code, stdout, stderr := run("agent", "login", "opencode", "--profile", "oc", "--integration", "openrouter")
+	if code != ExitOK || !strings.Contains(stdout, `Agent profile "oc" is ready (opencode credentials copied)`) || strings.Contains(stdout+stderr, `"key"`) {
+		t.Fatalf("code %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	p, err := store.New(pool).GetAgentProfileByName(context.Background(), "oc")
+	if err != nil || p.Kind != domain.AgentOpencode || p.CredentialKind != domain.CredentialOpencodeAuth {
+		t.Fatalf("profile %+v, %v", p, err)
+	}
+}
+
+func TestAgentLoginOpencodeErrors(t *testing.T) {
+	loginEnv(t, "true")
+	for body, want := range map[string]string{
+		"echo 'not logged in' >&2; exit 1": "opencode auth export: exit status 1",
+		"echo '{}'":                        "credential:",
+	} {
+		t.Setenv(envOpencodeBin, script(t, "opencode", body))
+		if code, _, stderr := run("agent", "login", "opencode"); code != ExitError || !strings.Contains(stderr, want) {
+			t.Fatalf("%s: code %d, stderr %q", body, code, stderr)
+		}
+	}
+	t.Setenv(envSecretKey, "")
+	if code, _, stderr := run("agent", "login", "opencode"); code != ExitError || !strings.Contains(stderr, "ORQ_SECRET_KEY") {
+		t.Fatalf("no key: %q", stderr)
+	}
+	t.Setenv(envOpencodeBin, "")
+	t.Setenv("PATH", t.TempDir())
+	if code, _, stderr := run("agent", "login", "opencode"); code != ExitError || !strings.Contains(stderr, "opencode CLI not found") {
+		t.Fatalf("no opencode: %q", stderr)
+	}
+}
+
 func TestWorkerConfigurationErrors(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "missing")
 	tests := []struct {
@@ -154,7 +193,7 @@ func TestWorkerConfigurationErrors(t *testing.T) {
 		{"args", nil, []string{"x"}, "unexpected arguments"},
 		{"key", map[string]string{envSecretKey: ""}, nil, "ORQ_SECRET_KEY"},
 		{"no home", map[string]string{envDataDir: "", "HOME": ""}, nil, "ORQ_DATA_DIR is not set"},
-		{"no claude", map[string]string{envClaudeBin: "", "PATH": t.TempDir()}, nil, "claude CLI not found"},
+		{"no agent CLI", map[string]string{envClaudeBin: "", envOpencodeBin: "", "PATH": t.TempDir()}, nil, "claude CLI not found"},
 		{"bad runner", map[string]string{envRunner: "docker"}, nil, `ORQ_RUNNER must be bwrap or local, not "docker"`},
 		{"no bwrap", map[string]string{envRunner: "bwrap", "PATH": t.TempDir()}, nil, "bwrap not found"},
 		{"claude missing for the sandbox", map[string]string{envClaudeBin: missing, "PATH": "/usr/bin:/bin"}, nil, "missing"},
@@ -166,6 +205,7 @@ func TestWorkerConfigurationErrors(t *testing.T) {
 			t.Setenv(envSecretKey, crypto.NewKey())
 			t.Setenv(envDataDir, t.TempDir())
 			t.Setenv(envClaudeBin, "/bin/true")
+			t.Setenv(envOpencodeBin, "/bin/true")
 			t.Setenv(envRunner, "")
 			t.Setenv(envDatabaseURL, "")
 			for k, v := range tt.env {

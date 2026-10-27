@@ -20,7 +20,7 @@ Expõe **API REST** e **servidor MCP** para integrações.
 | Paralelismo | Modelo de dados suporta vários nós ativos por FlowRun; MVP executa caminho linear com desvios condicionais |
 | Baias | Dinâmicas (globais ou do fluxo). Nó `MoveCard` escolhe a baia destino |
 | Consumo | Histórico de tokens/turnos/custo por NodeRun, agregado por card |
-| Agentes | Perfis configuráveis; só Claude no início. Login via `orquestrator agent login claude` |
+| Agentes | Perfis configuráveis de Claude Code ou opencode (o tipo é do perfil; um fluxo mistura os dois). Login via `orquestrator agent login claude\|opencode` |
 | Projetos | Cadastro de projetos com tipo de origem (`local` no MVP; `git` remoto no futuro). Card referencia um projeto **opcional** |
 | Portabilidade | `WorkspaceProvider` plugável, caminhos fixos no sandbox (`/workspace`, `/claude`) e `jobs.requirements` para afinidade de worker — prepara Docker e multi-host sem mudar engine/contrato |
 | Tipos de card | Cadastro dinâmico de tipos; gatilhos podem filtrar por tipo |
@@ -92,7 +92,7 @@ interfaces para viabilizar 100% de cobertura com fakes.
 | `cards` | id, title, description, card_type_id, project_id?, parent_card_id?, lane_id, position, created_at |
 | `mcp_servers` | id, name, transport (`stdio`/`http`), config jsonb, secrets (criptografados) |
 | `card_events` | id, card_id, type, payload jsonb, created_at — linha do tempo do card |
-| `agent_profiles` | id, kind (`claude`), name, credential (criptografada), status |
+| `agent_profiles` | id, kind (`claude`, `opencode`), name, credential (criptografada), status |
 | `flows` | id, name, enabled, draft jsonb (rascunho editável) |
 | `flow_versions` | id, flow_id, version, graph jsonb (nós com config + arestas por saída), published_at |
 | `flow_runs` | id, flow_version_id, card_id, trigger, status, started_at, finished_at |
@@ -208,7 +208,7 @@ O agente **não comita nem abre PR** (garantido pelas tools bloqueadas/prompt; o
 ```
 <data_dir>/cards/<card_id>/
   workspace/   ← git worktree do project_path (branch orq/card-<card_id>), cwd do agente
-  claude/      ← CLAUDE_CONFIG_DIR da execução (sessões usadas pelo --resume)
+  claude/      ← casa do agente: CLAUDE_CONFIG_DIR do Claude, HOME do opencode (sessões e credenciais)
   logs/        ← stream-json bruto de cada NodeRun
 ```
 
@@ -252,6 +252,33 @@ continua presa ao seu host via `requirements`.
 `claude setup-token` (token de longa duração). O board guarda o token criptografado e o
 injeta em cada execução via `CLAUDE_CODE_OAUTH_TOKEN` (ou `ANTHROPIC_API_KEY`).
 Nenhuma escrita concorrente em arquivo de credenciais compartilhado.
+
+`orquestrator agent login opencode [--integration <id>]` copia o login do próprio opencode do
+usuário (`opencode auth export`, feito depois de `opencode auth login` no provedor) para o
+perfil, criptografado, sem mostrar o segredo no terminal. Antes de cada execução o executor
+grava o JSON num arquivo temporário da casa do agente do card e roda `opencode auth import`
+com `HOME` apontando para ela; um novo login chega assim também aos cards em andamento.
+
+### 6.3.1 opencode
+
+O adaptador do opencode roda `opencode run --standalone --format json --auto --agent build
+--session ses_<id> [--model provedor/modelo] -- <prompt>` com `HOME` na casa do agente do card
+(isola sessões, credenciais e o que o opencode lê de `~`) e a configuração da execução em
+`OPENCODE_CONFIG_CONTENT`:
+
+- `mcp`: o servidor do board (`remote`, com o token da execução) e os do nó (`local`/`remote`);
+- `instructions`: um arquivo temporário com o texto do board (o equivalente ao
+  `--append-system-prompt` do Claude);
+- `permission`: `git commit*`/`git push*` negados sempre, `edit` negado em nós somente leitura;
+- `agent.build.steps`: o limite de turnos do nó.
+
+O id da sessão é derivado do UUID guardado em `agent_sessions` (`ses_` + hex); `--session`
+cria a sessão quando ela não existe, então retomar é igual a começar. O opencode não tem
+evento de resultado: o resultado é o último texto, o consumo soma os `step_finish` e os
+eventos `error` reprovam o nó com uma dica para os casos que o perfil resolve
+(`provider.no-route`: sem credencial do provedor; `provider.free-limit`: cota gratuita, com o
+tempo até liberar). As ferramentas permitidas/bloqueadas do nó são nomes do Claude e não valem
+para o opencode.
 
 ### 6.4 Runner
 
@@ -317,7 +344,7 @@ em dólar é estimativa.
 6. Cadastro de MCPs externos e seleção por nó Agent.
 7. Histórico de consumo por card.
 8. API REST + SSE + MCP.
-9. `agent login claude`.
+9. `agent login claude` (e `agent login opencode`, F13).
 
 **Fase 2**
 Nós `Approval`, `CreateCards`, `WaitChildren` — habilitam o cenário de referência (seção 11).

@@ -33,16 +33,24 @@ describe('AgentsPage', () => {
         agentProfile('dev'),
         agentProfile('ci', { credential_kind: 'api_key' }),
         agentProfile('new', { ready: false, credential_kind: undefined }),
+        agentProfile('oc', {
+          kind: 'opencode',
+          credential_kind: 'opencode_auth',
+        }),
       ],
     })
     renderWithApi(<AgentsPage />, backend)
     expect(await screen.findByText('Pronto (token)')).toBeInTheDocument()
     expect(screen.getByText('Pronto (API key)')).toBeInTheDocument()
+    expect(
+      screen.getByText('Pronto (credenciais do opencode)'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('· opencode')).toBeInTheDocument()
     expect(screen.getByText('Sem credencial')).toBeInTheDocument()
 
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     await userEvent.click(screen.getByRole('button', { name: 'Excluir new' }))
-    expect(backend.state.agentProfiles).toHaveLength(3)
+    expect(backend.state.agentProfiles).toHaveLength(4)
     confirm.mockReturnValue(true)
     await userEvent.click(screen.getByRole('button', { name: 'Excluir new' }))
     await waitFor(() => {
@@ -60,6 +68,26 @@ describe('AgentsPage', () => {
     await userEvent.type(within(dialog).getByLabelText('Nome'), 'dev')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Criar' }))
     expect(await screen.findByText('Sem credencial')).toBeInTheDocument()
+    expect(backend.state.agentProfiles[0].kind).toBe('claude')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Novo perfil' }))
+    const second = screen.getByRole('dialog', { name: 'Novo perfil' })
+    await userEvent.type(within(second).getByLabelText('Nome'), 'oc')
+    await userEvent.selectOptions(
+      within(second).getByLabelText('Agente'),
+      'opencode',
+    )
+    await userEvent.selectOptions(
+      within(second).getByLabelText('Agente'),
+      'claude',
+    )
+    await userEvent.selectOptions(
+      within(second).getByLabelText('Agente'),
+      'opencode',
+    )
+    await userEvent.click(within(second).getByRole('button', { name: 'Criar' }))
+    expect(await screen.findByText('· opencode')).toBeInTheDocument()
+    expect(backend.state.agentProfiles[1].kind).toBe('opencode')
 
     await userEvent.click(screen.getByRole('button', { name: 'Novo perfil' }))
     await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }))

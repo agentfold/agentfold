@@ -1014,8 +1014,11 @@ export interface components {
         AgentProfile: {
             /** Format: uuid */
             id: string;
-            /** @enum {string} */
-            kind: "claude";
+            /**
+             * @description The agent CLI the profile runs.
+             * @enum {string}
+             */
+            kind: "claude" | "opencode";
             name: string;
             /** @description Whether the profile has a credential. */
             ready: boolean;
@@ -1023,13 +1026,18 @@ export interface components {
              * @description Absent until the profile is logged in.
              * @enum {string}
              */
-            credential_kind?: "oauth_token" | "api_key";
+            credential_kind?: "oauth_token" | "api_key" | "opencode_auth";
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
             updated_at: string;
         };
         AgentProfileInput: {
+            /**
+             * @description Read on creation only; claude when absent.
+             * @enum {string}
+             */
+            kind?: "claude" | "opencode";
             name: string;
         };
         /** @description An external MCP server. Secret values are never returned, only their names. */

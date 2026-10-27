@@ -194,7 +194,7 @@ func newSetup(t *testing.T) setup {
 	if err != nil {
 		t.Fatal(err)
 	}
-	profile := domain.AgentProfile{ID: uuid.New(), Name: "dev", CredentialKind: domain.CredentialOAuthToken}
+	profile := domain.AgentProfile{ID: uuid.New(), Kind: domain.AgentClaude, Name: "dev", CredentialKind: domain.CredentialOAuthToken}
 	config := `{"profile_id":"` + profile.ID.String() + `","prompt":"Implement it"}`
 	flowRun := domain.FlowRun{ID: uuid.New(), FlowVersionID: uuid.New(), CardID: uuid.New()}
 	store := &fakeStore{
@@ -220,7 +220,7 @@ func newSetup(t *testing.T) setup {
 			Secrets:    box,
 			Workspaces: workspace.Local{DataDir: data},
 			Runner:     runner.Local{Home: t.TempDir()},
-			Binary:     fakeClaude,
+			Binaries:   map[domain.AgentKind]string{domain.AgentClaude: fakeClaude, domain.AgentOpencode: fakeClaude},
 			BoardURL:   "http://board:8080",
 			Pub:        pub,
 		},

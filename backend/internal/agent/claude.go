@@ -1,5 +1,6 @@
 // Package agent runs agent nodes: it prepares the card workspace, starts
-// the Claude Code CLI through a runner and records the outcome.
+// the agent CLI of the profile (Claude Code or opencode) through a runner
+// and records the outcome.
 package agent
 
 import (
@@ -100,12 +101,14 @@ type Stream struct {
 	result *resultEvent
 }
 
-// Line reads one line of output; anything but the result event is skipped.
-func (s *Stream) Line(line []byte) {
+// Line reads one line of output and returns the steps it shows on the
+// card page; the result event settles the outcome.
+func (s *Stream) Line(line []byte) []domain.NodeOutput {
 	var e resultEvent
 	if json.Unmarshal(line, &e) == nil && e.Type == "result" {
 		s.result = &e
 	}
+	return Steps(line)
 }
 
 // Outcome turns the stream and the process error into the node result.

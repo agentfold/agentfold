@@ -208,7 +208,9 @@ func (f *fakeRepo) GetAgentProfileByName(_ context.Context, name string) (domain
 }
 
 func (f *fakeRepo) CreateAgentProfile(_ context.Context, kind domain.AgentKind, name string) (domain.AgentProfile, error) {
-	return f.profile, f.call("CreateAgentProfile", string(kind)+" "+name)
+	p := f.profile
+	p.Kind = kind
+	return p, f.call("CreateAgentProfile", string(kind)+" "+name)
 }
 
 func (f *fakeRepo) RenameAgentProfile(_ context.Context, _ uuid.UUID, name string) (domain.AgentProfile, error) {

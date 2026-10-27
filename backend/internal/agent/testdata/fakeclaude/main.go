@@ -1,10 +1,14 @@
-// Command fakeclaude stands in for the claude CLI in tests. It records how
-// it was called in fake-claude.json (in its working directory) and prints a
-// scripted stream-json run, chosen by markers in the prompt:
+// Command fakeclaude stands in for the claude CLI in tests, and for the
+// opencode CLI when called as `fakeclaude run|auth …`. It records how it
+// was called in fake-claude.json or fake-opencode.json (in its working
+// directory) and prints a scripted run, chosen by markers in the prompt:
 //
-//	[fail]  the result event reports an error
+//	[fail]  the result event reports an error (opencode: a free-limit error)
 //	[crash] exits with status 2 before any result
 //	[sleep] waits a minute before answering, when resumed (to be interrupted)
+//
+// As opencode, `auth import F` copies F to $HOME/fake-auth.json (failing
+// when it holds "bad"), and `auth export` prints $FAKE_OPENCODE_AUTH.
 //
 // Markers in the first prompt of a session script calls to the board MCP
 // tools, made on the runs of that session:
@@ -35,6 +39,10 @@ import (
 
 func main() {
 	args := os.Args[1:]
+	if len(args) > 0 && (args[0] == "run" || args[0] == "auth") {
+		opencode(args)
+		return
+	}
 	prompt, mcp, session := "", "", ""
 	for i, a := range args {
 		if a == "-p" && i+1 < len(args) {
@@ -48,7 +56,7 @@ func main() {
 			session = args[i+1]
 		}
 	}
-	run, first, err := script(prompt, mcp, session)
+	run, first, err := script(prompt, os.Getenv("CLAUDE_CONFIG_DIR"), session, func() (*sdk.ClientSession, error) { return connect(mcp) })
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "board tools:", err)
 		os.Exit(3)
@@ -91,10 +99,69 @@ func main() {
 
 var marker = regexp.MustCompile(`\[(ask|done|output|gate|write):([^\]]*)\]`)
 
+// opencode plays `opencode run` and `opencode auth`.
+func opencode(args []string) {
+	if args[0] == "auth" {
+		file := args[len(args)-1]
+		switch data, _ := os.ReadFile(file); {
+		case args[1] == "export":
+			fmt.Print(os.Getenv("FAKE_OPENCODE_AUTH"))
+		case strings.Contains(string(data), "bad"):
+			fmt.Fprintln(os.Stderr, "invalid credentials")
+			os.Exit(1)
+		default:
+			_ = os.WriteFile(filepath.Join(os.Getenv("HOME"), "fake-auth.json"), data, 0o600)
+		}
+		return
+	}
+	prompt, session := args[len(args)-1], ""
+	for i, a := range args {
+		if a == "--session" && i+1 < len(args) {
+			session = args[i+1]
+		}
+	}
+	config := os.Getenv("OPENCODE_CONFIG_CONTENT")
+	run, first, err := script(prompt, os.Getenv("HOME"), session, func() (*sdk.ClientSession, error) { return connectOpencode(config) })
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "board tools:", err)
+		os.Exit(3)
+	}
+	cwd, _ := os.Getwd()
+	record, _ := json.Marshal(map[string]any{"args": args, "cwd": cwd, "home": os.Getenv("HOME"), "config": json.RawMessage(config)})
+	_ = os.WriteFile("fake-opencode.json", record, 0o600)
+
+	event := func(typ string, ts int, part map[string]any) {
+		line, _ := json.Marshal(map[string]any{"type": typ, "timestamp": ts, "sessionID": session, "part": part})
+		fmt.Println(string(line))
+	}
+	fmt.Println(`not json`)
+	if strings.Contains(first, "[sleep]") && run > 1 {
+		time.Sleep(time.Minute)
+	}
+	if strings.Contains(prompt, "[crash]") {
+		fmt.Fprintln(os.Stderr, "boom")
+		os.Exit(2)
+	}
+	event("step_start", 1000, map[string]any{"type": "step-start"})
+	if strings.Contains(prompt, "[fail]") {
+		fmt.Println(`{"type":"error","timestamp":1100,"error":{"type":"provider.free-limit","message":"Free usage limit reached.","retryAfterMs":3600000}}`)
+		os.Exit(1)
+	}
+	event("tool_use", 1100, map[string]any{"type": "tool", "tool": "write", "state": map[string]any{
+		"status": "completed", "input": map[string]string{"path": "a.txt"}, "output": "Created file",
+	}})
+	event("step_finish", 1200, map[string]any{"cost": 0.25, "tokens": map[string]any{
+		"input": 10, "output": 15, "reasoning": 5, "cache": map[string]int{"read": 30, "write": 40},
+	}})
+	event("step_start", 1300, map[string]any{"type": "step-start"})
+	event("text", 1400, map[string]any{"text": "did it"})
+	event("step_finish", 2200, map[string]any{"cost": 0.25})
+}
+
 // script runs the board tool calls the first prompt of the session asks for
-// and returns which run of the session this is, and that first prompt.
-func script(prompt, mcpConfig, session string) (int, string, error) {
-	dir := os.Getenv("CLAUDE_CONFIG_DIR")
+// and returns which run of the session this is, and that first prompt. The
+// session state lives in dir.
+func script(prompt, dir, session string, connect func() (*sdk.ClientSession, error)) (int, string, error) {
 	if dir == "" || session == "" {
 		return 1, prompt, nil
 	}
@@ -113,7 +180,7 @@ func script(prompt, mcpConfig, session string) (int, string, error) {
 	if len(calls) == 0 {
 		return run, string(original), nil
 	}
-	cs, err := connect(mcpConfig)
+	cs, err := connect()
 	if err != nil {
 		return run, string(original), err
 	}
@@ -156,18 +223,35 @@ func script(prompt, mcpConfig, session string) (int, string, error) {
 	return run, string(original), nil
 }
 
+// server is an MCP server entry of either CLI config.
+type server struct {
+	URL     string            `json:"url"`
+	Headers map[string]string `json:"headers"`
+}
+
 // connect opens the board MCP server of the --mcp-config file.
 func connect(mcpConfig string) (*sdk.ClientSession, error) {
 	var cfg struct {
-		McpServers map[string]struct {
-			URL     string            `json:"url"`
-			Headers map[string]string `json:"headers"`
-		} `json:"mcpServers"`
+		McpServers map[string]server `json:"mcpServers"`
 	}
 	if err := json.Unmarshal([]byte(mcpConfig), &cfg); err != nil {
 		return nil, err
 	}
-	board := cfg.McpServers["orquestrator"]
+	return open(cfg.McpServers["orquestrator"])
+}
+
+// connectOpencode opens the board MCP server of the opencode config.
+func connectOpencode(config string) (*sdk.ClientSession, error) {
+	var cfg struct {
+		Mcp map[string]server `json:"mcp"`
+	}
+	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
+		return nil, err
+	}
+	return open(cfg.Mcp["orquestrator"])
+}
+
+func open(board server) (*sdk.ClientSession, error) {
 	client := sdk.NewClient(&sdk.Implementation{Name: "fakeclaude", Version: "0"}, nil)
 	transport := &sdk.StreamableClientTransport{
 		Endpoint:             board.URL,

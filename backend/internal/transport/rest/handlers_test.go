@@ -225,6 +225,7 @@ func TestRoutes(t *testing.T) {
 
 		{"GET", "/api/agent-profiles", "", 200, "ListAgentProfiles", nil, "[" + profileJSON + "]"},
 		{"POST", "/api/agent-profiles", `{"name":"dev"}`, 201, "CreateAgentProfile", []any{domain.AgentProfileInput{Name: "dev"}}, profileJSON},
+		{"POST", "/api/agent-profiles", `{"name":"oc","kind":"opencode"}`, 201, "CreateAgentProfile", []any{domain.AgentProfileInput{Kind: domain.AgentOpencode, Name: "oc"}}, profileJSON},
 		{"GET", "/api/agent-profiles" + p1, "", 200, "GetAgentProfile", []any{id1}, profileJSON},
 		{"PUT", "/api/agent-profiles" + p1, `{"name":"rev"}`, 200, "UpdateAgentProfile", []any{id1, domain.AgentProfileInput{Name: "rev"}}, profileJSON},
 		{"DELETE", "/api/agent-profiles" + p1, "", 204, "DeleteAgentProfile", []any{id1}, ""},

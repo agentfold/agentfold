@@ -27,14 +27,14 @@ func (s *Service) GetAgentProfile(ctx context.Context, id uuid.UUID) (domain.Age
 	return s.repo.GetAgentProfile(ctx, id)
 }
 
-// CreateAgentProfile registers a Claude profile; it gets its credential
-// through `orquestrator agent login claude`.
+// CreateAgentProfile registers a profile; it gets its credential through
+// `orquestrator agent login <kind>`.
 func (s *Service) CreateAgentProfile(ctx context.Context, in domain.AgentProfileInput) (domain.AgentProfile, error) {
 	in, err := in.Normalize()
 	if err != nil {
 		return domain.AgentProfile{}, err
 	}
-	profile, err := s.repo.CreateAgentProfile(ctx, domain.AgentClaude, in.Name)
+	profile, err := s.repo.CreateAgentProfile(ctx, in.Kind, in.Name)
 	return changed(s, "agent_profile.created", profile, err)
 }
 
@@ -53,25 +53,29 @@ func (s *Service) DeleteAgentProfile(ctx context.Context, id uuid.UUID) error {
 	return s.deleted("agent_profile.deleted", id, s.repo.DeleteAgentProfile(ctx, id))
 }
 
-// LoginAgent stores the credential of the profile called name, creating
-// the profile if needed. secret is a `claude setup-token` token or an API key.
-func (s *Service) LoginAgent(ctx context.Context, name, secret string) (domain.AgentProfile, error) {
-	secret, kind, err := domain.DetectCredential(secret)
+// LoginAgent stores the credential of the profile of kind called name,
+// creating the profile if needed. secret is a `claude setup-token` token or
+// an API key, or what `opencode auth export` prints.
+func (s *Service) LoginAgent(ctx context.Context, kind domain.AgentKind, name, secret string) (domain.AgentProfile, error) {
+	secret, credKind, err := domain.Credential(kind, secret)
 	if err != nil {
 		return domain.AgentProfile{}, err
 	}
 	profile, err := s.repo.GetAgentProfileByName(ctx, name)
 	if errors.Is(err, domain.ErrNotFound) {
-		profile, err = s.CreateAgentProfile(ctx, domain.AgentProfileInput{Name: name})
+		profile, err = s.CreateAgentProfile(ctx, domain.AgentProfileInput{Kind: kind, Name: name})
 	}
 	if err != nil {
 		return domain.AgentProfile{}, err
+	}
+	if profile.Kind != kind {
+		return domain.AgentProfile{}, &domain.ValidationError{Field: "kind", Message: "profile " + name + " runs " + string(profile.Kind) + ", not " + string(kind)}
 	}
 	sealed, err := s.secrets.Seal([]byte(secret))
 	if err != nil {
 		return domain.AgentProfile{}, err
 	}
-	profile, err = s.repo.SetAgentCredential(ctx, profile.ID, kind, sealed)
+	profile, err = s.repo.SetAgentCredential(ctx, profile.ID, credKind, sealed)
 	return changed(s, "agent_profile.updated", profile, err)
 }
 

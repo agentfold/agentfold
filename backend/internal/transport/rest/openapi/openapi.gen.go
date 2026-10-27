@@ -35,8 +35,9 @@ func (e AgentNodeType) Valid() bool {
 
 // Defines values for AgentProfileCredentialKind.
 const (
-	ApiKey     AgentProfileCredentialKind = "api_key"
-	OauthToken AgentProfileCredentialKind = "oauth_token"
+	ApiKey       AgentProfileCredentialKind = "api_key"
+	OauthToken   AgentProfileCredentialKind = "oauth_token"
+	OpencodeAuth AgentProfileCredentialKind = "opencode_auth"
 )
 
 // Valid indicates whether the value is a known member of the AgentProfileCredentialKind enum.
@@ -46,6 +47,8 @@ func (e AgentProfileCredentialKind) Valid() bool {
 		return true
 	case OauthToken:
 		return true
+	case OpencodeAuth:
+		return true
 	default:
 		return false
 	}
@@ -53,13 +56,34 @@ func (e AgentProfileCredentialKind) Valid() bool {
 
 // Defines values for AgentProfileKind.
 const (
-	Claude AgentProfileKind = "claude"
+	AgentProfileKindClaude   AgentProfileKind = "claude"
+	AgentProfileKindOpencode AgentProfileKind = "opencode"
 )
 
 // Valid indicates whether the value is a known member of the AgentProfileKind enum.
 func (e AgentProfileKind) Valid() bool {
 	switch e {
-	case Claude:
+	case AgentProfileKindClaude:
+		return true
+	case AgentProfileKindOpencode:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentProfileInputKind.
+const (
+	AgentProfileInputKindClaude   AgentProfileInputKind = "claude"
+	AgentProfileInputKindOpencode AgentProfileInputKind = "opencode"
+)
+
+// Valid indicates whether the value is a known member of the AgentProfileInputKind enum.
+func (e AgentProfileInputKind) Valid() bool {
+	switch e {
+	case AgentProfileInputKindClaude:
+		return true
+	case AgentProfileInputKindOpencode:
 		return true
 	default:
 		return false
@@ -460,8 +484,10 @@ type AgentProfile struct {
 	// CredentialKind Absent until the profile is logged in.
 	CredentialKind *AgentProfileCredentialKind `json:"credential_kind,omitempty"`
 	Id             openapi_types.UUID          `json:"id"`
-	Kind           AgentProfileKind            `json:"kind"`
-	Name           string                      `json:"name"`
+
+	// Kind The agent CLI the profile runs.
+	Kind AgentProfileKind `json:"kind"`
+	Name string           `json:"name"`
 
 	// Ready Whether the profile has a credential.
 	Ready     bool      `json:"ready"`
@@ -471,13 +497,18 @@ type AgentProfile struct {
 // AgentProfileCredentialKind Absent until the profile is logged in.
 type AgentProfileCredentialKind string
 
-// AgentProfileKind defines model for AgentProfile.Kind.
+// AgentProfileKind The agent CLI the profile runs.
 type AgentProfileKind string
 
 // AgentProfileInput defines model for AgentProfileInput.
 type AgentProfileInput struct {
-	Name string `json:"name"`
+	// Kind Read on creation only; claude when absent.
+	Kind *AgentProfileInputKind `json:"kind,omitempty"`
+	Name string                 `json:"name"`
 }
+
+// AgentProfileInputKind Read on creation only; claude when absent.
+type AgentProfileInputKind string
 
 // Artifact A file an agent node collected on the card, with its versions and review chat. Moving the card to another lane freezes it.
 type Artifact struct {

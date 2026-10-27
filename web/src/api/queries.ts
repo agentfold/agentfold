@@ -7,6 +7,7 @@ import {
 
 import {
   unwrap,
+  type AgentProfileInput,
   type Card,
   type CardInput,
   type CardTypeInput,
@@ -310,8 +311,8 @@ export function usePublishFlow(id: string) {
 
 export function useCreateAgentProfile() {
   const { client } = useApi()
-  return useChange(keys.agentProfiles, (name: string) =>
-    unwrap(client.POST('/agent-profiles', { body: { name } })),
+  return useChange(keys.agentProfiles, (body: AgentProfileInput) =>
+    unwrap(client.POST('/agent-profiles', { body })),
   )
 }
 

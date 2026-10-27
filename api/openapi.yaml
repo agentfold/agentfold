@@ -1291,14 +1291,17 @@ components:
       required: [id, kind, name, ready, created_at, updated_at]
       properties:
         id: { type: string, format: uuid }
-        kind: { type: string, enum: [claude] }
+        kind:
+          type: string
+          enum: [claude, opencode]
+          description: The agent CLI the profile runs.
         name: { type: string }
         ready:
           type: boolean
           description: Whether the profile has a credential.
         credential_kind:
           type: string
-          enum: [oauth_token, api_key]
+          enum: [oauth_token, api_key, opencode_auth]
           description: Absent until the profile is logged in.
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
@@ -1306,6 +1309,10 @@ components:
       type: object
       required: [name]
       properties:
+        kind:
+          type: string
+          enum: [claude, opencode]
+          description: Read on creation only; claude when absent.
         name: { type: string }
     McpServer:
       type: object

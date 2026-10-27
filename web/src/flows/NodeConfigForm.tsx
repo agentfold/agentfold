@@ -10,6 +10,7 @@ import type {
   MoveCardConfig,
   TriggerConfig,
 } from '../api/client'
+import { agentKindLabels } from '../agents/labels'
 import { Button } from '../components/Button'
 import { SelectField, TextArea, TextField } from '../components/Field'
 import { formatTools, parseCount, parseSchema, parseTools } from './config'
@@ -371,7 +372,7 @@ function ProfileField<C extends AgentConfig>({
         { value: '', label: 'Escolha o perfil' },
         ...profiles.map((p) => ({
           value: p.id,
-          label: p.ready ? p.name : `${p.name} (sem credencial)`,
+          label: `${p.name} · ${agentKindLabels[p.kind]}${p.ready ? '' : ' (sem credencial)'}`,
         })),
       ]}
     />

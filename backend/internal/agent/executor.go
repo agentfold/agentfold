@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -61,8 +62,8 @@ type Executor struct {
 	Secrets    Opener
 	Workspaces workspace.Provider
 	Runner     runner.Runner
-	// Binary is the path of the claude CLI on the host.
-	Binary string
+	// Binaries are the paths of the agent CLIs on the host, by profile kind.
+	Binaries map[domain.AgentKind]string
 	// BoardURL is where agents reach the board MCP server (BoardURL/mcp).
 	BoardURL string
 	// Pub announces the node runs starting and their output growing.
@@ -126,16 +127,14 @@ func (e *Executor) execute(ctx context.Context, run domain.NodeRun, prompt strin
 		prompt = firstPrompt(j.node.config.Prompt, j.card, prompt)
 	}
 	token, tokenHash := newToken()
-	layout := e.Runner.Layout(ws)
-	name := "mcp-" + run.ID.String() + ".json"
-	servers, err := e.writeMcpConfig(ctx, filepath.Join(ws.ClaudeDir, name), token, j.node.config.McpServerIDs)
-	if err != nil {
-		return domain.NodeResult{}, err
-	}
-	defer func() { _ = os.Remove(filepath.Join(ws.ClaudeDir, name)) }()
 	inv := Invocation{
 		Prompt: prompt, SessionID: session, Resume: resume, Config: j.node.config,
-		SystemPrompt: j.node.systemPrompt(), McpConfig: layout.Claude + "/" + name, McpServers: servers,
+		SystemPrompt: j.node.systemPrompt(),
+	}
+	spec, stream, cleanup, err := e.command(ctx, j, ws, &inv, token)
+	defer cleanup()
+	if err != nil {
+		return domain.NodeResult{}, err
 	}
 	started, err := e.Store.StartNodeRun(ctx, run.ID, session, tokenHash)
 	if err != nil {
@@ -148,16 +147,9 @@ func (e *Executor) execute(ctx context.Context, run domain.NodeRun, prompt strin
 	}
 	defer func() { _ = logFile.Close() }()
 
-	var stream Stream
-	runErr := e.Runner.Run(ctx, runner.Spec{
-		Binary:    e.Binary,
-		Args:      Args(inv),
-		Env:       Env(layout.Claude, j.profile.CredentialKind, j.secret),
-		Workspace: ws,
-	}, func(line []byte) {
+	runErr := e.Runner.Run(ctx, spec, func(line []byte) {
 		_, _ = logFile.Write(append(line, '\n'))
-		stream.Line(line)
-		e.record(ctx, run.ID, line)
+		e.record(ctx, run.ID, stream.Line(line))
 	})
 	if ctx.Err() != nil {
 		return failure(stream.Outcome(runErr), "the agent was interrupted: its flow run was canceled, or another worker took the job over"), nil
@@ -165,10 +157,90 @@ func (e *Executor) execute(ctx context.Context, run domain.NodeRun, prompt strin
 	return e.outcome(context.WithoutCancel(ctx), j, ws, stream.Outcome(runErr))
 }
 
-// record keeps the steps of a stream-json line for the card page. Steps
-// that cannot be kept are lost to the page only: the log has them all.
-func (e *Executor) record(ctx context.Context, nodeRunID uuid.UUID, line []byte) {
-	steps := Steps(line)
+// outputStream reads the output of an agent CLI, line by line.
+type outputStream interface {
+	// Line returns the steps a line shows on the card page.
+	Line(line []byte) []domain.NodeOutput
+	Outcome(runErr error) domain.NodeResult
+}
+
+// command prepares the run of the profile's CLI: its config files in the
+// card's agent home (removed by cleanup), its command line and the stream
+// that reads its output.
+func (e *Executor) command(ctx context.Context, j job, ws workspace.Workspace, inv *Invocation, token string) (runner.Spec, outputStream, func(), error) {
+	var files []string
+	cleanup := func() {
+		for _, f := range files {
+			_ = os.Remove(filepath.Join(ws.ClaudeDir, f))
+		}
+	}
+	binary := e.Binaries[j.profile.Kind]
+	if binary == "" {
+		return runner.Spec{}, nil, cleanup, fmt.Errorf("this worker has no %s CLI: install it, or set ORQ_%s_BIN", j.profile.Kind, strings.ToUpper(string(j.profile.Kind)))
+	}
+	servers, err := e.mcpServers(ctx, token, j.node.config.McpServerIDs)
+	if err != nil {
+		return runner.Spec{}, nil, cleanup, err
+	}
+	home := e.Runner.Layout(ws).Claude
+	write := func(name string, data []byte) error {
+		files = append(files, name)
+		return os.WriteFile(filepath.Join(ws.ClaudeDir, name), data, 0o600)
+	}
+	spec := runner.Spec{Binary: binary, Workspace: ws}
+	if j.profile.Kind == domain.AgentOpencode {
+		instructions := "orquestrator-" + j.run.ID.String() + ".md"
+		if err := write(instructions, []byte(inv.SystemPrompt)); err != nil {
+			return spec, nil, cleanup, err
+		}
+		if err := e.importCredentials(ctx, j, ws, home, write); err != nil {
+			return spec, nil, cleanup, err
+		}
+		spec.Args = OpencodeArgs(*inv)
+		spec.Env = OpencodeEnv(home, OpencodeConfig(*inv, servers, home+"/"+instructions))
+		return spec, &OpencodeStream{}, cleanup, nil
+	}
+	name := "mcp-" + j.run.ID.String() + ".json"
+	data, _ := json.Marshal(map[string]any{"mcpServers": servers}) // plain values
+	if err := write(name, data); err != nil {
+		return spec, nil, cleanup, err
+	}
+	inv.McpConfig = home + "/" + name
+	for server := range servers {
+		if server != boardServer {
+			inv.McpServers = append(inv.McpServers, server)
+		}
+	}
+	slices.Sort(inv.McpServers)
+	inv.McpServers = append([]string{boardServer}, inv.McpServers...)
+	spec.Args = Args(*inv)
+	spec.Env = Env(home, j.profile.CredentialKind, j.secret)
+	return spec, &Stream{}, cleanup, nil
+}
+
+// importCredentials imports the opencode credentials of the profile into
+// the card's agent home before each run, so a new login reaches running
+// cards too.
+func (e *Executor) importCredentials(ctx context.Context, j job, ws workspace.Workspace, home string, write func(string, []byte) error) error {
+	name := "auth-" + j.run.ID.String() + ".json"
+	if err := write(name, []byte(j.secret)); err != nil {
+		return err
+	}
+	err := e.Runner.Run(ctx, runner.Spec{
+		Binary:    e.Binaries[domain.AgentOpencode],
+		Args:      OpencodeImportArgs(home + "/" + name),
+		Env:       []string{"HOME=" + home},
+		Workspace: ws,
+	}, func([]byte) {})
+	if err != nil {
+		return fmt.Errorf("import the opencode credentials of profile %q: %w", j.profile.Name, err)
+	}
+	return nil
+}
+
+// record keeps the steps of an output line for the card page. Steps that
+// cannot be kept are lost to the page only: the log has them all.
+func (e *Executor) record(ctx context.Context, nodeRunID uuid.UUID, steps []domain.NodeOutput) {
 	if len(steps) == 0 {
 		return
 	}
@@ -306,14 +378,14 @@ func (e *Executor) load(ctx context.Context, run domain.NodeRun) (job, error) {
 		return j, err
 	}
 	if sealed == nil {
-		return j, fmt.Errorf("agent profile %q is not logged in: run `orquestrator agent login claude --profile %s`", j.profile.Name, j.profile.Name)
+		return j, fmt.Errorf("agent profile %q is not logged in: run `orquestrator agent login %s --profile %s`", j.profile.Name, j.profile.Kind, j.profile.Name)
 	}
 	secret, err := e.Secrets.Open(sealed)
 	j.secret = string(secret)
 	return j, err
 }
 
-// session returns the Claude session of the node in this run, creating it
+// session returns the agent session of the node in this run, creating it
 // on the first run.
 func (e *Executor) session(ctx context.Context, j job) (uuid.UUID, bool, error) {
 	id, err := e.Store.AgentSession(ctx, j.flowRun.ID, j.run.NodeKey)
@@ -340,7 +412,8 @@ func firstPrompt(prompt string, card domain.Card, input string) string {
 	return text
 }
 
-// mcpEntry is a server in the --mcp-config file.
+// mcpEntry is a server in the Claude --mcp-config file; opencode gets the
+// same servers in its own config.
 type mcpEntry struct {
 	Type    string            `json:"type"`
 	Command string            `json:"command,omitempty"`
@@ -350,14 +423,12 @@ type mcpEntry struct {
 	Headers map[string]string `json:"headers,omitempty"`
 }
 
-// writeMcpConfig writes the --mcp-config file of a run: the board server,
-// authenticated by the run token, and the node's servers, secrets included.
-// The file is removed when the run ends. It returns the server names.
-func (e *Executor) writeMcpConfig(ctx context.Context, path, token string, ids []uuid.UUID) ([]string, error) {
+// mcpServers are the MCP servers of a run: the board server, authenticated
+// by the run token, and the node's servers, secrets included.
+func (e *Executor) mcpServers(ctx context.Context, token string, ids []uuid.UUID) (map[string]mcpEntry, error) {
 	servers := map[string]mcpEntry{
 		boardServer: {Type: "http", URL: e.BoardURL + "/mcp", Headers: map[string]string{"Authorization": "Bearer " + token}},
 	}
-	names := []string{boardServer}
 	for _, id := range ids {
 		server, err := e.Store.GetMcpServer(ctx, id)
 		if err != nil {
@@ -374,10 +445,8 @@ func (e *Executor) writeMcpConfig(ctx context.Context, path, token string, ids [
 			entry.Headers = merge(server.Headers, secrets)
 		}
 		servers[server.Name] = entry
-		names = append(names, server.Name)
 	}
-	data, _ := json.Marshal(map[string]any{"mcpServers": servers}) // plain values
-	return names, os.WriteFile(path, data, 0o600)
+	return servers, nil
 }
 
 func (e *Executor) mcpSecrets(ctx context.Context, id uuid.UUID) (map[string]string, error) {

@@ -87,7 +87,11 @@ func (h handlers) ListAgentProfiles(ctx context.Context, _ openapi.ListAgentProf
 }
 
 func (h handlers) CreateAgentProfile(ctx context.Context, req openapi.CreateAgentProfileRequestObject) (openapi.CreateAgentProfileResponseObject, error) {
-	profile, err := h.board.CreateAgentProfile(ctx, domain.AgentProfileInput{Name: req.Body.Name})
+	in := domain.AgentProfileInput{Name: req.Body.Name}
+	if req.Body.Kind != nil {
+		in.Kind = domain.AgentKind(*req.Body.Kind)
+	}
+	profile, err := h.board.CreateAgentProfile(ctx, in)
 	return openapi.CreateAgentProfile201JSONResponse(toAgentProfile(profile)), err
 }
 

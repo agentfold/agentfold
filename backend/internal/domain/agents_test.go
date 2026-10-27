@@ -18,8 +18,14 @@ func TestAgentProfile(t *testing.T) {
 		t.Fatal("profile with credential not ready")
 	}
 	in, err := AgentProfileInput{Name: " dev "}.Normalize()
-	if err != nil || in.Name != "dev" {
+	if err != nil || in.Name != "dev" || in.Kind != AgentClaude {
 		t.Fatalf("Normalize = %+v, %v", in, err)
+	}
+	if in, err := (AgentProfileInput{Kind: AgentOpencode, Name: "oc"}).Normalize(); err != nil || in.Kind != AgentOpencode {
+		t.Fatalf("Normalize opencode = %+v, %v", in, err)
+	}
+	if _, err := (AgentProfileInput{Kind: "codex", Name: "x"}).Normalize(); fieldOf(t, err) != "kind" {
+		t.Fatal("unknown kind accepted")
 	}
 	if _, err := (AgentProfileInput{}).Normalize(); fieldOf(t, err) != "name" {
 		t.Fatal("blank name accepted")
@@ -42,6 +48,24 @@ func TestDetectCredential(t *testing.T) {
 	}
 	if _, _, err := DetectCredential("hunter2"); fieldOf(t, err) != "credential" {
 		t.Fatal("unknown credential accepted")
+	}
+}
+
+func TestCredential(t *testing.T) {
+	if _, kind, err := Credential(AgentClaude, "sk-ant-api03-xyz"); err != nil || kind != CredentialAPIKey {
+		t.Fatalf("claude = %q, %v", kind, err)
+	}
+	secret, kind, err := Credential(AgentOpencode, " {\"openrouter\":{\"type\":\"api\"}}\n")
+	if err != nil || kind != CredentialOpencodeAuth || secret != `{"openrouter":{"type":"api"}}` {
+		t.Fatalf("opencode = %q, %q, %v", secret, kind, err)
+	}
+	if _, _, err := Credential(AgentOpencode, `[{"id":"openrouter"}]`); err != nil {
+		t.Fatalf("opencode list: %v", err)
+	}
+	for _, bad := range []string{"", "{}", "[]", "null", "sk-ant-api03-xyz"} {
+		if _, _, err := Credential(AgentOpencode, bad); fieldOf(t, err) != "credential" {
+			t.Errorf("opencode %q accepted", bad)
+		}
 	}
 }
 

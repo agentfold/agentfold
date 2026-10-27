@@ -506,6 +506,7 @@ export function createFakeBackend(initial: Partial<State> = {}): FakeBackend {
       case 'POST /agent-profiles': {
         if (!body.name) return invalid('name')
         const p = agentProfile(str(body.name), {
+          kind: body.kind === 'opencode' ? 'opencode' : 'claude',
           ready: false,
           credential_kind: undefined,
         })

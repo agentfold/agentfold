@@ -164,6 +164,17 @@ orquestrator/
 - **Pronto quando:** dev ⇄ gateway até aprovar, e plano coletado, revisado pelo chat (versão 2) e
   congelado ao mover o card, de ponta a ponta com o Claude falso.
 
+### F13 — opencode como agente (antes da F9)
+- Perfis passam a ter tipo (`claude` ou `opencode`), escolhido na criação; o login do opencode
+  copia o `opencode auth export` do usuário, criptografado, e cada execução o importa na casa do
+  agente do card (`HOME` isolado, `--standalone`).
+- Adaptador próprio: argumentos, configuração em `OPENCODE_CONFIG_CONTENT` (MCP, instruções do
+  board, permissões, limite de passos), leitura dos eventos JSON e erros de provedor explicados
+  (sem credencial, cota gratuita). O worker aceita os dois CLIs (`ORQ_OPENCODE_BIN`), e o
+  opencode fica fixado no `mise.toml` (aqua).
+- **Pronto quando:** um fluxo com dev no opencode e gateway no Claude cicla até aprovar de ponta
+  a ponta com o CLI falso, e um nó roda com o opencode real (`openrouter/xiaomi/mimo-v2.6-pro`).
+
 ### F9 — Smoke de ponta a ponta
 - Roteiro manual com Claude real: criar fluxo Dev ⇄ Agent com gateway → MoveCard e um planner com
   artefato, criar card num repo de exemplo, responder uma pergunta, passar por uma rejeição e
@@ -183,6 +194,6 @@ orquestrator/
 
 ## Fora do MVP e da Fase 2
 Nó de PR, review entre repositórios no fluxo do pai (`WaitSignal`), Fork/Join, projetos com origem
-`git` (`GitClone`), storage compartilhado entre hosts, multiusuário/auth, outros agentes, webhooks,
+`git` (`GitClone`), storage compartilhado entre hosts, multiusuário/auth, outros agentes além de Claude e opencode, webhooks,
 orçamento de custo, runner Docker,
 CI remoto (gates rodam localmente via mise tasks até existir um remote).

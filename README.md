@@ -40,6 +40,13 @@ mise run agent:login -- --profile dev   # roda `claude setup-token` e guarda o t
 mise run backend:worker                 # executa os fluxos e os agentes (isolados com bwrap)
 ```
 
+Perfis do opencode copiam o login do seu opencode (entre no provedor antes com `opencode auth
+login`); o modelo vai no campo Modelo do nó, como `openrouter/xiaomi/mimo-v2.6-pro`:
+
+```bash
+mise run agent:login-opencode -- --profile oc --integration openrouter
+```
+
 Os fluxos rodam no worker: criar um card ou movê-lo para outra baia enfileira um job que dispara
 os fluxos habilitados cujo gatilho combina (sempre a última versão publicada). Criar um card numa
 baia também conta como entrar nela. Enquanto um fluxo roda para um card, só o fluxo move o card,
@@ -58,8 +65,9 @@ consumo, e permite cancelar o fluxo. Sem token, o mesmo endpoint expõe tools de
 (`list_cards`, `create_card`, `move_card`, `list_questions`, `answer_questions`, `get_run`…).
 
 O worker lê `ORQ_DATA_DIR` (padrão `~/.local/share/orquestrator`, onde ficam os worktrees dos
-cards), `ORQ_CLAUDE_BIN` (padrão: o `claude` do PATH, fixado no `mise.toml`) e `ORQ_RUNNER`
-(`bwrap`, padrão, ou `local` sem isolamento).
+cards), `ORQ_CLAUDE_BIN` e `ORQ_OPENCODE_BIN` (padrão: o `claude` e o `opencode` do PATH,
+fixados no `mise.toml`; basta um dos dois, e os nós de perfis sem CLI no worker falham) e
+`ORQ_RUNNER` (`bwrap`, padrão, ou `local` sem isolamento).
 
 Em outro terminal, `mise run web:dev` sobe o board em `http://localhost:5173` (o Vite repassa
 `/api` para o server).

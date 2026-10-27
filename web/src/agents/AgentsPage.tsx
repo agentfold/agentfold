@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import type { McpServer } from '../api/client'
+import type { AgentProfile, McpServer } from '../api/client'
 import {
   useAgentProfiles,
   useCreateAgentProfile,
@@ -10,9 +10,10 @@ import {
 } from '../api/queries'
 import { Button } from '../components/Button'
 import { ErrorMessage } from '../components/ErrorMessage'
-import { TextField } from '../components/Field'
+import { SelectField, TextField } from '../components/Field'
 import { QueryStatus } from '../components/Loading'
 import { Modal } from '../components/Modal'
+import { agentKindLabels } from './labels'
 import { McpServerForm } from './McpServerForm'
 
 /** Agent profiles and external MCP servers that flow nodes use. */
@@ -25,7 +26,11 @@ export function AgentsPage() {
   )
 }
 
-const credentialLabels = { oauth_token: 'token', api_key: 'API key' }
+const credentialLabels = {
+  oauth_token: 'token',
+  api_key: 'API key',
+  opencode_auth: 'credenciais do opencode',
+}
 
 function Profiles() {
   const profiles = useAgentProfiles()
@@ -38,10 +43,18 @@ function Profiles() {
         <div>
           <h2 className="text-base font-semibold">Perfis de agente</h2>
           <p className="text-sm text-slate-500">
-            Contas do Claude com que os nós rodam. A credencial é cadastrada
-            pelo terminal:{' '}
+            Contas do Claude Code ou do opencode com que os nós rodam. A
+            credencial é cadastrada pelo terminal:{' '}
             <code className="rounded bg-slate-200 px-1 text-xs">
               mise run agent:login -- --profile &lt;nome&gt;
+            </code>{' '}
+            ou, depois de entrar no provedor com{' '}
+            <code className="rounded bg-slate-200 px-1 text-xs">
+              opencode auth login
+            </code>
+            ,{' '}
+            <code className="rounded bg-slate-200 px-1 text-xs">
+              mise run agent:login-opencode -- --profile &lt;nome&gt;
             </code>
           </p>
         </div>
@@ -63,7 +76,12 @@ function Profiles() {
         <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
           {profiles.data.map((p) => (
             <li key={p.id} className="flex items-center gap-3 px-4 py-3">
-              <p className="flex-1 text-sm font-medium">{p.name}</p>
+              <p className="flex-1 text-sm font-medium">
+                {p.name}{' '}
+                <span className="font-normal text-slate-500">
+                  · {agentKindLabels[p.kind]}
+                </span>
+              </p>
               {p.credential_kind ? (
                 <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-800">
                   Pronto ({credentialLabels[p.credential_kind]})
@@ -102,16 +120,28 @@ function Profiles() {
 function NewProfileForm({ onClose }: { onClose: () => void }) {
   const create = useCreateAgentProfile()
   const [name, setName] = useState('')
+  const [kind, setKind] = useState<AgentProfile['kind']>('claude')
   return (
     <Modal title="Novo perfil" onClose={onClose}>
       <form
         className="flex flex-col gap-3"
         onSubmit={(e) => {
           e.preventDefault()
-          create.mutate(name, { onSuccess: onClose })
+          create.mutate({ name, kind }, { onSuccess: onClose })
         }}
       >
         <TextField label="Nome" value={name} onChange={setName} autoFocus />
+        <SelectField
+          label="Agente"
+          value={kind}
+          onChange={(v) => {
+            setKind(v === 'opencode' ? 'opencode' : 'claude')
+          }}
+          options={[
+            { value: 'claude', label: agentKindLabels.claude },
+            { value: 'opencode', label: agentKindLabels.opencode },
+          ]}
+        />
         <ErrorMessage error={create.error} />
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>Cancelar</Button>

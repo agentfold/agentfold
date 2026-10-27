@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"orquestrator/internal/workspace"
 )
@@ -47,6 +48,7 @@ func (b Bwrap) Args(spec Spec) []string {
 		"--dir", sandboxHome,
 	}
 	args = append(args, rootDirs("/")...)
+	args = append(args, resolvConf("/")...)
 	for _, path := range b.ReadOnly {
 		args = append(args, "--ro-bind", path, path)
 	}
@@ -84,6 +86,24 @@ func rootDirs(root string) []string {
 		}
 	}
 	return args
+}
+
+// resolvConf mounts the file /etc/resolv.conf links to under root, when it
+// lives outside /etc and /usr (systemd-resolved keeps it in /run): without
+// it the agent cannot resolve its API host.
+func resolvConf(root string) []string {
+	target, err := filepath.EvalSymlinks(filepath.Join(root, "etc", "resolv.conf"))
+	if err != nil {
+		return nil
+	}
+	rel, _ := filepath.Rel(root, target) // both are under root
+	inside := "/" + rel
+	for _, dir := range []string{"/etc/", "/usr/"} {
+		if strings.HasPrefix(inside, dir) {
+			return nil
+		}
+	}
+	return []string{"--ro-bind", target, inside}
 }
 
 func splitEnv(kv string) (string, string) {

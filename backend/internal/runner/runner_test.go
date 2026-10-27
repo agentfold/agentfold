@@ -173,6 +173,36 @@ func TestRootDirs(t *testing.T) {
 	}
 }
 
+func TestResolvConf(t *testing.T) {
+	root := t.TempDir()
+	if got := resolvConf(root); got != nil {
+		t.Fatalf("no resolv.conf: %q", got)
+	}
+	for _, dir := range []string{"etc", "run/resolve"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stub := filepath.Join(root, "run", "resolve", "stub.conf")
+	if err := os.WriteFile(stub, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "etc", "resolv.conf")
+	if err := os.Symlink("../run/resolve/stub.conf", link); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(resolvConf(root), " "); got != "--ro-bind "+stub+" /run/resolve/stub.conf" {
+		t.Fatalf("linked: %q", got)
+	}
+	_ = os.Remove(link)
+	if err := os.WriteFile(link, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := resolvConf(root); got != nil {
+		t.Fatalf("plain file under /etc: %q", got)
+	}
+}
+
 func TestBwrapSandbox(t *testing.T) {
 	path, err := exec.LookPath("bwrap")
 	if err != nil {

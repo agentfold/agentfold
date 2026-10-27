@@ -48,6 +48,10 @@ func newStack(t *testing.T) *stack {
 	if out, err := exec.Command("go", "build", "-o", filepath.Join(bin, "claude"), "../agent/testdata/fakeclaude").CombinedOutput(); err != nil {
 		t.Fatalf("build fake claude: %v: %s", err, out)
 	}
+	// The fake plays opencode too.
+	if err := os.Symlink(filepath.Join(bin, "claude"), filepath.Join(bin, "opencode")); err != nil {
+		t.Fatal(err)
+	}
 	key := crypto.NewKey()
 	url := freshDatabase(t)
 	t.Setenv(envDatabaseURL, url)
@@ -68,6 +72,7 @@ func newStack(t *testing.T) *stack {
 	t.Setenv(envAddr, "127.0.0.1:0")
 	t.Setenv(envRunner, "local")
 	t.Setenv(envClaudeBin, "")
+	t.Setenv(envOpencodeBin, "")
 	t.Setenv(envDataDir, "")
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -106,7 +111,7 @@ func (s *stack) setUpBoard(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.typ = cardType.ID
-	profile, err := s.board.LoginAgent(ctx, "dev", "sk-ant-oat01-x")
+	profile, err := s.board.LoginAgent(ctx, domain.AgentClaude, "dev", "sk-ant-oat01-x")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,8 +160,8 @@ func (s *stack) agentWith(id, prompt, more string) domain.Node {
 	return domain.Node{ID: id, Type: domain.NodeAgent, Config: fmt.Appendf(nil, `{"profile_id":%q,"prompt":%q%s}`, s.profile, prompt, more)}
 }
 
-func (s *stack) moveTo(id string, lane uuid.UUID) domain.Node {
-	return domain.Node{ID: id, Type: domain.NodeMoveCard, Config: fmt.Appendf(nil, `{"lane_id":%q}`, lane)}
+func (s *stack) moveTo(lane uuid.UUID) domain.Node {
+	return domain.Node{ID: "move", Type: domain.NodeMoveCard, Config: fmt.Appendf(nil, `{"lane_id":%q}`, lane)}
 }
 
 // startCard creates a card in Todo and moves it into Doing by hand.
@@ -220,7 +225,7 @@ func (s *stack) stop(t *testing.T) {
 // stream shows live.
 func TestFlowEndToEnd(t *testing.T) {
 	s := newStack(t)
-	s.flow(t, []domain.Node{s.agent("dev", "Implement it"), s.moveTo("move", s.done), {ID: "end", Type: domain.NodeEnd, Config: []byte(`{}`)}})
+	s.flow(t, []domain.Node{s.agent("dev", "Implement it"), s.moveTo(s.done), {ID: "end", Type: domain.NodeEnd, Config: []byte(`{}`)}})
 	card := s.startCard(t)
 	// The card is created and moved by hand, then the flow starts, its agent
 	// runs, it moves the card to Done and ends. The server and the worker
@@ -261,7 +266,7 @@ func TestFlowEndToEnd(t *testing.T) {
 func TestGatewayCycleEndToEnd(t *testing.T) {
 	s := newStack(t)
 	review := s.agentWith("rev", "Review it [gate:reject,approve]", `"gateway":true,"max_rounds":3,"read_only":true`)
-	s.flow(t, []domain.Node{s.agent("dev", "Implement it [ask:Which database?] [done:implemented]"), review, s.moveTo("move", s.done)},
+	s.flow(t, []domain.Node{s.agent("dev", "Implement it [ask:Which database?] [done:implemented]"), review, s.moveTo(s.done)},
 		domain.Edge{ID: "rev.rejected", Source: "rev", SourceHandle: "rejected", Target: "dev"})
 	card := s.startCard(t)
 
@@ -329,6 +334,52 @@ func TestGatewayCycleEndToEnd(t *testing.T) {
 	s.stop(t)
 }
 
+// TestOpencodeEndToEnd: a developer on opencode and a gateway on Claude
+// in the same flow: the board tools reach both through their own MCP
+// config, and the rejected developer resumes its opencode session with the
+// feedback.
+func TestOpencodeEndToEnd(t *testing.T) {
+	s := newStack(t)
+	ctx := context.Background()
+	oc, err := s.board.LoginAgent(ctx, domain.AgentOpencode, "oc", `{"openrouter":{"type":"api","key":"k"}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev := domain.Node{ID: "dev", Type: domain.NodeAgent, Config: fmt.Appendf(nil, `{"profile_id":%q,"prompt":"Implement it [done:implemented]","model":"openrouter/m"}`, oc.ID)}
+	review := s.agentWith("rev", "Review it [gate:reject,approve]", `"gateway":true,"max_rounds":3`)
+	s.flow(t, []domain.Node{dev, review, s.moveTo(s.done)},
+		domain.Edge{ID: "rev.rejected", Source: "rev", SourceHandle: "rejected", Target: "dev"})
+	card := s.startCard(t)
+
+	s.waitRun(t, card, domain.RunDone)
+	rows, err := s.pool.Query(ctx, `SELECT node_key, iteration, coalesce(output_handle, ''), turns, coalesce(summary, '') FROM node_runs ORDER BY created_at`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var runs []string
+	for rows.Next() {
+		var key, handle, summary string
+		var iteration, turns int
+		if err := rows.Scan(&key, &iteration, &handle, &turns, &summary); err != nil {
+			t.Fatal(err)
+		}
+		runs = append(runs, fmt.Sprintf("%s#%d %s %d %s", key, iteration, handle, turns, summary))
+	}
+	want := []string{"dev#1 done 2 implemented", "rev#1 rejected 3 ", "dev#2 done 2 implemented", "rev#2 approved 3 ", "move#1 next 0 "}
+	if !slices.Equal(runs, want) {
+		t.Fatalf("node runs %q; worker log: %s", runs, s.workerErr.String())
+	}
+	home := filepath.Join(os.Getenv("HOME"), ".local", "share", "orquestrator", "cards", card.String(), "claude")
+	if imported, err := os.ReadFile(filepath.Join(home, "fake-auth.json")); err != nil || !strings.Contains(string(imported), "openrouter") {
+		t.Fatalf("credentials not imported: %q, %v", imported, err)
+	}
+	sessions, _ := filepath.Glob(filepath.Join(home, "fake-ses_*.runs"))
+	if runs, _ := os.ReadFile(sessions[0]); len(sessions) != 1 || string(runs) != "2" {
+		t.Fatalf("the developer did not resume its session: %v %q", sessions, runs)
+	}
+	s.stop(t)
+}
+
 // TestArtifactRevisionEndToEnd: a planner writes plan.md, collected as the
 // artifact "Plano"; a message in its review chat resumes the planner, which
 // writes a new version, while the card stays in Done; moving the card on
@@ -336,7 +387,7 @@ func TestGatewayCycleEndToEnd(t *testing.T) {
 func TestArtifactRevisionEndToEnd(t *testing.T) {
 	s := newStack(t)
 	planner := s.agentWith("plan", "Plan it [write:plan.md:# Plano]", `"artifacts":[{"name":"Plano","path":"plan.md"}]`)
-	s.flow(t, []domain.Node{planner, s.moveTo("move", s.done)})
+	s.flow(t, []domain.Node{planner, s.moveTo(s.done)})
 	card := s.startCard(t)
 	s.waitRun(t, card, domain.RunDone)
 

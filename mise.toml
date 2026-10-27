@@ -5,6 +5,8 @@ golangci-lint = "2.15.0"
 node = "24.22.1"
 # The npm backend skips install scripts; the postinstall puts the native binary in place.
 "npm:@anthropic-ai/claude-code" = { version = "2.1.310", postinstall = 'node "$MISE_TOOL_INSTALL_PATH/node_modules/@anthropic-ai/claude-code/install.cjs"' }
+# opencode, the other agent CLI (aqua ships the native binary).
+"aqua:anomalyco/opencode" = "2.2.0"
 pnpm = "12.15.0"
 shellcheck = "0.11.0"
 sqlc = "1.31.1"
@@ -64,6 +66,12 @@ description = "Log in an agent profile: mise run agent:login -- --profile <name>
 dir = "{{config_root}}/backend"
 env = { ORQ_DATABASE_URL = "postgres://orquestrator:orquestrator@127.0.0.1:5432/orquestrator?sslmode=disable" }
 run = "go build -o bin/orquestrator ./cmd/orquestrator && bin/orquestrator agent login claude"
+
+[tasks."agent:login-opencode"]
+description = "Copy your opencode login into a profile: mise run agent:login-opencode -- --profile <name> [--integration openrouter]"
+dir = "{{config_root}}/backend"
+env = { ORQ_DATABASE_URL = "postgres://orquestrator:orquestrator@127.0.0.1:5432/orquestrator?sslmode=disable" }
+run = "go build -o bin/orquestrator ./cmd/orquestrator && bin/orquestrator agent login opencode"
 
 [tasks."dev:setup"]
 description = "Create .env with a random ORQ_SECRET_KEY (once)"

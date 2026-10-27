@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"net/url"
 	"strings"
 	"time"
@@ -11,8 +12,13 @@ import (
 // AgentKind names the CLI an agent profile runs.
 type AgentKind string
 
-// AgentClaude runs Claude Code.
-const AgentClaude AgentKind = "claude"
+// Agent CLIs.
+const (
+	// AgentClaude runs Claude Code.
+	AgentClaude AgentKind = "claude"
+	// AgentOpencode runs opencode.
+	AgentOpencode AgentKind = "opencode"
+)
 
 // CredentialKind tells how a profile authenticates.
 type CredentialKind string
@@ -24,6 +30,8 @@ const (
 	CredentialOAuthToken CredentialKind = "oauth_token" //nolint:gosec // a kind name, not a credential
 	// CredentialAPIKey is an Anthropic API key (ANTHROPIC_API_KEY).
 	CredentialAPIKey CredentialKind = "api_key"
+	// CredentialOpencodeAuth is the JSON `opencode auth export` prints.
+	CredentialOpencodeAuth CredentialKind = "opencode_auth" //nolint:gosec // a kind name, not a credential
 )
 
 // AgentProfile is a configured agent account that nodes run as.
@@ -43,15 +51,24 @@ func (p AgentProfile) EntityID() uuid.UUID { return p.ID }
 // Ready reports whether the profile has a credential.
 func (p AgentProfile) Ready() bool { return p.CredentialKind != "" }
 
-// AgentProfileInput holds the editable fields of a profile.
+// AgentProfileInput holds the editable fields of a profile. Kind is only
+// read on creation; empty means claude.
 type AgentProfileInput struct {
+	Kind AgentKind
 	Name string
 }
 
 // Normalize trims the fields and validates them.
 func (in AgentProfileInput) Normalize() (AgentProfileInput, error) {
+	switch in.Kind {
+	case "":
+		in.Kind = AgentClaude
+	case AgentClaude, AgentOpencode:
+	default:
+		return in, &ValidationError{Field: "kind", Message: "must be claude or opencode"}
+	}
 	name, err := requireText("name", in.Name)
-	return AgentProfileInput{Name: name}, err
+	return AgentProfileInput{Kind: in.Kind, Name: name}, err
 }
 
 // DetectCredential tells a setup-token token from an API key by its prefix.
@@ -64,6 +81,31 @@ func DetectCredential(secret string) (string, CredentialKind, error) {
 		return secret, CredentialAPIKey, nil
 	}
 	return "", "", &ValidationError{Field: "credential", Message: "expected a token from `claude setup-token` (sk-ant-oat…) or an API key (sk-ant-api…)"}
+}
+
+// Credential checks the secret of a profile of kind and tells its
+// credential kind: a Claude token or API key, or for opencode the
+// credentials `opencode auth export` prints: JSON, not empty. Its shape is
+// opencode's, which reads it back with `opencode auth import`.
+func Credential(kind AgentKind, secret string) (string, CredentialKind, error) {
+	if kind != AgentOpencode {
+		return DetectCredential(secret)
+	}
+	var auth any
+	if err := json.Unmarshal([]byte(secret), &auth); err != nil || isEmpty(auth) {
+		return "", "", &ValidationError{Field: "credential", Message: "expected the JSON `opencode auth export` prints, with at least one integration: log in with `opencode auth login` first"}
+	}
+	return strings.TrimSpace(secret), CredentialOpencodeAuth, nil
+}
+
+func isEmpty(v any) bool {
+	switch v := v.(type) {
+	case map[string]any:
+		return len(v) == 0
+	case []any:
+		return len(v) == 0
+	}
+	return v == nil
 }
 
 // McpTransport tells how an MCP server is reached.

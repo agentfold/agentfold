@@ -29,6 +29,10 @@ func TestAgentProfiles(t *testing.T) {
 		t.Fatalf("events %v", eventTypes(pub))
 	}
 
+	if _, err := s.CreateAgentProfile(ctx, domain.AgentProfileInput{Kind: domain.AgentOpencode, Name: "oc"}); err != nil || repo.ins["CreateAgentProfile"] != "opencode oc" {
+		t.Fatalf("CreateAgentProfile opencode: %v, %v", err, repo.ins)
+	}
+
 	repo.calls = nil
 	if _, err := s.CreateAgentProfile(ctx, domain.AgentProfileInput{}); err == nil {
 		t.Fatal("blank name accepted")
@@ -41,7 +45,8 @@ func TestAgentProfiles(t *testing.T) {
 func TestLoginAgent(t *testing.T) {
 	t.Run("existing profile", func(t *testing.T) {
 		s, repo, pub := newService()
-		if _, err := s.LoginAgent(ctx, "dev", " sk-ant-oat01-x "); err != nil {
+		repo.profile.Kind = domain.AgentClaude
+		if _, err := s.LoginAgent(ctx, domain.AgentClaude, "dev", " sk-ant-oat01-x "); err != nil {
 			t.Fatal(err)
 		}
 		if repo.ins["GetAgentProfileByName"] != "dev" || repo.ins["SetAgentCredential"] != "oauth_token sealed:sk-ant-oat01-x" {
@@ -54,7 +59,7 @@ func TestLoginAgent(t *testing.T) {
 	t.Run("new profile", func(t *testing.T) {
 		s, repo, pub := newService()
 		repo.errs = map[string]error{"GetAgentProfileByName": domain.ErrNotFound}
-		if _, err := s.LoginAgent(ctx, "dev", "sk-ant-api03-y"); err != nil {
+		if _, err := s.LoginAgent(ctx, domain.AgentClaude, "dev", "sk-ant-api03-y"); err != nil {
 			t.Fatal(err)
 		}
 		if repo.ins["CreateAgentProfile"] != "claude dev" || repo.ins["SetAgentCredential"] != "api_key sealed:sk-ant-api03-y" {
@@ -64,18 +69,35 @@ func TestLoginAgent(t *testing.T) {
 			t.Fatalf("events %v", eventTypes(pub))
 		}
 	})
+	t.Run("opencode", func(t *testing.T) {
+		s, repo, _ := newService()
+		repo.errs = map[string]error{"GetAgentProfileByName": domain.ErrNotFound}
+		if _, err := s.LoginAgent(ctx, domain.AgentOpencode, "oc", ` {"openrouter":{"key":"k"}} `); err != nil {
+			t.Fatal(err)
+		}
+		if repo.ins["CreateAgentProfile"] != "opencode oc" || repo.ins["SetAgentCredential"] != `opencode_auth sealed:{"openrouter":{"key":"k"}}` {
+			t.Fatalf("ins %v", repo.ins)
+		}
+	})
 	t.Run("failures", func(t *testing.T) {
 		s, repo, _ := newService()
-		if _, err := s.LoginAgent(ctx, "dev", "hunter2"); err == nil || len(repo.calls) != 0 {
+		repo.profile.Kind = domain.AgentClaude
+		if _, err := s.LoginAgent(ctx, domain.AgentClaude, "dev", "hunter2"); err == nil || len(repo.calls) != 0 {
 			t.Fatalf("bad secret: %v", err)
 		}
+		if _, err := s.LoginAgent(ctx, domain.AgentOpencode, "dev", "{}"); err == nil || len(repo.calls) != 0 {
+			t.Fatalf("empty opencode auth: %v", err)
+		}
+		if _, err := s.LoginAgent(ctx, domain.AgentOpencode, "dev", `{"openrouter":{}}`); err == nil || repo.ins["SetAgentCredential"] != nil {
+			t.Fatalf("profile of another kind: %v", err)
+		}
 		repo.errs = map[string]error{"GetAgentProfileByName": errRepo}
-		if _, err := s.LoginAgent(ctx, "dev", "sk-ant-api03-y"); !errors.Is(err, errRepo) {
+		if _, err := s.LoginAgent(ctx, domain.AgentClaude, "dev", "sk-ant-api03-y"); !errors.Is(err, errRepo) {
 			t.Fatalf("lookup: %v", err)
 		}
 		repo.errs = nil
 		s.secrets = fakeSealer{err: errRepo}
-		if _, err := s.LoginAgent(ctx, "dev", "sk-ant-api03-y"); !errors.Is(err, errRepo) {
+		if _, err := s.LoginAgent(ctx, domain.AgentClaude, "dev", "sk-ant-api03-y"); !errors.Is(err, errRepo) {
 			t.Fatalf("seal: %v", err)
 		}
 	})
