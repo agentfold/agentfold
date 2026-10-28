@@ -43,7 +43,7 @@ func findNode(g domain.Graph, key string) (node, error) {
 const (
 	basePrompt = "You are working on a card of the Orquestrator board. " +
 		"Never commit, push or open pull requests: leave your changes in the working tree; the board takes it from there. " +
-		"The orquestrator MCP server connects you to the board: get_card shows the card. " +
+		"The orquestrator MCP server connects you to the board: get_card shows the card, with its artifacts and its parent card, and list_projects the projects of the board. " +
 		"When you need a decision or information only a human has, call ask_human with your questions and then end your turn right away, " +
 		"without going on: you will be resumed with the answers. "
 	agentPrompt    = "When you finish, call report_done with a short summary of what you did."

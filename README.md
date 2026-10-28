@@ -55,7 +55,7 @@ ao vivo pelo server (`LISTEN/NOTIFY`).
 
 Os agentes falam com o board pelo servidor MCP em `http://127.0.0.1:8080/mcp` (o worker o encontra
 por `ORQ_SERVER_URL`, padrão `http://127.0.0.1:8080`). Cada execução recebe um token próprio e as
-tools `get_card`, `ask_human`, `report_done`, `submit_output` (nós com schema de saída) e
+tools `get_card`, `list_projects`, `ask_human`, `report_done`, `submit_output` (nós com schema de saída) e
 `approve`/`reject` (nós com gateway). A saída de cada nó chega ao agente seguinte como mensagem.
 Perguntas do agente aparecem na página do card (`#/cards/<id>`, aberta pelo clique no card) para
 resposta; o card fica parado até todas serem respondidas. A página mostra também a execução ao

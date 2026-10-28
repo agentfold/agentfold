@@ -197,7 +197,7 @@ func TestAgentTools(t *testing.T) {
 	board.card = domain.Card{Title: "Login"}
 	board.runs["tok"] = agentRun(domain.NodeAgent, `{}`)
 	cs := session(t, board, "Bearer tok")
-	if got := toolNames(t, cs); !slices.Equal(got, []string{"ask_human", "get_card", "report_done"}) {
+	if got := toolNames(t, cs); !slices.Equal(got, []string{"ask_human", "get_card", "list_projects", "report_done"}) {
 		t.Fatalf("tools %v", got)
 	}
 	if out, isErr := call(t, cs, "get_card", map[string]any{}); isErr || !strings.Contains(out, `"title":"Login"`) || !strings.Contains(out, `"artifacts":[]`) || strings.Contains(out, `"parent"`) {
@@ -225,6 +225,14 @@ func TestAgentTools(t *testing.T) {
 	}
 	board.errs["GetCard"] = nil
 	board.card.ParentCardID = nil
+	if out, isErr := call(t, cs, "list_projects", map[string]any{}); isErr || !strings.Contains(out, `"name":"web"`) || strings.Contains(out, "local_path") {
+		t.Fatalf("list_projects: %s", out)
+	}
+	board.errs["ListProjects"] = errBoard
+	if out, isErr := call(t, cs, "list_projects", map[string]any{}); !isErr {
+		t.Fatalf("list_projects error: %s", out)
+	}
+	board.errs["ListProjects"] = nil
 	if out, isErr := call(t, cs, "ask_human", map[string]any{"questions": []string{"DB?"}}); isErr || !strings.Contains(out, "End your turn") {
 		t.Fatalf("ask_human: %s", out)
 	}
@@ -270,7 +278,7 @@ func TestGatewayTools(t *testing.T) {
 	board := newBoard()
 	board.runs["tok"] = agentRun(domain.NodeAgent, `{"gateway":true}`)
 	cs := session(t, board, "Bearer tok")
-	if got := toolNames(t, cs); !slices.Equal(got, []string{"approve", "ask_human", "get_card", "reject", "report_done"}) {
+	if got := toolNames(t, cs); !slices.Equal(got, []string{"approve", "ask_human", "get_card", "list_projects", "reject", "report_done"}) {
 		t.Fatalf("tools %v", got)
 	}
 	if out, isErr := call(t, cs, "reject", map[string]any{"feedback": "add tests"}); isErr || board.args["Decide"] != "rejected:add tests" {

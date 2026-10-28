@@ -22,6 +22,11 @@ type (
 	approveInput struct {
 		Reason string `json:"reason,omitempty" jsonschema:"why the work can move forward"`
 	}
+	// agentProjectsOutput leaves the local paths out: agents see their
+	// workspace, not the user's checkouts.
+	agentProjectsOutput struct {
+		Projects []namedView `json:"projects"`
+	}
 	rejectInput struct {
 		Feedback string `json:"feedback" jsonschema:"what is wrong, where (file and line when it applies) and what to change"`
 	}
@@ -75,6 +80,13 @@ func agentServer(board Board, run service.AgentRun) *sdk.Server {
 			}
 			parent, err := cardWithArtifacts(ctx, board, *view.ParentCardID)
 			return nil, agentCardView{cardArtifactsView: view, Parent: &parent}, err
+		})
+	addTool(s, "list_projects", "The projects of the board: the repositories cards work on. A card's project_id is one of their ids; cards created from your output name their project.",
+		func(ctx context.Context, _ *sdk.CallToolRequest, _ noInput) (*sdk.CallToolResult, agentProjectsOutput, error) {
+			projects, err := board.ListProjects(ctx)
+			return nil, agentProjectsOutput{mapAll(projects, func(p domain.Project) namedView {
+				return namedView{ID: p.ID, Name: p.Name}
+			})}, err
 		})
 	addTool(s, "ask_human",
 		"Asks a human questions you cannot answer yourself. End your turn right after calling it: you are resumed with the answers.",

@@ -192,6 +192,7 @@ segredos injetados no momento da execução. Tools do board expostas ao agente:
 | `approve(reason?)` / `reject(feedback)` | decisão de um nó com gateway |
 | `report_done(summary)` | resumo final do trabalho |
 | `get_card()` | contexto do card (título, descrição, histórico relevante) |
+| `list_projects()` | projetos do board (id e nome, sem o caminho local): para ligar o `project_id` do card a um nome e nomear o projeto dos cards criados |
 
 O cadastro de um MCP externo pode ser testado antes de salvar (`POST /mcp-servers/test`): o board
 conecta como os agentes, lista as tools e, se pedido, chama uma tool. Alguns servidores só conferem a
