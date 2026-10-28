@@ -24,6 +24,7 @@ type stubBoard struct {
 	version   domain.FlowVersion
 	profile   domain.AgentProfile
 	mcp       domain.McpServer
+	mcpTest   domain.McpTestResult
 	artifact  service.ArtifactDetail
 
 	call string
@@ -233,6 +234,10 @@ func (b *stubBoard) CreateMcpServer(_ context.Context, in domain.McpServerInput)
 
 func (b *stubBoard) UpdateMcpServer(_ context.Context, id uuid.UUID, in domain.McpServerInput) (domain.McpServer, error) {
 	return b.mcp, b.record("UpdateMcpServer", id, in)
+}
+
+func (b *stubBoard) TestMcpServer(_ context.Context, in domain.McpServerTest) (domain.McpTestResult, error) {
+	return b.mcpTest, b.record("TestMcpServer", in)
 }
 
 func (b *stubBoard) DeleteMcpServer(_ context.Context, id uuid.UUID) error {

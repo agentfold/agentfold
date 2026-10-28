@@ -16,6 +16,8 @@ import type {
   GraphProblem,
   Lane,
   McpServer,
+  McpServerTest,
+  McpServerTestResult,
   Project,
 } from '../api/client'
 import { laneCards, placeCard } from '../api/placement'
@@ -34,6 +36,9 @@ interface State {
   artifacts: Artifact[]
   agentProfiles: AgentProfile[]
   mcpServers: McpServer[]
+  /** What MCP server tests answer, and the tests received. */
+  mcpTest: McpServerTestResult
+  mcpTests: McpServerTest[]
 }
 
 type Body = Record<string, unknown>
@@ -347,6 +352,8 @@ export function createFakeBackend(initial: Partial<State> = {}): FakeBackend {
     artifacts: [],
     agentProfiles: [],
     mcpServers: [],
+    mcpTest: { ok: true, tools: ['search'] },
+    mcpTests: [],
     ...initial,
   }
   const requests: string[] = []
@@ -536,6 +543,12 @@ export function createFakeBackend(initial: Partial<State> = {}): FakeBackend {
         if (!current) return notFound
         Object.assign(current, config, names ? { secret_names: names } : {})
         return [200, current]
+      }
+      case 'POST /mcp-servers/:id': {
+        const test = body as unknown as McpServerTest
+        if (!test.server.name) return invalid('name')
+        state.mcpTests.push(test)
+        return [200, state.mcpTest]
       }
       case 'DELETE /mcp-servers/:id':
         return remove(state.mcpServers, id)

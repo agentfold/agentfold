@@ -913,6 +913,32 @@ type McpServerInput struct {
 // McpServerInputTransport defines model for McpServerInput.Transport.
 type McpServerInputTransport string
 
+// McpServerTest defines model for McpServerTest.
+type McpServerTest struct {
+	// Arguments The arguments of the tool call.
+	Arguments *map[string]interface{} `json:"arguments,omitempty"`
+	Server    McpServerInput          `json:"server"`
+
+	// ServerId The server being edited; its stored secrets are used when server.secrets is absent or null.
+	ServerId *openapi_types.UUID `json:"server_id,omitempty"`
+
+	// Tool A tool to call after listing them, to check what only a call checks (such as the token). It really runs.
+	Tool *string `json:"tool,omitempty"`
+}
+
+// McpServerTestResult defines model for McpServerTestResult.
+type McpServerTestResult struct {
+	// Error Why the test failed.
+	Error *string `json:"error,omitempty"`
+	Ok    bool    `json:"ok"`
+
+	// ToolResult The text the tool call returned, shortened.
+	ToolResult *string `json:"tool_result,omitempty"`
+
+	// Tools The names of the tools the server lists.
+	Tools []string `json:"tools"`
+}
+
 // MoveCardConfig Moves the card to a lane.
 type MoveCardConfig struct {
 	// LaneId Required to publish.
@@ -1148,6 +1174,9 @@ type MoveLaneJSONRequestBody = LaneMove
 
 // CreateMcpServerJSONRequestBody defines body for CreateMcpServer for application/json ContentType.
 type CreateMcpServerJSONRequestBody = McpServerInput
+
+// TestMcpServerJSONRequestBody defines body for TestMcpServer for application/json ContentType.
+type TestMcpServerJSONRequestBody = McpServerTest
 
 // UpdateMcpServerJSONRequestBody defines body for UpdateMcpServer for application/json ContentType.
 type UpdateMcpServerJSONRequestBody = McpServerInput
@@ -1531,6 +1560,9 @@ type ServerInterface interface {
 
 	// (POST /mcp-servers)
 	CreateMcpServer(w http.ResponseWriter, r *http.Request)
+
+	// (POST /mcp-servers/test)
+	TestMcpServer(w http.ResponseWriter, r *http.Request)
 
 	// (DELETE /mcp-servers/{id})
 	DeleteMcpServer(w http.ResponseWriter, r *http.Request, id ID)
@@ -2482,6 +2514,20 @@ func (siw *ServerInterfaceWrapper) CreateMcpServer(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// TestMcpServer operation middleware
+func (siw *ServerInterfaceWrapper) TestMcpServer(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TestMcpServer(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DeleteMcpServer operation middleware
 func (siw *ServerInterfaceWrapper) DeleteMcpServer(w http.ResponseWriter, r *http.Request) {
 
@@ -2886,6 +2932,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/agent-profiles/{id}", wrapper.UpdateAgentProfile)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/mcp-servers", wrapper.ListMcpServers)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/mcp-servers", wrapper.CreateMcpServer)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/mcp-servers/test", wrapper.TestMcpServer)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/mcp-servers/{id}", wrapper.DeleteMcpServer)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/mcp-servers/{id}", wrapper.GetMcpServer)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/mcp-servers/{id}", wrapper.UpdateMcpServer)
@@ -4466,6 +4513,45 @@ func (response CreateMcpServerdefaultJSONResponse) VisitCreateMcpServerResponse(
 	return err
 }
 
+type TestMcpServerRequestObject struct {
+	Body *TestMcpServerJSONRequestBody
+}
+
+type TestMcpServerResponseObject interface {
+	VisitTestMcpServerResponse(w http.ResponseWriter) error
+}
+
+type TestMcpServer200JSONResponse McpServerTestResult
+
+func (response TestMcpServer200JSONResponse) VisitTestMcpServerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TestMcpServerdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response TestMcpServerdefaultJSONResponse) VisitTestMcpServerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DeleteMcpServerRequestObject struct {
 	Id ID `json:"id"`
 }
@@ -4971,6 +5057,9 @@ type StrictServerInterface interface {
 
 	// (POST /mcp-servers)
 	CreateMcpServer(ctx context.Context, request CreateMcpServerRequestObject) (CreateMcpServerResponseObject, error)
+
+	// (POST /mcp-servers/test)
+	TestMcpServer(ctx context.Context, request TestMcpServerRequestObject) (TestMcpServerResponseObject, error)
 
 	// (DELETE /mcp-servers/{id})
 	DeleteMcpServer(ctx context.Context, request DeleteMcpServerRequestObject) (DeleteMcpServerResponseObject, error)
@@ -6180,6 +6269,37 @@ func (sh *strictHandler) CreateMcpServer(w http.ResponseWriter, r *http.Request)
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(CreateMcpServerResponseObject); ok {
 		if err := validResponse.VisitCreateMcpServerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// TestMcpServer operation middleware
+func (sh *strictHandler) TestMcpServer(w http.ResponseWriter, r *http.Request) {
+	var request TestMcpServerRequestObject
+
+	var body TestMcpServerJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.TestMcpServer(ctx, request.(TestMcpServerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "TestMcpServer")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(TestMcpServerResponseObject); ok {
+		if err := validResponse.VisitTestMcpServerResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

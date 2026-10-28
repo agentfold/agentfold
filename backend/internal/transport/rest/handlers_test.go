@@ -244,6 +244,10 @@ func TestRoutes(t *testing.T) {
 				McpConfig: domain.McpConfig{Command: "srv", Args: []string{"-v"}, Env: map[string]string{"A": "1"}},
 			}}, mcpJSON},
 		{"DELETE", "/api/mcp-servers" + p1, "", 204, "DeleteMcpServer", []any{id1}, ""},
+		{"POST", "/api/mcp-servers/test", `{"server":{"name":"fs","transport":"stdio","command":"srv"}}`,
+			200, "TestMcpServer", []any{domain.McpServerTest{
+				Server: domain.McpServerInput{Name: "fs", Transport: domain.McpStdio, McpConfig: domain.McpConfig{Command: "srv"}},
+			}}, `{"ok":false,"tools":[]}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
@@ -389,5 +393,22 @@ func TestMCPMount(t *testing.T) {
 	without := NewHandler(newStub(), events.NewHub(1), Options{Log: slog.New(slog.NewTextHandler(&log, nil))})
 	if rec := do(t, without, "POST", "/mcp", "{}"); rec.Code != http.StatusNotFound {
 		t.Fatalf("without MCP: got %d", rec.Code)
+	}
+}
+
+func TestTestMcpServerResult(t *testing.T) {
+	b := newStub()
+	b.mcpTest = domain.McpTestResult{Tools: []string{"denied"}, Error: "a tool denied devolveu um erro", ToolResult: "401"}
+	body := `{"server":{"name":"sg","transport":"http","url":"https://sg/mcp"},"server_id":"` + id1.String() + `","tool":"denied","arguments":{"n":1}}`
+	rec := do(t, newHandler(b, &bytes.Buffer{}), "POST", "/api/mcp-servers/test", body)
+	want := domain.McpServerTest{
+		Server:   domain.McpServerInput{Name: "sg", Transport: domain.McpHTTP, McpConfig: domain.McpConfig{URL: "https://sg/mcp"}},
+		ServerID: &id1, Tool: "denied", Arguments: map[string]any{"n": float64(1)},
+	}
+	if rec.Code != 200 || !reflect.DeepEqual(b.args, []any{want}) {
+		t.Fatalf("status %d, args %+v", rec.Code, b.args)
+	}
+	if got, want := decode(t, rec.Body.Bytes()), decode(t, []byte(`{"ok":false,"tools":["denied"],"error":"a tool denied devolveu um erro","tool_result":"401"}`)); !reflect.DeepEqual(got, want) {
+		t.Fatalf("body %s", rec.Body)
 	}
 }

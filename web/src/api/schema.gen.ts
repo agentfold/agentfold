@@ -521,6 +521,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/mcp-servers/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Connects to an MCP server as typed in the form, lists its tools and optionally calls one. Failures to reach or use the server are a result with ok false, not an error. stdio commands run on the API host, outside the sandbox. */
+        post: operations["testMcpServer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/mcp-servers/{id}": {
         parameters: {
             query?: never;
@@ -1103,6 +1120,29 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+        };
+        McpServerTest: {
+            server: components["schemas"]["McpServerInput"];
+            /**
+             * Format: uuid
+             * @description The server being edited; its stored secrets are used when server.secrets is absent or null.
+             */
+            server_id?: string;
+            /** @description A tool to call after listing them, to check what only a call checks (such as the token). It really runs. */
+            tool?: string;
+            /** @description The arguments of the tool call. */
+            arguments?: {
+                [key: string]: unknown;
+            };
+        };
+        McpServerTestResult: {
+            ok: boolean;
+            /** @description The names of the tools the server lists. */
+            tools: string[];
+            /** @description Why the test failed. */
+            error?: string;
+            /** @description The text the tool call returned, shortened. */
+            tool_result?: string;
         };
         McpServerInput: {
             name: string;
@@ -2274,6 +2314,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["McpServer"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    testMcpServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpServerTest"];
+            };
+        };
+        responses: {
+            /** @description The outcome of the test. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpServerTestResult"];
                 };
             };
             default: components["responses"]["Error"];

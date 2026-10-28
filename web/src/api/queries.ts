@@ -14,6 +14,7 @@ import {
   type FlowGraph,
   type FlowInput,
   type McpServerInput,
+  type McpServerTest,
   type LaneInput,
   type NewCard,
   type ProjectInput,
@@ -337,6 +338,15 @@ export function useUpdateMcpServer() {
     ({ id, ...body }: McpServerInput & { id: string }) =>
       unwrap(client.PUT('/mcp-servers/{id}', { ...byId(id), body })),
   )
+}
+
+/** Tries an MCP server out as typed; nothing is saved. */
+export function useTestMcpServer() {
+  const { client } = useApi()
+  return useMutation({
+    mutationFn: (body: McpServerTest) =>
+      unwrap(client.POST('/mcp-servers/test', { body })),
+  })
 }
 
 export function useDeleteMcpServer() {

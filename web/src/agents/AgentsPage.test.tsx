@@ -220,4 +220,134 @@ describe('AgentsPage', () => {
       await screen.findByText('Nenhum servidor cadastrado.'),
     ).toBeInTheDocument()
   })
+
+  it('tests a new MCP server as typed', async () => {
+    const backend = createFakeBackend()
+    renderWithApi(<AgentsPage />, backend)
+    await userEvent.click(screen.getByRole('button', { name: 'Novo servidor' }))
+    const dialog = screen.getByRole('dialog', { name: 'Novo servidor MCP' })
+    const testButton = within(dialog).getByRole('button', { name: 'Testar' })
+
+    await userEvent.click(testButton)
+    expect(await within(dialog).findByRole('alert')).toBeInTheDocument()
+    expect(backend.state.mcpTests).toHaveLength(0)
+
+    await userEvent.type(within(dialog).getByLabelText('Nome'), 'sg')
+    await userEvent.selectOptions(
+      within(dialog).getByLabelText('Transporte'),
+      'http',
+    )
+    expect(
+      within(dialog).queryByText(/fora do sandbox/),
+    ).not.toBeInTheDocument()
+    await userEvent.type(within(dialog).getByLabelText('URL'), 'https://sg/mcp')
+    await userEvent.type(
+      within(dialog).getByLabelText(/Segredos: headers/),
+      'Authorization=token t',
+    )
+    await userEvent.type(
+      within(dialog).getByLabelText(/Tool para testar/),
+      ' list_repos ',
+    )
+    const args = within(dialog).getByLabelText(/Argumentos da tool/)
+    await userEvent.type(args, '[[1]')
+    expect(
+      within(dialog).getByText('JSON inválido: precisa ser um objeto.'),
+    ).toBeInTheDocument()
+    expect(testButton).toBeDisabled()
+    await userEvent.clear(args)
+    await userEvent.type(args, '{{')
+    expect(testButton).toBeDisabled()
+    await userEvent.clear(args)
+    await userEvent.type(args, '{{"first":1}')
+    backend.state.mcpTest = {
+      ok: true,
+      tools: ['list_repos', 'search'],
+      tool_result: 'chat-web',
+    }
+    await userEvent.click(testButton)
+
+    const outcome = await within(dialog).findByRole('status')
+    expect(outcome).toHaveTextContent('Funcionou.')
+    expect(outcome).toHaveTextContent('Tools: list_repos, search')
+    expect(outcome).toHaveTextContent('chat-web')
+    expect(backend.state.mcpTests[0]).toEqual({
+      server: {
+        name: 'sg',
+        transport: 'http',
+        url: 'https://sg/mcp',
+        headers: {},
+        secrets: { Authorization: 'token t' },
+      },
+      tool: 'list_repos',
+      arguments: { first: 1 },
+    })
+    expect(backend.state.mcpServers).toHaveLength(0)
+  })
+
+  it('shows why a test failed', async () => {
+    const backend = createFakeBackend({
+      mcpTest: { ok: false, tools: [], error: 'não conectou: 401' },
+    })
+    renderWithApi(<AgentsPage />, backend)
+    await userEvent.click(screen.getByRole('button', { name: 'Novo servidor' }))
+    const dialog = screen.getByRole('dialog', { name: 'Novo servidor MCP' })
+    await userEvent.type(within(dialog).getByLabelText('Nome'), 'fs')
+    expect(within(dialog).getByText(/fora do sandbox/)).toBeInTheDocument()
+    const testButton = within(dialog).getByRole('button', { name: 'Testar' })
+
+    await userEvent.click(testButton)
+    const outcome = await within(dialog).findByRole('status')
+    expect(outcome).toHaveTextContent('Falhou: não conectou: 401')
+    expect(outcome).not.toHaveTextContent('Tools')
+
+    backend.state.mcpTest = {
+      ok: false,
+      tools: ['search'],
+      error: 'a tool search devolveu um erro',
+    }
+    await userEvent.click(testButton)
+    await waitFor(() => {
+      expect(outcome).toHaveTextContent('Tools: search')
+    })
+
+    backend.state.mcpTest = { ok: false, tools: [] }
+    await userEvent.click(testButton)
+    await waitFor(() => {
+      expect(within(dialog).getByRole('status')).toHaveTextContent(/^Falhou:$/)
+    })
+
+    backend.state.mcpTest = { ok: true, tools: [] }
+    await userEvent.click(testButton)
+    expect(
+      await within(dialog).findByText('Tools: nenhuma'),
+    ).toBeInTheDocument()
+  })
+
+  it('tests an edited server with its stored secrets', async () => {
+    const sg = mcpServer('sg', {
+      transport: 'http',
+      url: 'https://sg/mcp',
+      secret_names: ['Authorization'],
+    })
+    const backend = createFakeBackend({ mcpServers: [sg] })
+    renderWithApi(<AgentsPage />, backend)
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Editar sg' }),
+    )
+    const dialog = screen.getByRole('dialog', { name: 'Editar servidor MCP' })
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Testar' }),
+    )
+    await within(dialog).findByRole('status')
+    expect(backend.state.mcpTests[0]).toEqual({
+      server: {
+        name: 'sg',
+        transport: 'http',
+        url: 'https://sg/mcp',
+        headers: {},
+      },
+      server_id: sg.id,
+    })
+  })
 })

@@ -39,6 +39,8 @@ export type AgentProfile = Schemas['AgentProfile']
 export type AgentProfileInput = Schemas['AgentProfileInput']
 export type McpServer = Schemas['McpServer']
 export type McpServerInput = Schemas['McpServerInput']
+export type McpServerTest = Schemas['McpServerTest']
+export type McpServerTestResult = Schemas['McpServerTestResult']
 type ErrorBody = Schemas['Error']
 
 export type ApiClient = ReturnType<typeof createClient<paths>>

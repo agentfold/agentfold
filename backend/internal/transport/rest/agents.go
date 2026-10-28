@@ -134,3 +134,19 @@ func (h handlers) UpdateMcpServer(ctx context.Context, req openapi.UpdateMcpServ
 func (h handlers) DeleteMcpServer(ctx context.Context, req openapi.DeleteMcpServerRequestObject) (openapi.DeleteMcpServerResponseObject, error) {
 	return openapi.DeleteMcpServer204Response{}, h.board.DeleteMcpServer(ctx, req.Id)
 }
+
+func (h handlers) TestMcpServer(ctx context.Context, req openapi.TestMcpServerRequestObject) (openapi.TestMcpServerResponseObject, error) {
+	in := domain.McpServerTest{Server: mcpServerInput(&req.Body.Server), ServerID: req.Body.ServerId, Tool: deref(req.Body.Tool)}
+	if req.Body.Arguments != nil {
+		in.Arguments = *req.Body.Arguments
+	}
+	result, err := h.board.TestMcpServer(ctx, in)
+	out := openapi.TestMcpServer200JSONResponse{Ok: result.OK, Tools: orEmpty(result.Tools)}
+	if result.Error != "" {
+		out.Error = &result.Error
+	}
+	if result.ToolResult != "" {
+		out.ToolResult = &result.ToolResult
+	}
+	return out, err
+}

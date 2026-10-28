@@ -9,6 +9,7 @@ import (
 
 	"orquestrator/internal/domain"
 	"orquestrator/internal/events"
+	"orquestrator/internal/mcpcheck"
 )
 
 // Repository persists the board. *store.Store implements it.
@@ -113,11 +114,13 @@ type Service struct {
 	git     GitInspector
 	pub     Publisher
 	secrets Sealer
+	// checkMcp tries MCP servers out; mcpcheck.Check outside tests.
+	checkMcp func(ctx context.Context, transport domain.McpTransport, cfg domain.McpConfig, tool string, args map[string]any) domain.McpTestResult
 }
 
 // New returns a Service.
 func New(repo Repository, git GitInspector, pub Publisher, secrets Sealer) *Service {
-	return &Service{repo: repo, git: git, pub: pub, secrets: secrets}
+	return &Service{repo: repo, git: git, pub: pub, secrets: secrets, checkMcp: mcpcheck.Check}
 }
 
 // entity is a domain value that board events can refer to.

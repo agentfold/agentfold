@@ -79,6 +79,7 @@ type Board interface {
 	CreateMcpServer(ctx context.Context, in domain.McpServerInput) (domain.McpServer, error)
 	UpdateMcpServer(ctx context.Context, id uuid.UUID, in domain.McpServerInput) (domain.McpServer, error)
 	DeleteMcpServer(ctx context.Context, id uuid.UUID) error
+	TestMcpServer(ctx context.Context, in domain.McpServerTest) (domain.McpTestResult, error)
 }
 
 // Subscriber gives access to the live board events. *events.Hub implements it.

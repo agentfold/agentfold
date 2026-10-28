@@ -193,6 +193,12 @@ segredos injetados no momento da execução. Tools do board expostas ao agente:
 | `report_done(summary)` | resumo final do trabalho |
 | `get_card()` | contexto do card (título, descrição, histórico relevante) |
 
+O cadastro de um MCP externo pode ser testado antes de salvar (`POST /mcp-servers/test`): o board
+conecta como os agentes, lista as tools e, se pedido, chama uma tool. Alguns servidores só conferem a
+credencial numa chamada (o Sourcegraph aceita o handshake e o `tools/list` com qualquer token), por
+isso a tool opcional, que roda de verdade e deve ser de leitura. Sem segredos no formulário, o teste
+usa os já gravados. Servidores stdio são testados no processo da API, fora do sandbox dos agentes.
+
 Se o agente terminar sem chamar `report_done`, o resultado final do `stream-json` é usado; um nó
 com gateway que termina sem `approve`/`reject` falha, e um Agent com schema sem `submit_output`
 também.

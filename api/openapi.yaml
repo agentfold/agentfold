@@ -681,6 +681,27 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/McpServer" }
         default: { $ref: "#/components/responses/Error" }
+  /mcp-servers/test:
+    post:
+      operationId: testMcpServer
+      tags: [mcp-servers]
+      description: >
+        Connects to an MCP server as typed in the form, lists its tools and
+        optionally calls one. Failures to reach or use the server are a
+        result with ok false, not an error. stdio commands run on the API
+        host, outside the sandbox.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/McpServerTest" }
+      responses:
+        "200":
+          description: The outcome of the test.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/McpServerTestResult" }
+        default: { $ref: "#/components/responses/Error" }
   /mcp-servers/{id}:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -1384,6 +1405,37 @@ components:
           items: { type: string }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    McpServerTest:
+      type: object
+      required: [server]
+      properties:
+        server: { $ref: "#/components/schemas/McpServerInput" }
+        server_id:
+          type: string
+          format: uuid
+          description: The server being edited; its stored secrets are used when server.secrets is absent or null.
+        tool:
+          type: string
+          description: A tool to call after listing them, to check what only a call checks (such as the token). It really runs.
+        arguments:
+          type: object
+          additionalProperties: true
+          description: The arguments of the tool call.
+    McpServerTestResult:
+      type: object
+      required: [ok, tools]
+      properties:
+        ok: { type: boolean }
+        tools:
+          type: array
+          description: The names of the tools the server lists.
+          items: { type: string }
+        error:
+          type: string
+          description: Why the test failed.
+        tool_result:
+          type: string
+          description: The text the tool call returned, shortened.
     McpServerInput:
       type: object
       required: [name, transport]

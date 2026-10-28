@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"testing"
@@ -165,5 +166,89 @@ func TestMcpServerFailures(t *testing.T) {
 	keep.Secrets = map[string]string{"A": "b"}
 	if _, err := s.CreateMcpServer(ctx, keep); !errors.Is(err, errRepo) {
 		t.Fatalf("seal: %v", err)
+	}
+}
+
+// mcpCall is what the service handed the MCP check.
+type mcpCall struct {
+	transport domain.McpTransport
+	cfg       domain.McpConfig
+	tool      string
+	args      map[string]any
+}
+
+func checking(s *Service) *[]mcpCall {
+	var calls []mcpCall
+	s.checkMcp = func(_ context.Context, transport domain.McpTransport, cfg domain.McpConfig, tool string, args map[string]any) domain.McpTestResult {
+		calls = append(calls, mcpCall{transport, cfg, tool, args})
+		return domain.McpTestResult{OK: true, Tools: []string{"t"}}
+	}
+	return &calls
+}
+
+func TestTestMcpServer(t *testing.T) {
+	s, repo, pub := newService()
+	calls := checking(s)
+	http := domain.McpServerInput{Name: "sg", Transport: domain.McpHTTP, McpConfig: domain.McpConfig{URL: " http://h/mcp ", Headers: map[string]string{"X": "1"}}}
+
+	// typed secrets win over the stored ones
+	in := http
+	in.Secrets = map[string]string{"Authorization": "token typed"}
+	r, err := s.TestMcpServer(ctx, domain.McpServerTest{Server: in, ServerID: &id, Tool: " list_repos ", Arguments: map[string]any{"a": 1}})
+	if err != nil || !r.OK {
+		t.Fatalf("typed: %+v %v", r, err)
+	}
+	want := mcpCall{domain.McpHTTP, domain.McpConfig{URL: "http://h/mcp", Headers: map[string]string{"X": "1", "Authorization": "token typed"}}, "list_repos", map[string]any{"a": 1}}
+	if !reflect.DeepEqual((*calls)[0], want) || len(repo.calls) != 0 {
+		t.Fatalf("typed call %+v, repo %v", (*calls)[0], repo.calls)
+	}
+
+	// no secrets typed: the stored ones of the server being edited
+	repo.sealed = []byte(`sealed:{"TOKEN":"stored"}`)
+	stdio := domain.McpServerInput{Name: "fs", Transport: domain.McpStdio, McpConfig: domain.McpConfig{Command: "srv"}}
+	if _, err := s.TestMcpServer(ctx, domain.McpServerTest{Server: stdio, ServerID: &id}); err != nil {
+		t.Fatal(err)
+	}
+	if got := (*calls)[1].cfg.Env; !reflect.DeepEqual(got, map[string]string{"TOKEN": "stored"}) {
+		t.Fatalf("stored env %v", got)
+	}
+	// a new server has none stored; nothing stored, nothing added
+	repo.sealed = nil
+	for _, test := range []domain.McpServerTest{{Server: stdio}, {Server: stdio, ServerID: &id}} {
+		if _, err := s.TestMcpServer(ctx, test); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := (*calls)[3].cfg.Env; len(got) != 0 {
+		t.Fatalf("env %v", got)
+	}
+	if len(pub.events) != 0 {
+		t.Fatalf("a test publishes nothing: %v", eventTypes(pub))
+	}
+}
+
+func TestTestMcpServerFailures(t *testing.T) {
+	s, repo, _ := newService()
+	calls := checking(s)
+	if _, err := s.TestMcpServer(ctx, domain.McpServerTest{Server: domain.McpServerInput{Name: "x"}}); err == nil {
+		t.Fatal("invalid server tested")
+	}
+	stored := domain.McpServerTest{Server: domain.McpServerInput{Name: "fs", Transport: domain.McpStdio, McpConfig: domain.McpConfig{Command: "srv"}}, ServerID: &id}
+	repo.errs = map[string]error{"McpSecrets": errRepo}
+	if _, err := s.TestMcpServer(ctx, stored); !errors.Is(err, errRepo) {
+		t.Fatalf("load: %v", err)
+	}
+	repo.errs = nil
+	repo.sealed = []byte("sealed:x")
+	s.secrets = fakeSealer{err: errRepo}
+	if _, err := s.TestMcpServer(ctx, stored); !errors.Is(err, errRepo) {
+		t.Fatalf("open: %v", err)
+	}
+	s.secrets = fakeSealer{}
+	if _, err := s.TestMcpServer(ctx, stored); err == nil {
+		t.Fatal("bad stored secrets accepted")
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("checked anyway: %v", *calls)
 	}
 }

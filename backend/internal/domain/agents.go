@@ -179,6 +179,25 @@ func (in McpServerInput) Normalize() (McpServerInput, error) {
 	return in, nil
 }
 
+// McpServerTest tries an MCP server out as typed, before it is saved. With
+// no secrets in Server, those stored for ServerID are used. Tool, when set,
+// is called after listing the tools, since some servers only check their
+// credentials on a call.
+type McpServerTest struct {
+	Server    McpServerInput
+	ServerID  *uuid.UUID
+	Tool      string
+	Arguments map[string]any
+}
+
+// McpTestResult is what a test of an MCP server found.
+type McpTestResult struct {
+	OK         bool
+	Tools      []string
+	Error      string
+	ToolResult string
+}
+
 // McpServerRecord is what is stored for an MCP server: its config, the
 // names of its secrets and their sealed values.
 type McpServerRecord struct {

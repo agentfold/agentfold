@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"slices"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -122,6 +124,50 @@ func (s *Service) UpdateMcpServer(ctx context.Context, id uuid.UUID, in domain.M
 // DeleteMcpServer removes an MCP server.
 func (s *Service) DeleteMcpServer(ctx context.Context, id uuid.UUID) error {
 	return s.deleted("mcp_server.deleted", id, s.repo.DeleteMcpServer(ctx, id))
+}
+
+// TestMcpServer tries an MCP server out as typed in the form. With no
+// secrets in the input, it uses those stored for the server being edited.
+func (s *Service) TestMcpServer(ctx context.Context, in domain.McpServerTest) (domain.McpTestResult, error) {
+	server, err := in.Server.Normalize()
+	if err != nil {
+		return domain.McpTestResult{}, err
+	}
+	secrets := server.Secrets
+	if secrets == nil && in.ServerID != nil {
+		if secrets, err = s.storedMcpSecrets(ctx, *in.ServerID); err != nil {
+			return domain.McpTestResult{}, err
+		}
+	}
+	cfg := server.McpConfig
+	if server.Transport == domain.McpStdio {
+		cfg.Env = withSecrets(cfg.Env, secrets)
+	} else {
+		cfg.Headers = withSecrets(cfg.Headers, secrets)
+	}
+	return s.checkMcp(ctx, server.Transport, cfg, strings.TrimSpace(in.Tool), in.Arguments), nil
+}
+
+// storedMcpSecrets opens the secrets stored for an MCP server.
+func (s *Service) storedMcpSecrets(ctx context.Context, id uuid.UUID) (map[string]string, error) {
+	sealed, err := s.repo.McpSecrets(ctx, id)
+	if err != nil || sealed == nil {
+		return nil, err
+	}
+	plain, err := s.secrets.Open(sealed)
+	if err != nil {
+		return nil, err
+	}
+	var secrets map[string]string
+	err = json.Unmarshal(plain, &secrets)
+	return secrets, err
+}
+
+func withSecrets(plain, secrets map[string]string) map[string]string {
+	out := make(map[string]string, len(plain)+len(secrets))
+	maps.Copy(out, plain)
+	maps.Copy(out, secrets)
+	return out
 }
 
 // mcpRecord validates in and seals its secrets.
