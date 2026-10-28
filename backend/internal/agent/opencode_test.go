@@ -82,7 +82,7 @@ func TestOpencodeRun(t *testing.T) {
 		t.Fatalf("http %v", sg)
 	}
 	permission := config["permission"].(map[string]any)
-	if permission["edit"] != "deny" || permission["bash"].(map[string]any)["git push*"] != "deny" {
+	if permission["edit"] != "deny" || permission["websearch"] != "deny" || permission["bash"].(map[string]any)["git push*"] != "deny" {
 		t.Fatalf("permission %v", permission)
 	}
 	if steps := config["agent"].(map[string]any)["build"].(map[string]any)["steps"]; steps != float64(7) {
@@ -176,6 +176,11 @@ func TestOpencodeStream(t *testing.T) {
 	if len(steps) != 2 || !steps[1].IsError || steps[1].Text != "denied" {
 		t.Fatalf("tool error steps %+v", steps)
 	}
+	s.Line([]byte(`{"type":"step_start","timestamp":1}`))
+	if r := s.Outcome(errors.New("exit status 1")); r.Status != domain.NodeFailed || r.Error != "exit status 1 (last failed tool: bash: denied)" {
+		t.Fatalf("process error after a failed tool: %+v", r)
+	}
+	s = OpencodeStream{}
 	s.Line([]byte(`{"type":"step_start","timestamp":1}`))
 	if r := s.Outcome(errors.New("killed")); r.Status != domain.NodeFailed || r.Error != "killed" {
 		t.Fatalf("process error: %+v", r)

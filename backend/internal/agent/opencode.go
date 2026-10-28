@@ -55,8 +55,8 @@ type opencodeMcp struct {
 
 // OpencodeConfig is the config of a run: the MCP servers, the board
 // instructions (a file of the agent home), what the agent may not do and
-// its step limit. Commits and pushes are always denied; read-only nodes
-// cannot edit files.
+// its step limit. Commits, pushes and web searches are always denied;
+// read-only nodes cannot edit files.
 func OpencodeConfig(inv Invocation, servers map[string]mcpEntry, instructions string) string {
 	mcp := make(map[string]opencodeMcp, len(servers))
 	for name, s := range servers {
@@ -82,7 +82,10 @@ func OpencodeConfig(inv Invocation, servers map[string]mcpEntry, instructions st
 		"mcp":          mcp,
 		"permission": map[string]any{
 			"edit": edit,
-			"bash": map[string]string{"*": "allow", "git commit*": "deny", "git push*": "deny"},
+			// web search needs an opencode account: standalone runs get it
+			// cancelled, which fails the whole run
+			"websearch": "deny",
+			"bash":      map[string]string{"*": "allow", "git commit*": "deny", "git push*": "deny"},
 		},
 		"agent": map[string]any{opencodeAgent: agent},
 	})
@@ -129,6 +132,9 @@ type OpencodeStream struct {
 	usage       domain.Usage
 	first, last int64
 	err         string
+	// toolErr is the last failed tool call: opencode may exit with an
+	// error over one without saying so.
+	toolErr string
 }
 
 // Line reads one event and returns the steps it shows on the card page.
@@ -158,6 +164,7 @@ func (s *OpencodeStream) Line(line []byte) []domain.NodeOutput {
 		result := p.State.Output
 		if p.State.Status == "error" {
 			result = p.State.Error
+			s.toolErr = p.Tool + ": " + p.State.Error
 		}
 		return []domain.NodeOutput{
 			{Kind: domain.OutputToolUse, Tool: p.Tool, Text: shorten(string(p.State.Input), maxToolInput)},
@@ -200,6 +207,9 @@ func (s *OpencodeStream) Outcome(runErr error) domain.NodeResult {
 		out.Status, out.OutputHandle, out.Error = domain.NodeFailed, "failed", s.err
 	case runErr != nil:
 		out.Status, out.OutputHandle, out.Error = domain.NodeFailed, "failed", runErr.Error()
+		if s.toolErr != "" {
+			out.Error += " (last failed tool: " + s.toolErr + ")"
+		}
 	}
 	return out
 }

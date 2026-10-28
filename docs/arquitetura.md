@@ -292,7 +292,9 @@ O adaptador do opencode roda `opencode run --standalone --format json --auto --a
 - `mcp`: o servidor do board (`remote`, com o token da execução) e os do nó (`local`/`remote`);
 - `instructions`: um arquivo temporário com o texto do board (o equivalente ao
   `--append-system-prompt` do Claude);
-- `permission`: `git commit*`/`git push*` negados sempre, `edit` negado em nós somente leitura;
+- `permission`: `git commit*`/`git push*` e `websearch` negados sempre (a busca web precisa de conta
+  opencode; no modo `--standalone` ela é cancelada e o `run` inteiro sai com erro), `edit` negado em
+  nós somente leitura;
 - `agent.build.steps`: o limite de turnos do nó.
 
 O id da sessão é derivado do UUID guardado em `agent_sessions` (`ses_` + hex); `--session`
@@ -300,7 +302,8 @@ cria a sessão quando ela não existe, então retomar é igual a começar. O ope
 evento de resultado: o resultado é o último texto, o consumo soma os `step_finish` e os
 eventos `error` reprovam o nó com uma dica para os casos que o perfil resolve
 (`provider.no-route`: sem credencial do provedor; `provider.free-limit`: cota gratuita, com o
-tempo até liberar). As ferramentas permitidas/bloqueadas do nó são nomes do Claude e não valem
+tempo até liberar). Se o processo sai com erro sem evento `error`, a mensagem do nó cita a última
+tool que falhou. As ferramentas permitidas/bloqueadas do nó são nomes do Claude e não valem
 para o opencode.
 
 ### 6.4 Runner
