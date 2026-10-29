@@ -12,7 +12,10 @@ import (
 
 type Querier interface {
 	AnswerQuestion(ctx context.Context, arg AnswerQuestionParams) (Question, error)
-	ArtifactRevising(ctx context.Context, artifactID uuid.UUID) (bool, error)
+	// ArtifactReview is the state of the human_review node run the artifact
+	// is under, and of its flow run.
+	ArtifactReview(ctx context.Context, id uuid.UUID) (ArtifactReviewRow, error)
+	AwaitReviewNodeRun(ctx context.Context, id uuid.UUID) (NodeRun, error)
 	CancelFlowRun(ctx context.Context, id uuid.UUID) (FlowRun, error)
 	// CancelRunJobs stops the agent jobs of a run: a worker running one loses
 	// its lease at the next heartbeat and interrupts the agent.
@@ -41,9 +44,6 @@ type Querier interface {
 	FinishJob(ctx context.Context, arg FinishJobParams) (int64, error)
 	// FinishNodeRun adds the usage: a node resumed after questions runs again.
 	FinishNodeRun(ctx context.Context, arg FinishNodeRunParams) (NodeRun, error)
-	// FreezeCardArtifacts freezes the artifacts of a card that left its lane,
-	// except those a run still active collected: that run moves the card on.
-	FreezeCardArtifacts(ctx context.Context, cardID uuid.UUID) ([]Artifact, error)
 	GetAgentProfile(ctx context.Context, id uuid.UUID) (AgentProfile, error)
 	GetAgentProfileByName(ctx context.Context, name string) (AgentProfile, error)
 	GetAgentSession(ctx context.Context, arg GetAgentSessionParams) (AgentSession, error)
@@ -61,10 +61,10 @@ type Querier interface {
 	GetLaneForUpdate(ctx context.Context, id uuid.UUID) (Lane, error)
 	GetMcpServer(ctx context.Context, id uuid.UUID) (McpServer, error)
 	GetNodeRun(ctx context.Context, id uuid.UUID) (NodeRun, error)
+	GetNodeRunByIteration(ctx context.Context, arg GetNodeRunByIterationParams) (NodeRun, error)
 	GetNodeRunForUpdate(ctx context.Context, id uuid.UUID) (NodeRun, error)
 	GetProject(ctx context.Context, id uuid.UUID) (Project, error)
 	GetQuestion(ctx context.Context, id uuid.UUID) (Question, error)
-	GetRevisionMessage(ctx context.Context, flowRunID *uuid.UUID) (ArtifactMessage, error)
 	GetRunningNodeRunByToken(ctx context.Context, tokenHash []byte) (NodeRun, error)
 	InsertAgentProfile(ctx context.Context, arg InsertAgentProfileParams) (AgentProfile, error)
 	InsertAgentSession(ctx context.Context, arg InsertAgentSessionParams) (AgentSession, error)
@@ -110,9 +110,15 @@ type Querier interface {
 	NextFlowVersion(ctx context.Context, flowID uuid.UUID) (int32, error)
 	NotifyChange(ctx context.Context, change string) error
 	NotifyJobs(ctx context.Context) error
+	// OpenArtifactReview puts artifacts of the card under a human_review node
+	// run: those named, or with no names those collected in its flow run.
+	OpenArtifactReview(ctx context.Context, arg OpenArtifactReviewParams) ([]Artifact, error)
 	PlaceCard(ctx context.Context, arg PlaceCardParams) (Card, error)
 	QueueNodeRun(ctx context.Context, id uuid.UUID) error
 	RenameAgentProfile(ctx context.Context, arg RenameAgentProfileParams) (AgentProfile, error)
+	// ReviewRequest is the human message that sent a human_review node run
+	// back to the agent.
+	ReviewRequest(ctx context.Context, nodeRunID *uuid.UUID) (ArtifactMessage, error)
 	SetAgentCredential(ctx context.Context, arg SetAgentCredentialParams) (AgentProfile, error)
 	SetFlowRunStatus(ctx context.Context, arg SetFlowRunStatusParams) (FlowRun, error)
 	SetLanePosition(ctx context.Context, arg SetLanePositionParams) (Lane, error)

@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -203,15 +202,15 @@ func TestAgentTools(t *testing.T) {
 	if out, isErr := call(t, cs, "get_card", map[string]any{}); isErr || !strings.Contains(out, `"title":"Login"`) || !strings.Contains(out, `"artifacts":[]`) || strings.Contains(out, `"parent"`) {
 		t.Fatalf("get_card: %s", out)
 	}
-	frozen := time.Now()
 	board.artifacts = []service.ArtifactDetail{{
-		Artifact: domain.Artifact{Name: "Plano", FrozenAt: &frozen},
+		Artifact: domain.Artifact{Name: "Plano"},
+		Review:   domain.ReviewApproved,
 		Versions: []domain.ArtifactVersion{{Version: 1, Content: "old"}, {Version: 2, Path: "plano.md", Content: "# Plano"}},
 	}}
 	parent := uuid.New()
 	board.card.ParentCardID = &parent
 	out, isErr := call(t, cs, "get_card", map[string]any{})
-	if isErr || !strings.Contains(out, `{"content":"# Plano","frozen":true,"name":"Plano","path":"plano.md","version":2}`) || !strings.Contains(out, `"parent":{`) {
+	if isErr || !strings.Contains(out, `{"content":"# Plano","name":"Plano","path":"plano.md","review":"approved","version":2}`) || !strings.Contains(out, `"parent":{`) {
 		t.Fatalf("get_card with artifacts and parent: %s", out)
 	}
 	board.errs["ListCardArtifacts"] = errBoard

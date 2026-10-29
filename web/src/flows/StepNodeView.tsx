@@ -15,6 +15,7 @@ const accents: Record<StepData['kind'], string> = {
   move_card: 'bg-teal-500',
   create_cards: 'bg-sky-500',
   wait_children: 'bg-sky-700',
+  human_review: 'bg-rose-500',
   end: 'bg-slate-500',
 }
 

@@ -406,18 +406,26 @@ export function useAnswerQuestion() {
   )
 }
 
-/** Sends a review chat message: the agent revises the artifact. */
-export function useReviseArtifact() {
+/** Asks for changes in the review of an artifact: the agent revises it. */
+export function useRequestArtifactChanges() {
   const { client } = useApi()
   return useChange(
     keys.artifacts,
-    ({ id, text, version }: { id: string; text: string; version: number }) =>
+    ({ id, text }: { id: string; text: string }) =>
       unwrap(
         client.POST('/artifacts/{id}/messages', {
           ...byId(id),
-          body: { text, version },
+          body: { text },
         }),
       ),
+  )
+}
+
+/** Approves the review of an artifact: the flow goes on. */
+export function useApproveArtifact() {
+  const { client } = useApi()
+  return useChange(keys.artifacts, (id: string) =>
+    unwrap(client.POST('/artifacts/{id}/approve', byId(id))),
   )
 }
 

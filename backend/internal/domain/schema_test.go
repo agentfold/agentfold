@@ -33,10 +33,10 @@ func TestPrompts(t *testing.T) {
 	if want := "Answers to your questions:\n\n1. DB?\nAnswer: Postgres\n\n2. Port?\nAnswer: \n"; got != want {
 		t.Errorf("AnswersPrompt = %q", got)
 	}
-	got = RevisionPrompt("Plano", "plan.md", 2, "more detail")
-	if want := "A human reviewed version 2 of the artifact \"Plano\" (the file plan.md) and asks:\n\nmore detail\n\n" +
+	got = ReviewPrompt("Plano", "plan.md", "more detail")
+	if want := "A human reviewed the artifact \"Plano\" (the file plan.md) and asks:\n\nmore detail\n\n" +
 		"Update plan.md to address it, then finish; the board collects the file again."; got != want {
-		t.Errorf("RevisionPrompt = %q", got)
+		t.Errorf("ReviewPrompt = %q", got)
 	}
 	if (Question{ID: [16]byte{1}}).EntityID() != [16]byte{1} || (Artifact{ID: [16]byte{2}}).EntityID() != [16]byte{2} {
 		t.Error("EntityID")

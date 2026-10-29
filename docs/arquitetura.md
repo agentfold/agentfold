@@ -99,9 +99,9 @@ interfaces para viabilizar 100% de cobertura com fakes.
 | `node_runs` | id, flow_run_id, node_key, status, iteration, input jsonb, output jsonb, session_id?, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, summary?, structured_output?, decision? (`approved`/`rejected`), feedback? |
 | `agent_sessions` | id, flow_run_id, node_key, profile_id, claude_session_id (escolhido pelo board via `--session-id`) |
 | `questions` | id, card_id, node_run_id, text, answer?, answered_at? |
-| `artifacts` | id, card_id, name (único por card), node_run_id (quem coletou a última versão), frozen_at? |
+| `artifacts` | id, card_id, name (único por card), node_run_id (quem coletou a última versão), review_node_run_id? (a última revisão humana que o pôs em revisão) |
 | `artifact_versions` | id, artifact_id, version, path, content, node_run_id |
-| `artifact_messages` | id, artifact_id, version, role (`human`/`agent`), text, flow_run_id? (o run de revisão) |
+| `artifact_messages` | id, artifact_id, version, role (`human`/`agent`), text, node_run_id? (o nó de revisão humana em que a mensagem entrou) |
 | `jobs` | id, kind, payload jsonb, requirements jsonb, status, run_at, attempts, locked_by, lease_until, last_error |
 
 Fluxos são **versionados**: um FlowRun em andamento continua na versão em que começou.
@@ -123,6 +123,7 @@ Fluxos são **versionados**: um FlowRun em andamento continua na versão em que 
 |---|---|---|
 | **CreateCards** | baia e tipo dos cards criados; os itens vêm da lista `cards` (título, descrição, projeto pelo nome) que o nó anterior entrega | `next`, `failed` |
 | **WaitChildren** | baia em que um filho conta como concluído | `all_done`, `some_failed` |
+| **HumanReview** | nomes dos artefatos revisados (vazio: os coletados no run) | `approved`, `changes_requested` |
 
 **CreateCards** lê a lista `cards` da saída estruturada do Agent anterior (o editor preenche o
 schema com "Usar o schema de cards filhos") e cria todos os filhos numa transação, ou nenhum:
@@ -136,7 +137,7 @@ pai é reavaliado quando um filho entra numa baia (job `flow.trigger` do filho),
 de um filho termina e quando a execução de um filho é cancelada (job `flow.child_changed`);
 `SettleWait` garante que só uma dessas reavaliações siga a saída.
 
-O `get_card` do MCP devolve os artefatos do card (última versão, e se estão congelados) e, num
+O `get_card` do MCP devolve os artefatos do card (última versão e o estado da revisão, `approved` depois da aprovação) e, num
 card filho, o card pai com os artefatos dele: o agente que divide o trabalho e os que
 implementam leem o plano aprovado.
 
@@ -163,12 +164,33 @@ loop fica visível no desenho e não é um caso especial.
 
 Um nó Agent pode declarar artefatos (nome + arquivo do workspace, ex.: "Plano" ← `plan.md`). Quando
 o agente termina, o worker lê os arquivos (texto, até 1 MiB) e grava uma versão nova de cada
-artefato do card; arquivo ausente falha o nó. Na aba Artefatos o humano lê a versão (Markdown) e
-conversa com o agente que a gerou: cada mensagem abre um run de revisão (`trigger =
-artifact_revision`) que retoma a sessão desse nó, recoleta os arquivos e termina sem seguir as
-saídas do fluxo; o card não se move. A aprovação é mover o card: sair da baia congela os
-artefatos (salvo os de um run ainda ativo, que é quem move o card). Recoletar só acontece quando
-um nó do fluxo declara o mesmo nome.
+artefato do card; arquivo ausente falha o nó.
+
+A revisão humana é um nó do fluxo, **HumanReview**, e o loop fica no desenho como o do gateway:
+
+```
+Agent (planner) ──done──▶ HumanReview ──approved──▶ MoveCard(Arquitetura pronta)
+      ▲                         │
+      └────changes_requested────┘
+```
+
+1. Ao entrar no nó, a engine põe sob revisão os artefatos configurados (por nome; sem nomes, os
+   coletados neste run) e o NodeRun fica `awaiting_review`, com o FlowRun `waiting`. Sem
+   artefatos para revisar, o nó falha o run.
+2. Na aba Artefatos o humano lê a última versão (Markdown) e escreve o que ajustar. A mensagem
+   fica no chat do artefato e o nó sai por `changes_requested`; a saída leva ao agente o pedido
+   (`ReviewPrompt`), e ele o recebe **na mesma sessão do run**, como o feedback de um gateway.
+3. O agente atualiza o arquivo e termina; o board recoleta a versão nova e o run volta ao nó de
+   revisão. A entrada que chega (a resposta do agente) vai para o chat como mensagem do agente.
+4. "Aprovar" (na aba Artefatos ou no nó, na aba Execução) sai por `approved`, repassando o que o
+   nó recebeu; o fluxo segue, por exemplo movendo o card para a baia que dispara o próximo fluxo.
+
+Só a última versão aceita comentários e aprovação; as anteriores ficam para leitura. O chat só
+aceita mensagens enquanto um nó de revisão espera pelo artefato: o estado da revisão (`none`,
+`open`, `revising`, `approved`, `closed`) vem do nó de revisão em `artifacts.review_node_run_id`
+e do run dele. Quem decide termina o NodeRun numa transação e enfileira o job `flow.continue`,
+que a engine trata seguindo a saída do nó. Mover o card não muda a revisão; cancelar o run a
+encerra (`closed`).
 
 ### 4.2 Perguntas do agente
 
@@ -373,7 +395,7 @@ em dólar é estimativa.
 9. `agent login claude` (e `agent login opencode`, F13).
 
 **Fase 2**
-Nós `Approval`, `CreateCards`, `WaitChildren` — habilitam o cenário de referência (seção 11).
+Nós `HumanReview`, `CreateCards`, `WaitChildren` — habilitam o cenário de referência (seção 11).
 
 **Fora (próximas fases)**
 Nó de PR, review entre repositórios no fluxo do pai (`WaitSignal`), paralelismo Fork/Join,
@@ -390,7 +412,7 @@ um humano aprova, e cada repositório ganha um card implementado por outro agent
 **Fluxo "Proposta"** — gatilho: card criado do tipo `proposta` (sem projeto)
 ```
 Trigger → Agent (MCP Sourcegraph; submit_output: [{project, plano}])
-        → Approval ──rejected──▶ Agent (retoma sessão com o comentário)
+        → HumanReview ──changes_requested──▶ Agent (retoma sessão com o pedido)
             │approved
         → CreateCards (um card filho `implementação` por item, com projeto)
         → WaitChildren ──all_done──▶ MoveCard(Concluído)

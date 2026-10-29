@@ -162,6 +162,11 @@ func TestConfigProblems(t *testing.T) {
 		{"wait children", NodeWaitChildren, `{"done_lane_id":"` + laneID.String() + `"}`, nil},
 		{"wait children without lane", NodeWaitChildren, `{}`, []string{"escolha a baia em que um card filho conta como concluído"}},
 		{"wait children with bad JSON", NodeWaitChildren, `[]`, []string{"configuração inválida"}},
+		// n is a lone node here: its changes_requested output leads nowhere.
+		{"human review", NodeHumanReview, `{"artifacts":["Plano"]}`, []string{"ligue a saída changes_requested"}},
+		{"human review with blank name", NodeHumanReview, `{"artifacts":[" "]}`, []string{"o nome de um artefato revisado está vazio", "ligue"}},
+		{"human review with repeated name", NodeHumanReview, `{"artifacts":["A","A"]}`, []string{`o artefato "A" aparece mais de uma vez`, "ligue"}},
+		{"human review with bad JSON", NodeHumanReview, `[]`, []string{"configuração inválida", "ligue"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -192,6 +197,24 @@ func TestConfigProblems(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestHumanReviewLinked(t *testing.T) {
+	g := Graph{
+		Nodes: []Node{
+			node("t", NodeTrigger, `{"event":"card_created"}`),
+			node("dev", NodeAgent, `{`+profile+`,"prompt":"plan","artifacts":[{"name":"Plano","path":"plano.md"}]}`),
+			node("review", NodeHumanReview, `{}`),
+		},
+		Edges: []Edge{
+			edge("e1", "t", "next", "dev"),
+			edge("e2", "dev", "done", "review"),
+			edge("e3", "review", "changes_requested", "dev"),
+		},
+	}
+	if problems := g.Problems(refs); len(problems) != 0 {
+		t.Fatalf("problems %q", messages(problems))
 	}
 }
 

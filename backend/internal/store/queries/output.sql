@@ -17,7 +17,7 @@ RETURNING *;
 
 -- name: FailOpenNodeRuns :exec
 UPDATE node_runs SET status = 'failed', error = 'cancelado', token_hash = NULL, finished_at = now()
-WHERE flow_run_id = $1 AND status IN ('queued', 'running', 'awaiting_input', 'waiting');
+WHERE flow_run_id = $1 AND status IN ('queued', 'running', 'awaiting_input', 'waiting', 'awaiting_review');
 
 -- name: CloseRunQuestions :exec
 UPDATE questions SET delivered_at = now()

@@ -30,13 +30,13 @@ type AgentSession struct {
 }
 
 type Artifact struct {
-	ID        uuid.UUID
-	CardID    uuid.UUID
-	Name      string
-	NodeRunID uuid.UUID
-	FrozenAt  *time.Time
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID              uuid.UUID
+	CardID          uuid.UUID
+	Name            string
+	NodeRunID       uuid.UUID
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	ReviewNodeRunID *uuid.UUID
 }
 
 type ArtifactMessage struct {
@@ -45,8 +45,8 @@ type ArtifactMessage struct {
 	Version    int32
 	Role       string
 	Text       string
-	FlowRunID  *uuid.UUID
 	CreatedAt  time.Time
+	NodeRunID  *uuid.UUID
 }
 
 type ArtifactVersion struct {

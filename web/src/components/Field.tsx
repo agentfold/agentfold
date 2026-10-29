@@ -69,6 +69,7 @@ interface TextAreaProps {
   hint?: string
   rows?: number
   mono?: boolean
+  disabled?: boolean
 }
 
 export function TextArea({
@@ -78,6 +79,7 @@ export function TextArea({
   hint,
   rows = 4,
   mono = false,
+  disabled = false,
 }: TextAreaProps) {
   return (
     <Field label={label} hint={hint}>
@@ -85,8 +87,9 @@ export function TextArea({
         <textarea
           id={id}
           rows={rows}
-          className={`${inputClass} ${mono ? 'font-mono text-xs' : ''}`}
+          className={`${inputClass} ${mono ? 'font-mono text-xs' : ''} disabled:bg-slate-50`}
           value={value}
+          disabled={disabled}
           onChange={(e) => {
             onChange(e.target.value)
           }}

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  artifact,
   card,
   cardEvent,
   cardType,
@@ -300,6 +301,37 @@ describe('RunsPanel', () => {
     expect(screen.getByRole('article', { name: 'old 1' })).toHaveTextContent(
       'saída: concluído',
     )
+  })
+
+  it('approves a human review from the run', async () => {
+    const review = nodeRun('review', 'human_review', {
+      status: 'awaiting_review',
+      output_handle: '',
+    })
+    const { backend, card: c } = setup((id) => [
+      runDetail(id, 'waiting', [review]),
+    ])
+    backend.state.artifacts = [
+      artifact(c.id, 'Plano', ['x']),
+      artifact(c.id, 'Antigo', ['y'], { review: 'approved' }),
+    ]
+    const node = await screen.findByRole('article', { name: 'review 1' })
+    expect(node).toHaveTextContent('Aguardando revisão')
+    expect(
+      await within(node).findByText(/Revise Plano na aba Artefatos/),
+    ).toBeInTheDocument()
+
+    backend.failNext('POST /artifacts', 500)
+    await userEvent.click(within(node).getByRole('button', { name: 'Aprovar' }))
+    expect(await within(node).findByRole('alert')).toBeInTheDocument()
+
+    await userEvent.click(within(node).getByRole('button', { name: 'Aprovar' }))
+    await waitFor(() => {
+      expect(
+        within(node).queryByRole('button', { name: 'Aprovar' }),
+      ).not.toBeInTheDocument()
+    })
+    expect(backend.state.artifacts[0].review).toBe('approved')
   })
 
   it('shows output load failures', async () => {

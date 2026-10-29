@@ -11,6 +11,44 @@ import (
 	"github.com/google/uuid"
 )
 
+const awaitReviewNodeRun = `-- name: AwaitReviewNodeRun :one
+UPDATE node_runs SET status = 'awaiting_review' WHERE id = $1 AND status IN ('queued', 'running') RETURNING id, flow_run_id, node_key, iteration, status, input, output, output_handle, session_id, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, created_at, started_at, finished_at, continued_at, token_hash, summary, structured_output, decision, feedback
+`
+
+func (q *Queries) AwaitReviewNodeRun(ctx context.Context, id uuid.UUID) (NodeRun, error) {
+	row := q.db.QueryRow(ctx, awaitReviewNodeRun, id)
+	var i NodeRun
+	err := row.Scan(
+		&i.ID,
+		&i.FlowRunID,
+		&i.NodeKey,
+		&i.Iteration,
+		&i.Status,
+		&i.Input,
+		&i.Output,
+		&i.OutputHandle,
+		&i.SessionID,
+		&i.TokensIn,
+		&i.TokensOut,
+		&i.CacheRead,
+		&i.CacheWrite,
+		&i.CostUsd,
+		&i.Turns,
+		&i.DurationMs,
+		&i.Error,
+		&i.CreatedAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.ContinuedAt,
+		&i.TokenHash,
+		&i.Summary,
+		&i.StructuredOutput,
+		&i.Decision,
+		&i.Feedback,
+	)
+	return i, err
+}
+
 const cardHasActiveRun = `-- name: CardHasActiveRun :one
 SELECT EXISTS (SELECT 1 FROM flow_runs WHERE card_id = $1 AND status IN ('running', 'waiting'))
 `
@@ -240,6 +278,50 @@ SELECT id, flow_run_id, node_key, iteration, status, input, output, output_handl
 
 func (q *Queries) GetNodeRun(ctx context.Context, id uuid.UUID) (NodeRun, error) {
 	row := q.db.QueryRow(ctx, getNodeRun, id)
+	var i NodeRun
+	err := row.Scan(
+		&i.ID,
+		&i.FlowRunID,
+		&i.NodeKey,
+		&i.Iteration,
+		&i.Status,
+		&i.Input,
+		&i.Output,
+		&i.OutputHandle,
+		&i.SessionID,
+		&i.TokensIn,
+		&i.TokensOut,
+		&i.CacheRead,
+		&i.CacheWrite,
+		&i.CostUsd,
+		&i.Turns,
+		&i.DurationMs,
+		&i.Error,
+		&i.CreatedAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.ContinuedAt,
+		&i.TokenHash,
+		&i.Summary,
+		&i.StructuredOutput,
+		&i.Decision,
+		&i.Feedback,
+	)
+	return i, err
+}
+
+const getNodeRunByIteration = `-- name: GetNodeRunByIteration :one
+SELECT id, flow_run_id, node_key, iteration, status, input, output, output_handle, session_id, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, created_at, started_at, finished_at, continued_at, token_hash, summary, structured_output, decision, feedback FROM node_runs WHERE flow_run_id = $1 AND node_key = $2 AND iteration = $3
+`
+
+type GetNodeRunByIterationParams struct {
+	FlowRunID uuid.UUID
+	NodeKey   string
+	Iteration int32
+}
+
+func (q *Queries) GetNodeRunByIteration(ctx context.Context, arg GetNodeRunByIterationParams) (NodeRun, error) {
+	row := q.db.QueryRow(ctx, getNodeRunByIteration, arg.FlowRunID, arg.NodeKey, arg.Iteration)
 	var i NodeRun
 	err := row.Scan(
 		&i.ID,

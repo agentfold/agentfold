@@ -265,6 +265,15 @@ describe('NodeConfigForm', () => {
     expect(result.config).toEqual({})
   })
 
+  it('names the artifacts a human reviews', async () => {
+    const result = setup('human_review', {})
+    const names = screen.getByLabelText('Artefatos revisados')
+    await userEvent.type(names, 'Plano, Riscos')
+    expect(result.config).toEqual({ artifacts: ['Plano', 'Riscos'] })
+    await userEvent.clear(names)
+    expect(result.config).toEqual({})
+  })
+
   it('fills in the child cards schema', async () => {
     const result = setup('agent', {})
     await userEvent.type(screen.getByLabelText(/Schema de saída/), '[[')

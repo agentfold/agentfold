@@ -63,6 +63,8 @@ const (
 	// before; NodeWaitChildren waits until the children are done.
 	NodeCreateCards  NodeType = "create_cards"
 	NodeWaitChildren NodeType = "wait_children"
+	// NodeHumanReview waits for a human to review artifacts of the card.
+	NodeHumanReview NodeType = "human_review"
 )
 
 // Outputs lists the outputs (edge source handles) of each node type. Agent
@@ -77,6 +79,9 @@ var Outputs = map[NodeType][]string{
 	// some_failed: the last run of a child failed or was canceled before
 	// the child reached the done lane.
 	NodeWaitChildren: {"all_done", "some_failed"},
+	// changes_requested: the human asked for changes, handed on to the
+	// agent node it leads to.
+	NodeHumanReview: {"approved", "changes_requested"},
 }
 
 // GatewayOutputs are the outputs of an agent node with the gateway on.
@@ -178,6 +183,12 @@ type WaitChildrenConfig struct {
 	DoneLaneID uuid.UUID `json:"done_lane_id"`
 }
 
+// HumanReviewConfig names the artifacts the human reviews; none means
+// those collected in the run.
+type HumanReviewConfig struct {
+	Artifacts []string `json:"artifacts,omitempty"`
+}
+
 // ChildCardSpec is a card a CreateCards node creates. Project is the name
 // of a project, optional.
 type ChildCardSpec struct {
@@ -254,6 +265,7 @@ func (g Graph) Problems(refs References) []GraphProblem {
 	v.checkNodes(g.Nodes)
 	v.checkEdges(g.Edges)
 	v.checkReachable(g.Edges)
+	v.checkReviews(g.Edges)
 	return v.problems
 }
 
@@ -353,6 +365,22 @@ func (v *validator) checkReachable(edges []Edge) {
 	}
 }
 
+// checkReviews requires every HumanReview node to send changes back to
+// some node.
+func (v *validator) checkReviews(edges []Edge) {
+	for _, n := range v.sortedNodes() {
+		if n.Type != NodeHumanReview {
+			continue
+		}
+		linked := slices.ContainsFunc(edges, func(e Edge) bool {
+			return e.Source == n.ID && e.SourceHandle == "changes_requested"
+		})
+		if !linked {
+			v.node(n.ID, "ligue a saída changes_requested ao nó que refaz o trabalho")
+		}
+	}
+}
+
 // sortedNodes returns the valid nodes in a stable order for messages.
 func (v *validator) sortedNodes() []Node {
 	out := make([]Node, 0, len(v.nodes))
@@ -411,6 +439,27 @@ func (v *validator) configProblems(n Node) []string {
 		if !v.refs.Lanes[c.DoneLaneID] {
 			return []string{"escolha a baia em que um card filho conta como concluído"}
 		}
+	case NodeHumanReview:
+		var c HumanReviewConfig
+		if err := json.Unmarshal(config, &c); err != nil {
+			return []string{invalidConfig(err)}
+		}
+		return reviewProblems(c.Artifacts)
+	}
+	return nil
+}
+
+func reviewProblems(names []string) []string {
+	seen := map[string]bool{}
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return []string{"o nome de um artefato revisado está vazio"}
+		}
+		if seen[name] {
+			return []string{fmt.Sprintf("o artefato %q aparece mais de uma vez", name)}
+		}
+		seen[name] = true
 	}
 	return nil
 }

@@ -57,12 +57,16 @@ func (f *fakeRepo) ListArtifactMessages(_ context.Context, id uuid.UUID) ([]doma
 	return []domain.ArtifactMessage{{ArtifactID: id, Version: 1}}, f.call("ListArtifactMessages", id)
 }
 
-func (f *fakeRepo) ArtifactRevising(_ context.Context, id uuid.UUID) (bool, error) {
-	return f.resumed, f.call("ArtifactRevising", id)
+func (f *fakeRepo) ArtifactReview(_ context.Context, id uuid.UUID) (domain.ReviewState, error) {
+	return domain.ReviewOpen, f.call("ArtifactReview", id)
 }
 
-func (f *fakeRepo) StartRevision(_ context.Context, id uuid.UUID, version int, text string) (domain.ArtifactMessage, domain.FlowRun, error) {
-	return domain.ArtifactMessage{ArtifactID: id, Version: version, Role: domain.RoleHuman, Text: text}, f.flowRun, f.call("StartRevision", text)
+func (f *fakeRepo) RequestChanges(_ context.Context, id uuid.UUID, text string) (domain.ArtifactMessage, domain.NodeRun, error) {
+	return domain.ArtifactMessage{ArtifactID: id, Version: 1, Role: domain.RoleHuman, Text: text}, f.nodeRun, f.call("RequestChanges", text)
+}
+
+func (f *fakeRepo) ApproveReview(_ context.Context, id uuid.UUID) (domain.NodeRun, error) {
+	return f.nodeRun, f.call("ApproveReview", id)
 }
 
 func (f *fakeRepo) AddQuestions(_ context.Context, cardID, nodeRunID uuid.UUID, texts []string) ([]domain.Question, error) {

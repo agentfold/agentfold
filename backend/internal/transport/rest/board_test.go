@@ -156,8 +156,12 @@ func (b *stubBoard) GetArtifact(_ context.Context, id uuid.UUID) (service.Artifa
 	return b.artifact, b.record("GetArtifact", id)
 }
 
-func (b *stubBoard) ReviseArtifact(_ context.Context, id uuid.UUID, version int, text string) (domain.ArtifactMessage, error) {
-	return b.artifact.Messages[0], b.record("ReviseArtifact", id, version, text)
+func (b *stubBoard) RequestArtifactChanges(_ context.Context, id uuid.UUID, text string) (domain.ArtifactMessage, error) {
+	return b.artifact.Messages[0], b.record("RequestArtifactChanges", id, text)
+}
+
+func (b *stubBoard) ApproveArtifact(_ context.Context, id uuid.UUID) error {
+	return b.record("ApproveArtifact", id)
 }
 
 func (b *stubBoard) ListLatestFlowRuns(context.Context) ([]domain.FlowRun, error) {

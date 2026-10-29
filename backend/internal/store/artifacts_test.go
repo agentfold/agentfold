@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -27,7 +28,7 @@ func collect(t *testing.T, s *Store) collected {
 		t.Fatal(err)
 	}
 	artifact, version, created, err := s.SaveArtifact(ctx, run.CardID, nr.ID, "Plano", "plan.md", "# v1")
-	if err != nil || version != 1 || !created || artifact.Name != "Plano" || artifact.FrozenAt != nil {
+	if err != nil || version != 1 || !created || artifact.Name != "Plano" || artifact.ReviewNodeRunID != nil {
 		t.Fatalf("SaveArtifact = %+v %d %v, %v", artifact, version, created, err)
 	}
 	if _, err := s.FinishNodeRun(ctx, nr.ID, domain.NodeResult{Status: domain.NodeDone}); err != nil {
@@ -80,178 +81,233 @@ func TestSaveArtifact(t *testing.T) {
 	}
 }
 
-func TestRevision(t *testing.T) {
-	s := newStore(t)
-	ctx := context.Background()
-	c := collect(t, s)
-	msg, run, err := s.StartRevision(ctx, c.artifact.ID, 1, "more detail")
-	if err != nil || msg.Role != domain.RoleHuman || msg.Version != 1 || msg.Text != "more detail" || *msg.FlowRunID != run.ID {
-		t.Fatalf("StartRevision = %+v, %v", msg, err)
-	}
-	if run.Trigger != domain.TriggerRevision || run.FlowVersionID != c.run.FlowVersionID || run.FlowName != "dev" || run.Status != domain.RunRunning {
-		t.Fatalf("revision run %+v", run)
-	}
-	nodes, err := s.ListNodeRuns(ctx, run.ID)
-	if err != nil || len(nodes) != 1 || nodes[0].NodeKey != "dev" || nodes[0].Status != domain.NodeQueued {
-		t.Fatalf("revision node runs %+v, %v", nodes, err)
-	}
-	if session, err := s.AgentSession(ctx, run.ID, "dev"); err != nil || session != c.session {
-		t.Fatalf("the revision resumes the session: %v, %v", session, err)
-	}
-	var prompt string
-	if err := pool.QueryRow(ctx, `SELECT payload->>'prompt' FROM jobs WHERE kind = 'agent.run'`).Scan(&prompt); err != nil ||
-		prompt != domain.RevisionPrompt("Plano", "plan.md", 1, "more detail") {
-		t.Fatalf("revision prompt %q, %v", prompt, err)
-	}
-	if revising, err := s.ArtifactRevising(ctx, c.artifact.ID); err != nil || !revising {
-		t.Fatalf("revising %v, %v", revising, err)
-	}
-	if _, _, err := s.StartRevision(ctx, c.artifact.ID, 1, "again"); !errors.Is(err, domain.ErrCardBusy) {
-		t.Fatalf("revising a busy card: %v", err)
-	}
+// reviewing is a run whose node "dev" collected the artifact "Plano" and
+// whose HumanReview node "review" awaits the human.
+type reviewing struct {
+	run      domain.FlowRun
+	dev      domain.NodeRun
+	review   domain.NodeRun
+	artifact domain.Artifact
+}
 
-	if _, _, created, err := s.SaveArtifact(ctx, c.run.CardID, nodes[0].ID, "Plano", "plan.md", "# v2"); err != nil || !created {
+func review(t *testing.T, s *Store) reviewing {
+	t.Helper()
+	ctx := context.Background()
+	run, dev := runningNode(t, s)
+	if _, _, _, err := s.SaveArtifact(ctx, run.CardID, dev.ID, "Plano", "plan.md", "# v1"); err != nil {
 		t.Fatal(err)
 	}
-	reply, err := s.AddRevisionReply(ctx, run.ID, "done")
-	if err != nil || reply.Role != domain.RoleAgent || reply.Version != 2 || reply.ArtifactID != c.artifact.ID {
-		t.Fatalf("AddRevisionReply = %+v, %v", reply, err)
+	if _, err := s.FinishNodeRun(ctx, dev.ID, domain.NodeResult{Status: domain.NodeDone}); err != nil {
+		t.Fatal(err)
 	}
-	messages, err := s.ListArtifactMessages(ctx, c.artifact.ID)
-	if err != nil || len(messages) != 2 || messages[0].ID != msg.ID || messages[1].ID != reply.ID {
+	nr, err := s.CreateNodeRun(ctx, run.ID, "review", 1, json.RawMessage(`{"result":"planned"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	held, artifacts, err := s.OpenReview(ctx, nr.ID, run.CardID, nil, "ignored")
+	if err != nil || held.Status != domain.NodeAwaitingReview || len(artifacts) != 1 || *artifacts[0].ReviewNodeRunID != nr.ID {
+		t.Fatalf("OpenReview = %+v %+v, %v", held, artifacts, err)
+	}
+	return reviewing{run: run, dev: dev, review: held, artifact: artifacts[0]}
+}
+
+func reviewState(t *testing.T, s *Store, artifactID uuid.UUID) domain.ReviewState {
+	t.Helper()
+	state, err := s.ArtifactReview(context.Background(), artifactID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return state
+}
+
+func TestReviewRequestChanges(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	r := review(t, s)
+	if got, _ := s.GetFlowRun(ctx, r.run.ID); got.Status != domain.RunWaiting {
+		t.Fatalf("the run waits for the review: %s", got.Status)
+	}
+	if state := reviewState(t, s, r.artifact.ID); state != domain.ReviewOpen {
+		t.Fatalf("state %s", state)
+	}
+	if messages, _ := s.ListArtifactMessages(ctx, r.artifact.ID); len(messages) != 0 {
+		t.Fatalf("the first review has no agent answer: %+v", messages)
+	}
+
+	msg, nr, err := s.RequestChanges(ctx, r.artifact.ID, "more detail")
+	if err != nil || msg.Role != domain.RoleHuman || msg.Version != 1 || msg.Text != "more detail" || *msg.NodeRunID != r.review.ID {
+		t.Fatalf("RequestChanges = %+v, %v", msg, err)
+	}
+	if nr.Status != domain.NodeDone || nr.OutputHandle != "changes_requested" || domain.MessageFrom(nr.Output) != domain.ReviewPrompt("Plano", "plan.md", "more detail") {
+		t.Fatalf("decided node %+v %s", nr, nr.Output)
+	}
+	if got, _ := s.GetFlowRun(ctx, r.run.ID); got.Status != domain.RunRunning {
+		t.Fatalf("the run goes on: %s", got.Status)
+	}
+	var job string
+	if err := pool.QueryRow(ctx, `SELECT payload->>'node_run_id' FROM jobs WHERE kind = 'flow.continue'`).Scan(&job); err != nil || job != r.review.ID.String() {
+		t.Fatalf("continue job %q, %v", job, err)
+	}
+	if state := reviewState(t, s, r.artifact.ID); state != domain.ReviewRevising {
+		t.Fatalf("state %s", state)
+	}
+	if _, _, err := s.RequestChanges(ctx, r.artifact.ID, "again"); !errors.Is(err, domain.ErrReviewClosed) {
+		t.Fatalf("asking while the agent revises: %v", err)
+	}
+	if _, err := s.ApproveReview(ctx, r.artifact.ID); !errors.Is(err, domain.ErrReviewClosed) {
+		t.Fatalf("approving while the agent revises: %v", err)
+	}
+
+	// The agent revises and the run comes back to the review.
+	dev, err := s.CreateNodeRun(ctx, r.run.ID, "dev", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := s.SaveArtifact(ctx, r.run.CardID, dev.ID, "Plano", "plan.md", "# v2"); err != nil {
+		t.Fatal(err)
+	}
+	again, err := s.CreateNodeRun(ctx, r.run.ID, "review", 2, json.RawMessage(`{"result":"revised"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, artifacts, err := s.OpenReview(ctx, again.ID, r.run.CardID, []string{"Plano"}, "revised"); err != nil || len(artifacts) != 1 {
+		t.Fatalf("OpenReview again = %+v, %v", artifacts, err)
+	}
+	messages, err := s.ListArtifactMessages(ctx, r.artifact.ID)
+	if err != nil || len(messages) != 2 || messages[1].Role != domain.RoleAgent || messages[1].Text != "revised" ||
+		messages[1].Version != 2 || *messages[1].NodeRunID != again.ID {
 		t.Fatalf("messages %+v, %v", messages, err)
 	}
-	if _, err := s.AddRevisionReply(ctx, c.run.ID, "no revision"); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatalf("reply to a run that revised nothing: %v", err)
+
+	approved, err := s.ApproveReview(ctx, r.artifact.ID)
+	if err != nil || approved.OutputHandle != "approved" || string(approved.Output) != `{"result": "revised"}` {
+		t.Fatalf("ApproveReview = %+v %s, %v", approved, approved.Output, err)
 	}
-	if _, err := s.FinishFlowRun(ctx, run.ID, domain.RunDone, ""); err != nil {
-		t.Fatal(err)
-	}
-	if revising, err := s.ArtifactRevising(ctx, c.artifact.ID); err != nil || revising {
-		t.Fatalf("revising after the run %v, %v", revising, err)
+	if state := reviewState(t, s, r.artifact.ID); state != domain.ReviewApproved {
+		t.Fatalf("state %s", state)
 	}
 
-	if _, _, err := s.StartRevision(ctx, c.artifact.ID, 3, "x"); err == nil {
-		t.Fatal("revising a version that does not exist")
-	}
-	if _, _, err := s.StartRevision(ctx, uuid.New(), 1, "x"); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatalf("revising a missing artifact: %v", err)
-	}
-	for _, method := range []string{
-		"LatestArtifactVersion", "GetNodeRun", "GetFlowRun", "CardHasActiveRun", "InsertFlowRun", "InsertNodeRun",
-		"GetAgentSession", "InsertAgentSession", "InsertArtifactMessage", "InsertJob",
-	} {
-		failOn(s, method, 1)
-		if _, _, err := s.StartRevision(ctx, c.artifact.ID, 1, "x"); !errors.Is(err, errInjected) {
-			t.Fatalf("%s: got %v", method, err)
-		}
-	}
-	for _, method := range []string{"GetRevisionMessage", "LatestArtifactVersion", "InsertArtifactMessage"} {
-		failOn(s, method, 1)
-		if _, err := s.AddRevisionReply(ctx, run.ID, "x"); !errors.Is(err, errInjected) {
-			t.Fatalf("%s: got %v", method, err)
-		}
-	}
-	for _, read := range []func(context.Context) error{
-		func(ctx context.Context) error { _, err := s.ListCardArtifacts(ctx, c.run.CardID); return err },
-		func(ctx context.Context) error { _, err := s.ListArtifactVersions(ctx, c.artifact.ID); return err },
-		func(ctx context.Context) error { _, err := s.ListArtifactMessages(ctx, c.artifact.ID); return err },
-	} {
-		if err := read(cancelled()); err == nil {
-			t.Error("expected an error")
-		}
-	}
-}
-
-func TestRevisionWithoutSession(t *testing.T) {
-	s := newStore(t)
-	ctx := context.Background()
-	run, nr := runningNode(t, s)
-	artifact, _, _, err := s.SaveArtifact(ctx, run.CardID, nr.ID, "Plano", "plan.md", "# v1")
+	// Coming back to the review after an approval adds no answer.
+	third, err := s.CreateNodeRun(ctx, r.run.ID, "review", 3, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := s.StartRevision(ctx, artifact.ID, 1, "x"); !errors.Is(err, domain.ErrCardBusy) {
-		t.Fatalf("revising while the run that collected it runs: %v", err)
-	}
-	if _, err := s.FinishFlowRun(ctx, run.ID, domain.RunDone, ""); err != nil {
+	if _, _, err := s.OpenReview(ctx, third.ID, r.run.CardID, nil, "x"); err != nil {
 		t.Fatal(err)
 	}
-	revision, revRun, err := s.StartRevision(ctx, artifact.ID, 1, "x")
-	if err != nil || revision.FlowRunID == nil {
-		t.Fatalf("StartRevision = %+v, %v", revision, err)
-	}
-	if _, err := s.AgentSession(ctx, revRun.ID, "dev"); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatalf("no session to resume: %v", err)
+	if messages, _ := s.ListArtifactMessages(ctx, r.artifact.ID); len(messages) != 2 {
+		t.Fatalf("messages %+v", messages)
 	}
 }
 
-// TestFreezeArtifacts: moving the card to another lane freezes its
-// artifacts, but not those the run moving it collected.
-func TestFreezeArtifacts(t *testing.T) {
+func TestReviewStates(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	r := review(t, s)
+	if _, err := s.CancelFlowRun(ctx, r.run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if state := reviewState(t, s, r.artifact.ID); state != domain.ReviewClosed {
+		t.Fatalf("canceled review: %s", state)
+	}
+	if _, _, err := s.RequestChanges(ctx, r.artifact.ID, "x"); !errors.Is(err, domain.ErrReviewClosed) {
+		t.Fatalf("asking in a canceled review: %v", err)
+	}
+
+	s = newStore(t)
+	c := collect(t, s)
+	if state := reviewState(t, s, c.artifact.ID); state != domain.ReviewNone {
+		t.Fatalf("never reviewed: %s", state)
+	}
+	if _, err := s.ApproveReview(ctx, c.artifact.ID); !errors.Is(err, domain.ErrReviewClosed) {
+		t.Fatalf("approving with no review: %v", err)
+	}
+	if _, err := s.ApproveReview(ctx, uuid.New()); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("approving a missing artifact: %v", err)
+	}
+	if _, err := s.ArtifactReview(cancelled(), c.artifact.ID); err == nil {
+		t.Fatal("expected an error")
+	}
+}
+
+func TestOpenReviewCases(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
 	c := collect(t, s)
-	card, err := s.GetCard(ctx, c.run.CardID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	lanes, err := s.ListLanes(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	other := lanes[1].ID
-	if other == card.LaneID {
-		other = lanes[0].ID
-	}
-	if _, err := s.MoveCard(ctx, card.ID, card.LaneID, 0); err != nil {
-		t.Fatal(err)
-	}
-	if a, _ := s.GetArtifact(ctx, c.artifact.ID); a.FrozenAt != nil {
-		t.Fatal("moving within the lane froze the artifact")
-	}
-	failOn(s, "FreezeCardArtifacts", 1)
-	if _, err := s.MoveCard(ctx, card.ID, other, 0); !errors.Is(err, errInjected) {
-		t.Fatalf("FreezeCardArtifacts: %v", err)
-	}
-	s = New(pool)
-
-	second, err := s.CreateCard(ctx, domain.NewCard{CardInput: domain.CardInput{Title: "second", CardTypeID: card.CardTypeID}, LaneID: card.LaneID})
-	if err != nil {
-		t.Fatal(err)
-	}
 	version, err := s.GetFlowVersion(ctx, c.run.FlowVersionID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, _, err := s.StartFlowRun(ctx, version, second.ID, domain.EventCardCreated)
+	run, _, err := s.StartFlowRun(ctx, version, c.run.CardID, domain.EventCardCreated)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nr, err := s.CreateNodeRun(ctx, run.ID, "dev", 1, nil)
+	nr, err := s.CreateNodeRun(ctx, run.ID, "review", 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	active, _, _, err := s.SaveArtifact(ctx, second.ID, nr.ID, "Outro", "other.md", "x")
+	// With no names, only what this run collected: nothing here.
+	if got, artifacts, err := s.OpenReview(ctx, nr.ID, run.CardID, nil, ""); err != nil || len(artifacts) != 0 || got.Status != domain.NodeQueued {
+		t.Fatalf("nothing to review = %+v %+v, %v", got, artifacts, err)
+	}
+	// By name, what an earlier run collected too.
+	if _, artifacts, err := s.OpenReview(ctx, nr.ID, run.CardID, []string{"Plano", "Outro"}, ""); err != nil || len(artifacts) != 1 {
+		t.Fatalf("by name = %+v, %v", artifacts, err)
+	}
+	if _, _, err := s.OpenReview(ctx, uuid.New(), run.CardID, nil, ""); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("missing node run: %v", err)
+	}
+
+	ended, err := s.CreateNodeRun(ctx, run.ID, "review", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.MoveCard(ctx, card.ID, other, 0); err != nil {
+	if _, err := s.FinishFlowRun(ctx, run.ID, domain.RunCanceled, ""); err != nil {
 		t.Fatal(err)
 	}
-	if a, _ := s.GetArtifact(ctx, c.artifact.ID); a.FrozenAt == nil {
-		t.Fatal("leaving the lane did not freeze the artifact")
+	if _, _, err := s.OpenReview(ctx, ended.ID, run.CardID, []string{"Plano"}, ""); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("the run ended: %v", err)
 	}
-	if _, _, err := s.StartRevision(ctx, c.artifact.ID, 1, "x"); !errors.Is(err, domain.ErrArtifactFrozen) {
-		t.Fatalf("revising a frozen artifact: %v", err)
+}
+
+func TestReviewFailures(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	r := review(t, s)
+	for _, method := range []string{"GetArtifactForUpdate", "GetNodeRunForUpdate", "LatestArtifactVersion", "InsertArtifactMessage", "SetFlowRunStatus", "FinishNodeRun", "InsertJob"} {
+		failOn(s, method, 1)
+		if _, _, err := s.RequestChanges(ctx, r.artifact.ID, "x"); !errors.Is(err, errInjected) {
+			t.Fatalf("RequestChanges %s: got %v", method, err)
+		}
 	}
-	if _, err := s.MoveCard(ctx, run.CardID, other, 0); err != nil {
+	failOn(s, "GetArtifactForUpdate", 1)
+	if _, err := s.ApproveReview(ctx, r.artifact.ID); !errors.Is(err, errInjected) {
+		t.Fatalf("ApproveReview: got %v", err)
+	}
+	s = New(pool)
+	if _, _, err := s.RequestChanges(ctx, r.artifact.ID, "x"); err != nil {
 		t.Fatal(err)
 	}
-	if a, _ := s.GetArtifact(ctx, active.ID); a.FrozenAt != nil {
-		t.Fatal("the active run's artifact froze")
+	again, err := s.CreateNodeRun(ctx, r.run.ID, "review", 2, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if a, _, _, err := s.SaveArtifact(ctx, c.run.CardID, c.nr.ID, "Plano", "plan.md", "# v1"); err != nil || a.FrozenAt != nil {
-		t.Fatalf("collecting again opens it: %+v, %v", a, err)
+	for _, method := range []string{
+		"GetNodeRunForUpdate", "OpenArtifactReview", "AwaitReviewNodeRun", "SetFlowRunStatus",
+		"GetNodeRunByIteration", "ReviewRequest", "LatestArtifactVersion", "InsertArtifactMessage",
+	} {
+		failOn(s, method, 1)
+		if _, _, err := s.OpenReview(ctx, again.ID, r.run.CardID, nil, "x"); !errors.Is(err, errInjected) {
+			t.Fatalf("OpenReview %s: got %v", method, err)
+		}
+	}
+	for _, read := range []func(context.Context) error{
+		func(ctx context.Context) error { _, err := s.ListCardArtifacts(ctx, r.run.CardID); return err },
+		func(ctx context.Context) error { _, err := s.ListArtifactVersions(ctx, r.artifact.ID); return err },
+		func(ctx context.Context) error { _, err := s.ListArtifactMessages(ctx, r.artifact.ID); return err },
+	} {
+		if err := read(cancelled()); err == nil {
+			t.Error("expected an error")
+		}
 	}
 }

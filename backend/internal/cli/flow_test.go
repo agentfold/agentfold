@@ -434,16 +434,20 @@ func TestChildCardsEndToEnd(t *testing.T) {
 // artifact "Plano"; a message in its review chat resumes the planner, which
 // writes a new version, while the card stays in Done; moving the card on
 // freezes the artifact.
-func TestArtifactRevisionEndToEnd(t *testing.T) {
+// TestHumanReviewEndToEnd: the run waits at the review, a message sends
+// the planner back in its session, and approving goes on.
+func TestHumanReviewEndToEnd(t *testing.T) {
 	s := newStack(t)
 	planner := s.agentWith("plan", "Plan it [write:plan.md:# Plano]", `"artifacts":[{"name":"Plano","path":"plan.md"}]`)
-	s.flow(t, []domain.Node{planner, s.moveTo(s.done)})
+	review := domain.Node{ID: "review", Type: domain.NodeHumanReview, Config: json.RawMessage(`{}`)}
+	s.flow(t, []domain.Node{planner, review, s.moveTo(s.done)},
+		domain.Edge{ID: "review.changes_requested", Source: "review", SourceHandle: "changes_requested", Target: "plan"})
 	card := s.startCard(t)
-	s.waitRun(t, card, domain.RunDone)
+	s.waitRun(t, card, domain.RunWaiting)
 
 	url := s.base + "/api/cards/" + card.String() + "/artifacts"
 	artifacts := getJSON[[]map[string]any](t, url)
-	if len(artifacts) != 1 || artifacts[0]["name"] != "Plano" || artifacts[0]["frozen"] != false {
+	if len(artifacts) != 1 || artifacts[0]["name"] != "Plano" || artifacts[0]["review"] != "open" {
 		t.Fatalf("artifacts %v", artifacts)
 	}
 	versions := artifacts[0]["versions"].([]any)
@@ -451,7 +455,7 @@ func TestArtifactRevisionEndToEnd(t *testing.T) {
 		t.Fatalf("versions %v", versions)
 	}
 	id := artifacts[0]["id"].(string)
-	msg := postStatus(t, s.base+"/api/artifacts/"+id+"/messages", `{"text":"Citação sobre \"Plano\": detalhe mais","version":1}`, http.StatusCreated)
+	msg := postStatus(t, s.base+"/api/artifacts/"+id+"/messages", `{"text":"Citação sobre \"Plano\": detalhe mais"}`, http.StatusCreated)
 	if msg["role"] != "human" || msg["version"] != float64(1) {
 		t.Fatalf("message %v", msg)
 	}
@@ -460,7 +464,7 @@ func TestArtifactRevisionEndToEnd(t *testing.T) {
 	var artifact map[string]any
 	for time.Now().Before(deadline) {
 		artifact = getJSON[map[string]any](t, s.base+"/api/artifacts/"+id)
-		if len(artifact["messages"].([]any)) == 2 && artifact["revising"] == false {
+		if len(artifact["messages"].([]any)) == 2 && artifact["review"] == "open" {
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
@@ -470,32 +474,40 @@ func TestArtifactRevisionEndToEnd(t *testing.T) {
 	versions = artifact["versions"].([]any)
 	if reply["role"] != "agent" || reply["text"] != "did it" || reply["version"] != float64(2) || len(versions) != 2 ||
 		versions[1].(map[string]any)["content"] != "# Plano\n\nrun 2\n" {
-		t.Fatalf("after the revision: %v; worker log: %s", artifact, s.workerErr.String())
-	}
-	if got, _ := s.store.GetCard(context.Background(), card); got.LaneID != s.done {
-		t.Fatal("the revision moved the card")
+		t.Fatalf("after the changes: %v; worker log: %s", artifact, s.workerErr.String())
 	}
 	var sessions int
 	if err := s.pool.QueryRow(context.Background(), `SELECT count(DISTINCT session_id) FROM node_runs WHERE node_key = 'plan'`).Scan(&sessions); err != nil || sessions != 1 {
-		t.Fatalf("the revision did not resume the session: %d, %v", sessions, err)
+		t.Fatalf("the changes did not resume the session: %d, %v", sessions, err)
 	}
 	var prompt string
 	if err := s.pool.QueryRow(context.Background(), `SELECT payload->>'prompt' FROM jobs WHERE kind = 'agent.run' ORDER BY created_at DESC LIMIT 1`).Scan(&prompt); err != nil ||
 		!strings.Contains(prompt, "detalhe mais") {
-		t.Fatalf("revision prompt %q, %v", prompt, err)
+		t.Fatalf("changes prompt %q, %v", prompt, err)
 	}
 
-	postStatus(t, s.base+"/api/cards/"+card.String()+"/move", fmt.Sprintf(`{"lane_id":%q,"position":0}`, s.todo), http.StatusOK)
-	if artifact = getJSON[map[string]any](t, s.base+"/api/artifacts/"+id); artifact["frozen"] != true {
-		t.Fatalf("moving the card on did not freeze %v", artifact)
+	resp, err := http.Post(s.base+"/api/artifacts/"+id+"/approve", "application/json", nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	resp, err := http.Post(s.base+"/api/artifacts/"+id+"/messages", "application/json", strings.NewReader(`{"text":"x","version":2}`))
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("approve: %d", resp.StatusCode)
+	}
+	s.waitRun(t, card, domain.RunDone)
+	if got, _ := s.store.GetCard(context.Background(), card); got.LaneID != s.done {
+		t.Fatal("the approval did not move the card")
+	}
+	if artifact = getJSON[map[string]any](t, s.base+"/api/artifacts/"+id); artifact["review"] != "approved" {
+		t.Fatalf("after the approval %v", artifact)
+	}
+	resp, err = http.Post(s.base+"/api/artifacts/"+id+"/messages", "application/json", strings.NewReader(`{"text":"x"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusConflict {
-		t.Fatalf("revising a frozen artifact: %d", resp.StatusCode)
+		t.Fatalf("asking after the approval: %d", resp.StatusCode)
 	}
 	s.stop(t)
 }

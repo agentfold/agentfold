@@ -334,18 +334,32 @@ func (f *failing) InsertArtifactMessage(ctx context.Context, arg sqlcgen.InsertA
 	return f.Querier.InsertArtifactMessage(ctx, arg)
 }
 
-func (f *failing) GetRevisionMessage(ctx context.Context, flowRunID *uuid.UUID) (sqlcgen.ArtifactMessage, error) {
-	if err := f.hit("GetRevisionMessage"); err != nil {
-		return sqlcgen.ArtifactMessage{}, err
-	}
-	return f.Querier.GetRevisionMessage(ctx, flowRunID)
-}
-
-func (f *failing) FreezeCardArtifacts(ctx context.Context, cardID uuid.UUID) ([]sqlcgen.Artifact, error) {
-	if err := f.hit("FreezeCardArtifacts"); err != nil {
+func (f *failing) OpenArtifactReview(ctx context.Context, arg sqlcgen.OpenArtifactReviewParams) ([]sqlcgen.Artifact, error) {
+	if err := f.hit("OpenArtifactReview"); err != nil {
 		return nil, err
 	}
-	return f.Querier.FreezeCardArtifacts(ctx, cardID)
+	return f.Querier.OpenArtifactReview(ctx, arg)
+}
+
+func (f *failing) AwaitReviewNodeRun(ctx context.Context, id uuid.UUID) (sqlcgen.NodeRun, error) {
+	if err := f.hit("AwaitReviewNodeRun"); err != nil {
+		return sqlcgen.NodeRun{}, err
+	}
+	return f.Querier.AwaitReviewNodeRun(ctx, id)
+}
+
+func (f *failing) GetNodeRunByIteration(ctx context.Context, arg sqlcgen.GetNodeRunByIterationParams) (sqlcgen.NodeRun, error) {
+	if err := f.hit("GetNodeRunByIteration"); err != nil {
+		return sqlcgen.NodeRun{}, err
+	}
+	return f.Querier.GetNodeRunByIteration(ctx, arg)
+}
+
+func (f *failing) ReviewRequest(ctx context.Context, nodeRunID *uuid.UUID) (sqlcgen.ArtifactMessage, error) {
+	if err := f.hit("ReviewRequest"); err != nil {
+		return sqlcgen.ArtifactMessage{}, err
+	}
+	return f.Querier.ReviewRequest(ctx, nodeRunID)
 }
 
 func (f *failing) FinishNodeRun(ctx context.Context, arg sqlcgen.FinishNodeRunParams) (sqlcgen.NodeRun, error) {

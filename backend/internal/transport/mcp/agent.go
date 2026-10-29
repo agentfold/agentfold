@@ -37,8 +37,8 @@ type artifactView struct {
 	Name    string `json:"name"`
 	Version int    `json:"version"`
 	Path    string `json:"path"`
-	// Frozen artifacts were approved: the card left their lane.
-	Frozen  bool   `json:"frozen"`
+	// Review is where its review stands: approved once a human approved it.
+	Review  string `json:"review"`
 	Content string `json:"content"`
 }
 
@@ -63,7 +63,7 @@ func cardWithArtifacts(ctx context.Context, board Board, id uuid.UUID) (cardArti
 	for _, a := range artifacts {
 		latest := a.Versions[len(a.Versions)-1] // artifacts have a version at least
 		view.Artifacts = append(view.Artifacts, artifactView{
-			Name: a.Name, Version: latest.Version, Path: latest.Path, Frozen: a.FrozenAt != nil, Content: latest.Content,
+			Name: a.Name, Version: latest.Version, Path: latest.Path, Review: string(a.Review), Content: latest.Content,
 		})
 	}
 	return view, err

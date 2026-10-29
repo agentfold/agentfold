@@ -25,9 +25,9 @@ var (
 	ErrCardBusy = errors.New("a flow is running for the card")
 	// ErrQuestionClosed means the answer already reached the agent.
 	ErrQuestionClosed = errors.New("the answer was already delivered to the agent")
-	// ErrArtifactFrozen means the card left the lane where the artifact
-	// was collected: it can no longer be revised.
-	ErrArtifactFrozen = errors.New("the artifact is frozen: the card left its lane")
+	// ErrReviewClosed means no human_review node awaits the artifact: there
+	// is nothing to ask or approve now.
+	ErrReviewClosed = errors.New("no review awaits the artifact")
 )
 
 // ValidationError reports an invalid field value.

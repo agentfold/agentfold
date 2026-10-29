@@ -11,60 +11,31 @@ import (
 	"github.com/google/uuid"
 )
 
-const artifactRevising = `-- name: ArtifactRevising :one
-SELECT EXISTS (
-  SELECT 1 FROM artifact_messages m JOIN flow_runs r ON r.id = m.flow_run_id
-  WHERE m.artifact_id = $1 AND r.status IN ('running', 'waiting'))
+const artifactReview = `-- name: ArtifactReview :one
+SELECT n.status, n.output_handle, r.status AS run_status
+FROM artifacts a
+JOIN node_runs n ON n.id = a.review_node_run_id
+JOIN flow_runs r ON r.id = n.flow_run_id
+WHERE a.id = $1
 `
 
-func (q *Queries) ArtifactRevising(ctx context.Context, artifactID uuid.UUID) (bool, error) {
-	row := q.db.QueryRow(ctx, artifactRevising, artifactID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
+type ArtifactReviewRow struct {
+	Status       string
+	OutputHandle *string
+	RunStatus    string
 }
 
-const freezeCardArtifacts = `-- name: FreezeCardArtifacts :many
-UPDATE artifacts a SET frozen_at = now(), updated_at = now()
-WHERE a.card_id = $1 AND a.frozen_at IS NULL
-  AND NOT EXISTS (
-    SELECT 1 FROM node_runs n JOIN flow_runs r ON r.id = n.flow_run_id
-    WHERE n.id = a.node_run_id AND r.status IN ('running', 'waiting'))
-RETURNING id, card_id, name, node_run_id, frozen_at, created_at, updated_at
-`
-
-// FreezeCardArtifacts freezes the artifacts of a card that left its lane,
-// except those a run still active collected: that run moves the card on.
-func (q *Queries) FreezeCardArtifacts(ctx context.Context, cardID uuid.UUID) ([]Artifact, error) {
-	rows, err := q.db.Query(ctx, freezeCardArtifacts, cardID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Artifact
-	for rows.Next() {
-		var i Artifact
-		if err := rows.Scan(
-			&i.ID,
-			&i.CardID,
-			&i.Name,
-			&i.NodeRunID,
-			&i.FrozenAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+// ArtifactReview is the state of the human_review node run the artifact
+// is under, and of its flow run.
+func (q *Queries) ArtifactReview(ctx context.Context, id uuid.UUID) (ArtifactReviewRow, error) {
+	row := q.db.QueryRow(ctx, artifactReview, id)
+	var i ArtifactReviewRow
+	err := row.Scan(&i.Status, &i.OutputHandle, &i.RunStatus)
+	return i, err
 }
 
 const getArtifact = `-- name: GetArtifact :one
-SELECT id, card_id, name, node_run_id, frozen_at, created_at, updated_at FROM artifacts WHERE id = $1
+SELECT id, card_id, name, node_run_id, created_at, updated_at, review_node_run_id FROM artifacts WHERE id = $1
 `
 
 func (q *Queries) GetArtifact(ctx context.Context, id uuid.UUID) (Artifact, error) {
@@ -75,15 +46,15 @@ func (q *Queries) GetArtifact(ctx context.Context, id uuid.UUID) (Artifact, erro
 		&i.CardID,
 		&i.Name,
 		&i.NodeRunID,
-		&i.FrozenAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ReviewNodeRunID,
 	)
 	return i, err
 }
 
 const getArtifactForUpdate = `-- name: GetArtifactForUpdate :one
-SELECT id, card_id, name, node_run_id, frozen_at, created_at, updated_at FROM artifacts WHERE id = $1 FOR UPDATE
+SELECT id, card_id, name, node_run_id, created_at, updated_at, review_node_run_id FROM artifacts WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetArtifactForUpdate(ctx context.Context, id uuid.UUID) (Artifact, error) {
@@ -94,34 +65,15 @@ func (q *Queries) GetArtifactForUpdate(ctx context.Context, id uuid.UUID) (Artif
 		&i.CardID,
 		&i.Name,
 		&i.NodeRunID,
-		&i.FrozenAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getRevisionMessage = `-- name: GetRevisionMessage :one
-SELECT id, artifact_id, version, role, text, flow_run_id, created_at FROM artifact_messages WHERE flow_run_id = $1 AND role = 'human'
-`
-
-func (q *Queries) GetRevisionMessage(ctx context.Context, flowRunID *uuid.UUID) (ArtifactMessage, error) {
-	row := q.db.QueryRow(ctx, getRevisionMessage, flowRunID)
-	var i ArtifactMessage
-	err := row.Scan(
-		&i.ID,
-		&i.ArtifactID,
-		&i.Version,
-		&i.Role,
-		&i.Text,
-		&i.FlowRunID,
-		&i.CreatedAt,
+		&i.ReviewNodeRunID,
 	)
 	return i, err
 }
 
 const insertArtifactMessage = `-- name: InsertArtifactMessage :one
-INSERT INTO artifact_messages (artifact_id, version, role, text, flow_run_id) VALUES ($1, $2, $3, $4, $5) RETURNING id, artifact_id, version, role, text, flow_run_id, created_at
+INSERT INTO artifact_messages (artifact_id, version, role, text, node_run_id) VALUES ($1, $2, $3, $4, $5) RETURNING id, artifact_id, version, role, text, created_at, node_run_id
 `
 
 type InsertArtifactMessageParams struct {
@@ -129,7 +81,7 @@ type InsertArtifactMessageParams struct {
 	Version    int32
 	Role       string
 	Text       string
-	FlowRunID  *uuid.UUID
+	NodeRunID  *uuid.UUID
 }
 
 func (q *Queries) InsertArtifactMessage(ctx context.Context, arg InsertArtifactMessageParams) (ArtifactMessage, error) {
@@ -138,7 +90,7 @@ func (q *Queries) InsertArtifactMessage(ctx context.Context, arg InsertArtifactM
 		arg.Version,
 		arg.Role,
 		arg.Text,
-		arg.FlowRunID,
+		arg.NodeRunID,
 	)
 	var i ArtifactMessage
 	err := row.Scan(
@@ -147,8 +99,8 @@ func (q *Queries) InsertArtifactMessage(ctx context.Context, arg InsertArtifactM
 		&i.Version,
 		&i.Role,
 		&i.Text,
-		&i.FlowRunID,
 		&i.CreatedAt,
+		&i.NodeRunID,
 	)
 	return i, err
 }
@@ -206,7 +158,7 @@ func (q *Queries) LatestArtifactVersion(ctx context.Context, artifactID uuid.UUI
 }
 
 const listArtifactMessages = `-- name: ListArtifactMessages :many
-SELECT id, artifact_id, version, role, text, flow_run_id, created_at FROM artifact_messages WHERE artifact_id = $1 ORDER BY created_at, id
+SELECT id, artifact_id, version, role, text, created_at, node_run_id FROM artifact_messages WHERE artifact_id = $1 ORDER BY created_at, id
 `
 
 func (q *Queries) ListArtifactMessages(ctx context.Context, artifactID uuid.UUID) ([]ArtifactMessage, error) {
@@ -224,8 +176,8 @@ func (q *Queries) ListArtifactMessages(ctx context.Context, artifactID uuid.UUID
 			&i.Version,
 			&i.Role,
 			&i.Text,
-			&i.FlowRunID,
 			&i.CreatedAt,
+			&i.NodeRunID,
 		); err != nil {
 			return nil, err
 		}
@@ -270,7 +222,7 @@ func (q *Queries) ListArtifactVersions(ctx context.Context, artifactID uuid.UUID
 }
 
 const listCardArtifacts = `-- name: ListCardArtifacts :many
-SELECT id, card_id, name, node_run_id, frozen_at, created_at, updated_at FROM artifacts WHERE card_id = $1 ORDER BY created_at, id
+SELECT id, card_id, name, node_run_id, created_at, updated_at, review_node_run_id FROM artifacts WHERE card_id = $1 ORDER BY created_at, id
 `
 
 func (q *Queries) ListCardArtifacts(ctx context.Context, cardID uuid.UUID) ([]Artifact, error) {
@@ -287,9 +239,9 @@ func (q *Queries) ListCardArtifacts(ctx context.Context, cardID uuid.UUID) ([]Ar
 			&i.CardID,
 			&i.Name,
 			&i.NodeRunID,
-			&i.FrozenAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ReviewNodeRunID,
 		); err != nil {
 			return nil, err
 		}
@@ -301,10 +253,83 @@ func (q *Queries) ListCardArtifacts(ctx context.Context, cardID uuid.UUID) ([]Ar
 	return items, nil
 }
 
+const openArtifactReview = `-- name: OpenArtifactReview :many
+UPDATE artifacts a SET review_node_run_id = $1, updated_at = now()
+WHERE a.card_id = $2 AND (
+    a.name = ANY($3::text[])
+    OR (cardinality($3::text[]) = 0
+        AND a.node_run_id IN (SELECT n.id FROM node_runs n WHERE n.flow_run_id = $4)))
+RETURNING id, card_id, name, node_run_id, created_at, updated_at, review_node_run_id
+`
+
+type OpenArtifactReviewParams struct {
+	NodeRunID *uuid.UUID
+	CardID    uuid.UUID
+	Names     []string
+	FlowRunID uuid.UUID
+}
+
+// OpenArtifactReview puts artifacts of the card under a human_review node
+// run: those named, or with no names those collected in its flow run.
+func (q *Queries) OpenArtifactReview(ctx context.Context, arg OpenArtifactReviewParams) ([]Artifact, error) {
+	rows, err := q.db.Query(ctx, openArtifactReview,
+		arg.NodeRunID,
+		arg.CardID,
+		arg.Names,
+		arg.FlowRunID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Artifact
+	for rows.Next() {
+		var i Artifact
+		if err := rows.Scan(
+			&i.ID,
+			&i.CardID,
+			&i.Name,
+			&i.NodeRunID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ReviewNodeRunID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const reviewRequest = `-- name: ReviewRequest :one
+SELECT id, artifact_id, version, role, text, created_at, node_run_id FROM artifact_messages WHERE node_run_id = $1 AND role = 'human'
+ORDER BY created_at DESC, id DESC LIMIT 1
+`
+
+// ReviewRequest is the human message that sent a human_review node run
+// back to the agent.
+func (q *Queries) ReviewRequest(ctx context.Context, nodeRunID *uuid.UUID) (ArtifactMessage, error) {
+	row := q.db.QueryRow(ctx, reviewRequest, nodeRunID)
+	var i ArtifactMessage
+	err := row.Scan(
+		&i.ID,
+		&i.ArtifactID,
+		&i.Version,
+		&i.Role,
+		&i.Text,
+		&i.CreatedAt,
+		&i.NodeRunID,
+	)
+	return i, err
+}
+
 const upsertArtifact = `-- name: UpsertArtifact :one
 INSERT INTO artifacts (card_id, name, node_run_id) VALUES ($1, $2, $3)
-ON CONFLICT (card_id, name) DO UPDATE SET node_run_id = EXCLUDED.node_run_id, frozen_at = NULL, updated_at = now()
-RETURNING id, card_id, name, node_run_id, frozen_at, created_at, updated_at
+ON CONFLICT (card_id, name) DO UPDATE SET node_run_id = EXCLUDED.node_run_id, updated_at = now()
+RETURNING id, card_id, name, node_run_id, created_at, updated_at, review_node_run_id
 `
 
 type UpsertArtifactParams struct {
@@ -321,9 +346,9 @@ func (q *Queries) UpsertArtifact(ctx context.Context, arg UpsertArtifactParams) 
 		&i.CardID,
 		&i.Name,
 		&i.NodeRunID,
-		&i.FrozenAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ReviewNodeRunID,
 	)
 	return i, err
 }

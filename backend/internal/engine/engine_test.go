@@ -34,8 +34,11 @@ type fakeStore struct {
 	jobs      []store.NewJob
 	// answered makes ResumeIfAnswered resume.
 	answered bool
-	// replies are the revision replies by run.
-	replies map[uuid.UUID]string
+	// reviewing is what OpenReview puts under review, reviewNames the
+	// names it got and replies the agent answers it recorded.
+	reviewing   []domain.Artifact
+	reviewNames []string
+	replies     []string
 	// projects, children (in creation order) and cardRuns (latest first)
 	// back the child card nodes; unsettled makes SettleWait lose the race.
 	projects  []domain.Project
@@ -54,7 +57,6 @@ func newFakeStore() *fakeStore {
 		runs:      map[uuid.UUID]domain.FlowRun{},
 		nodeRuns:  map[uuid.UUID]domain.NodeRun{},
 		continued: map[uuid.UUID]bool{},
-		replies:   map[uuid.UUID]string{},
 		errs:      map[string]error{},
 		failAfter: map[string]int{},
 	}
@@ -250,12 +252,18 @@ func (f *fakeStore) ResumeIfAnswered(_ context.Context, id uuid.UUID) (domain.Fl
 	return r, true, nil
 }
 
-func (f *fakeStore) AddRevisionReply(_ context.Context, flowRunID uuid.UUID, text string) (domain.ArtifactMessage, error) {
-	if err := f.err("AddRevisionReply"); err != nil {
-		return domain.ArtifactMessage{}, err
+func (f *fakeStore) OpenReview(_ context.Context, nodeRunID, _ uuid.UUID, names []string, reply string) (domain.NodeRun, []domain.Artifact, error) {
+	nr := f.nodeRuns[nodeRunID]
+	if err := f.err("OpenReview"); err != nil || len(f.reviewing) == 0 {
+		return nr, nil, err
 	}
-	f.replies[flowRunID] = text
-	return domain.ArtifactMessage{ArtifactID: flowRunID, Role: domain.RoleAgent, Text: text}, nil
+	f.reviewNames, f.replies = names, append(f.replies, reply)
+	nr.Status = domain.NodeAwaitingReview
+	f.nodeRuns[nodeRunID] = nr
+	r := f.runs[nr.FlowRunID]
+	r.Status = domain.RunWaiting
+	f.runs[r.ID] = r
+	return nr, f.reviewing, nil
 }
 
 // lastNodeRun returns the node run created last.
@@ -678,75 +686,132 @@ func TestBoardNodesHandOnTheirInput(t *testing.T) {
 	}
 }
 
-// revision starts a revision run of node "dev" of the flow, as the store
-// does, and returns its node run.
-func (e *env) revision() domain.NodeRun {
-	e.t.Helper()
-	flow := e.store.flows[0]
-	r := domain.FlowRun{ID: uuid.New(), FlowID: flow.Version.FlowID, FlowVersionID: flow.Version.ID, CardID: e.card.ID,
-		Trigger: domain.TriggerRevision, Status: domain.RunRunning}
-	e.store.runs[r.ID] = r
-	nr, _ := e.store.CreateNodeRun(context.Background(), r.ID, "dev", 1, nil)
-	e.store.jobs = append(e.store.jobs, store.NewJob{Kind: agent.JobKind, Payload: agent.Payload{NodeRunID: nr.ID, Prompt: "revise"}})
-	return nr
+// reviewFlow is dev -> review, changes back to dev, approved -> move.
+func (e *env) reviewFlow(names ...string) {
+	e.addFlow("plan", graph{
+		nodes: []string{"t:trigger", "dev:agent", "review:human_review", "move:move_card"},
+		configs: map[string]any{
+			"t": triggerCfg(domain.EventCardCreated, nil), "move": map[string]any{"lane_id": e.doing},
+			"review": map[string]any{"artifacts": names},
+		},
+		edges: []string{"t.next>dev", "dev.done>review", "review.changes_requested>dev", "review.approved>move"},
+	})
 }
 
-func TestRevisionEndsWithTheNode(t *testing.T) {
+// decide ends the review node run awaiting the human as the store does,
+// then runs the flow.continue job.
+func (e *env) decide(handle string, output json.RawMessage) error {
+	e.t.Helper()
+	nr := e.store.lastNodeRun()
+	if nr.Status != domain.NodeAwaitingReview {
+		e.t.Fatalf("no review awaits: %+v", nr)
+	}
+	r := e.store.runs[nr.FlowRunID]
+	r.Status = domain.RunRunning
+	e.store.runs[r.ID] = r
+	_, _ = e.store.FinishNodeRun(context.Background(), nr.ID, domain.NodeResult{Status: domain.NodeDone, OutputHandle: handle, Output: output})
+	payload, _ := json.Marshal(domain.ContinueJob{NodeRunID: nr.ID})
+	return e.engine.HandleContinue(context.Background(), payload)
+}
+
+func TestHumanReviewLoop(t *testing.T) {
+	e := newEnv(t)
+	e.reviewFlow(" Plano ")
+	e.store.reviewing = []domain.Artifact{{ID: uuid.New(), Name: "Plano"}}
+	e.trigger(e.created())
+	answers := []string{"planned", " "}
+	e.agents.result = func(domain.NodeRun) domain.NodeResult {
+		answer := answers[0]
+		answers = answers[1:]
+		return done(answer)
+	}
+	if err := e.runAgent(); err != nil {
+		t.Fatal(err)
+	}
+	if run := e.onlyRun(); run.Status != domain.RunWaiting {
+		t.Fatalf("run %+v", run)
+	}
+	if !slices.Equal(e.store.reviewNames, []string{"Plano"}) || !slices.Equal(e.store.replies, []string{"planned"}) {
+		t.Fatalf("OpenReview got %q and %q", e.store.reviewNames, e.store.replies)
+	}
+	if got := e.pub.types(); !slices.Equal(got, []string{"flow_run.created", "node_run.updated", "flow_run.updated", "artifact.updated"}) {
+		t.Fatalf("published %q", got)
+	}
+
+	if err := e.decide("changes_requested", json.RawMessage(`{"result":"add the tests"}`)); err != nil {
+		t.Fatal(err)
+	}
+	nr := e.store.lastNodeRun()
+	if p := e.store.jobs[len(e.store.jobs)-1].Payload.(agent.Payload); nr.NodeKey != "dev" || nr.Iteration != 2 || p.Prompt != "add the tests" {
+		t.Fatalf("changes went to %+v with %+v", nr, p)
+	}
+	if err := e.runAgent(); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(e.store.replies, []string{"planned", "Revisão concluída."}) {
+		t.Fatalf("replies %q", e.store.replies)
+	}
+
+	if err := e.decide("approved", json.RawMessage(`{"result":"x"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if run := e.onlyRun(); run.Status != domain.RunDone || e.store.cards[e.card.ID].LaneID != e.doing {
+		t.Fatalf("approval did not go on: %+v", run)
+	}
+	e.wantTimeline("flow.started", "node.started dev", "node.finished dev done", "node.started review",
+		"node.finished review done", "node.started dev", "node.finished dev done", "node.started review",
+		"node.finished review done", "node.started move", "node.finished move done", "flow.finished done")
+}
+
+func TestHumanReviewWithoutArtifacts(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		result domain.NodeResult
-		reply  string
-		status domain.RunStatus
+		names []string
+		msg   string
 	}{
-		{"answer", done("updated the plan"), "updated the plan", domain.RunDone},
-		{"empty answer", done(" "), "Revisão concluída.", domain.RunDone},
-		{"failed", domain.NodeResult{Status: domain.NodeFailed, OutputHandle: "failed", Error: "no file"}, "A revisão falhou: no file", domain.RunFailed},
+		{nil, "não há artefatos para revisar: nenhum nó coletou artefatos neste run"},
+		{[]string{"Plano", "Spec"}, "não há artefatos para revisar: o card não tem Plano, Spec"},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
+		e := newEnv(t)
+		e.reviewFlow(tc.names...)
+		e.trigger(e.created())
+		e.agents.result = func(domain.NodeRun) domain.NodeResult { return done("ok") }
+		if err := e.runAgent(); err != nil {
+			t.Fatal(err)
+		}
+		if run := e.onlyRun(); run.Status != domain.RunFailed || run.Error != tc.msg {
+			t.Fatalf("run %+v", run)
+		}
+		if nr := e.store.lastNodeRun(); nr.Status != domain.NodeFailed || nr.Error != tc.msg {
+			t.Fatalf("node %+v", nr)
+		}
+	}
+}
+
+func TestHumanReviewErrors(t *testing.T) {
+	for _, tc := range []struct {
+		method string
+		err    error
+		want   error
+	}{
+		{"OpenReview", domain.ErrNotFound, nil},
+		{"OpenReview", errBoom, errBoom},
+		{"FinishNodeRun", errBoom, errBoom},
+		{"AddCardEvent:node.finished", errBoom, errBoom},
+	} {
+		t.Run(tc.method, func(t *testing.T) {
 			e := newEnv(t)
-			e.addFlow("plan", graph{
-				nodes:   []string{"t:trigger", "dev:agent", "move:move_card"},
-				configs: map[string]any{"t": triggerCfg(domain.EventCardCreated, nil), "move": map[string]any{"lane_id": e.doing}},
-				edges:   []string{"t.next>dev", "dev.done>move"},
-			})
-			nr := e.revision()
-			e.agents.result = func(domain.NodeRun) domain.NodeResult { return tc.result }
-			if err := e.runAgent(); err != nil {
-				t.Fatal(err)
+			e.reviewFlow()
+			e.trigger(e.created())
+			e.agents.result = func(domain.NodeRun) domain.NodeResult { return done("ok") }
+			e.store.errs[tc.method] = tc.err
+			e.store.failAfter[tc.method] = 1 // the agent node finishes first
+			if tc.method == "OpenReview" {
+				e.store.failAfter[tc.method] = 0
 			}
-			run := e.store.runs[nr.FlowRunID]
-			if run.Status != tc.status || e.store.replies[run.ID] != tc.reply {
-				t.Fatalf("run %+v, reply %q", run, e.store.replies[run.ID])
-			}
-			if e.store.cards[e.card.ID].LaneID != e.todo {
-				t.Fatal("the revision followed the node output")
-			}
-			if !slices.Contains(e.pub.types(), "artifact.updated") {
-				t.Fatalf("published %q", e.pub.types())
+			if err := e.runAgent(); !errors.Is(err, tc.want) || (tc.want == nil && err != nil) {
+				t.Fatalf("got %v", err)
 			}
 		})
-	}
-}
-
-func TestRevisionReplies(t *testing.T) {
-	if got := revisionReply(domain.NodeRun{Status: domain.NodeDone, Output: json.RawMessage(`{"result":""}`), Summary: "rewrote it"}); got != "rewrote it" {
-		t.Errorf("summary reply %q", got)
-	}
-	e := newEnv(t)
-	e.addFlow("plan", graph{nodes: []string{"t:trigger", "dev:agent"}, edges: []string{"t.next>dev"}})
-	nr := e.revision()
-	e.agents.result = func(domain.NodeRun) domain.NodeResult { return done("ok") }
-	e.store.errs["AddRevisionReply"] = domain.ErrNotFound
-	if err := e.runAgent(); err != nil || e.store.runs[nr.FlowRunID].Status != domain.RunDone {
-		t.Fatalf("a revision without its request still ends: %v", err)
-	}
-	nr = e.revision()
-	e.store.errs["AddRevisionReply"] = errBoom
-	if err := e.runAgent(); !errors.Is(err, errBoom) {
-		t.Fatalf("got %v", err)
-	}
-	if e.store.runs[nr.FlowRunID].Status != domain.RunDone {
-		t.Fatal("the run did not end without the reply")
 	}
 }
 
@@ -757,6 +822,9 @@ func TestBadPayloads(t *testing.T) {
 	}
 	if err := e.engine.HandleAgent(context.Background(), json.RawMessage(`[`)); err == nil {
 		t.Error("HandleAgent: expected error")
+	}
+	if err := e.engine.HandleContinue(context.Background(), json.RawMessage(`[`)); err == nil {
+		t.Error("HandleContinue: expected error")
 	}
 }
 

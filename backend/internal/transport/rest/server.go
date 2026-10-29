@@ -57,7 +57,8 @@ type Board interface {
 
 	ListCardArtifacts(ctx context.Context, cardID uuid.UUID) ([]service.ArtifactDetail, error)
 	GetArtifact(ctx context.Context, id uuid.UUID) (service.ArtifactDetail, error)
-	ReviseArtifact(ctx context.Context, id uuid.UUID, version int, text string) (domain.ArtifactMessage, error)
+	RequestArtifactChanges(ctx context.Context, id uuid.UUID, text string) (domain.ArtifactMessage, error)
+	ApproveArtifact(ctx context.Context, id uuid.UUID) error
 
 	ListFlows(ctx context.Context) ([]domain.Flow, error)
 	GetFlow(ctx context.Context, id uuid.UUID) (service.FlowDetail, error)

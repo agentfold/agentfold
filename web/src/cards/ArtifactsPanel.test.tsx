@@ -91,7 +91,7 @@ describe('ArtifactsPanel', () => {
       'Citação sobre "Usar Postgres.":\ntroque por SQLite\n\nCitação sobre "Plano":\n',
     )
 
-    await userEvent.click(screen.getByRole('button', { name: 'Enviar' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Pedir ajustes' }))
     await waitFor(() => {
       expect(message).toHaveValue('')
     })
@@ -102,7 +102,50 @@ describe('ArtifactsPanel', () => {
     expect(
       await screen.findByText('O agente está revisando…'),
     ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Enviar' })).toBeDisabled()
+    expect(message).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Pedir ajustes' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Aprovar' })).toBeDisabled()
+  })
+
+  it('approves the review', async () => {
+    const backend = setup([artifact('c', 'Plano', ['texto'])])
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Aprovar' }),
+    )
+    expect(await screen.findByText('Aprovado.')).toBeInTheDocument()
+    expect(backend.state.artifacts[0].review).toBe('approved')
+    expect(
+      screen.queryByLabelText('Mensagem para o agente'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows why an approval failed', async () => {
+    const backend = setup([artifact('c', 'Plano', ['texto'])])
+    backend.failNext('POST /artifacts', 409, {
+      code: 'review_closed',
+      message: 'closed',
+    })
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Aprovar' }),
+    )
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+  })
+
+  it('takes comments only on the latest version', async () => {
+    setup([artifact('c', 'Plano', ['# Velho', '# Novo'])])
+    await screen.findByRole('heading', { name: 'Novo' })
+    await userEvent.selectOptions(screen.getByLabelText('Versão'), '1')
+    expect(
+      screen.getByText(/Versão antiga: os comentários e a aprovação/),
+    ).toHaveTextContent('sobre a versão 2.')
+    act(() => {
+      select(screen.getByRole('heading', { name: 'Velho' }))
+    })
+    expect(
+      screen.queryByRole('button', { name: 'Revisar' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Mensagem para o agente')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Aprovar' })).toBeDisabled()
   })
 
   it('ignores selections outside the artifact', async () => {
@@ -136,20 +179,26 @@ describe('ArtifactsPanel', () => {
         .map((li) => li.textContent),
     ).toEqual(['Você · versão 1mais detalhe', 'Agente · versão 2detalhei'])
     backend.failNext('POST /artifacts', 409, {
-      code: 'artifact_frozen',
-      message: 'frozen',
+      code: 'review_closed',
+      message: 'closed',
     })
     await userEvent.type(screen.getByLabelText('Mensagem para o agente'), 'x')
-    await userEvent.click(screen.getByRole('button', { name: 'Enviar' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Pedir ajustes' }))
     expect(await screen.findByRole('alert')).toBeInTheDocument()
     expect(screen.getByLabelText('Mensagem para o agente')).toHaveValue('x')
   })
 
-  it('keeps frozen artifacts read-only', async () => {
-    setup([artifact('c', 'Plano', ['Usar Postgres.'], { frozen: true })])
+  it.each([
+    ['approved', 'Aprovado.'],
+    ['closed', 'A revisão terminou sem aprovação'],
+    ['none', undefined],
+  ] as const)('keeps %s reviews read-only', async (review, note) => {
+    setup([artifact('c', 'Plano', ['Usar Postgres.'], { review })])
     const passage = await screen.findByText('Usar Postgres.')
-    expect(screen.getByText(/Congelado/)).toBeInTheDocument()
-    expect(screen.getByText('Nenhuma revisão.')).toBeInTheDocument()
+    expect(screen.getByText('Nenhuma mensagem.')).toBeInTheDocument()
+    if (note) {
+      expect(screen.getByText(new RegExp(note))).toBeInTheDocument()
+    }
     act(() => {
       select(passage)
     })

@@ -53,10 +53,10 @@ func newStub() *stubBoard {
 		version: domain.FlowVersion{ID: id2, FlowID: id1, Version: 2, Graph: stubGraph(), PublishedAt: stamp},
 		profile: domain.AgentProfile{ID: id1, Kind: domain.AgentClaude, Name: "dev", CredentialKind: domain.CredentialOAuthToken, CreatedAt: stamp, UpdatedAt: stamp},
 		artifact: service.ArtifactDetail{
-			Artifact: domain.Artifact{ID: id1, CardID: id2, Name: "Plano", NodeRunID: id2, FrozenAt: &stamp, CreatedAt: stamp, UpdatedAt: stamp},
+			Artifact: domain.Artifact{ID: id1, CardID: id2, Name: "Plano", NodeRunID: id2, CreatedAt: stamp, UpdatedAt: stamp},
 			Versions: []domain.ArtifactVersion{{ID: id1, ArtifactID: id1, Version: 1, Path: "plan.md", Content: "# Plano", NodeRunID: id2, CreatedAt: stamp}},
-			Messages: []domain.ArtifactMessage{{ID: id1, ArtifactID: id1, Version: 1, Role: domain.RoleHuman, Text: "more", FlowRunID: &id2, CreatedAt: stamp}},
-			Revising: true,
+			Messages: []domain.ArtifactMessage{{ID: id1, ArtifactID: id1, Version: 1, Role: domain.RoleHuman, Text: "more", NodeRunID: &id2, CreatedAt: stamp}},
+			Review:   domain.ReviewOpen,
 		},
 		mcp: domain.McpServer{
 			ID: id1, Name: "sg", Transport: domain.McpHTTP, McpConfig: domain.McpConfig{URL: "https://sg/mcp"},
@@ -137,9 +137,9 @@ const (
 		`"output":{"result":"ok"},"tokens_in":1,"tokens_out":2,"cache_read":3,"cache_write":4,"cost_usd":0.5,"turns":6,` +
 		`"duration_ms":7,"created_at":"2026-10-25T12:00:00Z","started_at":"2026-10-25T12:00:00Z","finished_at":"2026-10-25T12:00:00Z"}`
 	messageJSON = `{"id":"00000000-0000-7000-8000-000000000001","artifact_id":"00000000-0000-7000-8000-000000000001","version":1,` +
-		`"role":"human","text":"more","flow_run_id":"00000000-0000-7000-8000-000000000002","created_at":"2026-10-25T12:00:00Z"}`
+		`"role":"human","text":"more","node_run_id":"00000000-0000-7000-8000-000000000002","created_at":"2026-10-25T12:00:00Z"}`
 	artifactJSON = `{"id":"00000000-0000-7000-8000-000000000001","card_id":"00000000-0000-7000-8000-000000000002","name":"Plano",` +
-		`"frozen":true,"revising":true,"versions":[{"version":1,"path":"plan.md","content":"# Plano",` +
+		`"review":"open","versions":[{"version":1,"path":"plan.md","content":"# Plano",` +
 		`"node_run_id":"00000000-0000-7000-8000-000000000002","created_at":"2026-10-25T12:00:00Z"}],"messages":[` + messageJSON + `],` +
 		`"created_at":"2026-10-25T12:00:00Z","updated_at":"2026-10-25T12:00:00Z"}`
 	outputJSON = `{"id":"00000000-0000-7000-8000-000000000001","node_run_id":"00000000-0000-7000-8000-000000000002",` +
@@ -211,7 +211,8 @@ func TestRoutes(t *testing.T) {
 		{"POST", "/api/questions" + p1 + "/answer", `{"answer":"Postgres"}`, 200, "AnswerQuestion", []any{id1, "Postgres"}, questionJSON},
 		{"GET", "/api/cards" + p1 + "/artifacts", "", 200, "ListCardArtifacts", []any{id1}, "[" + artifactJSON + "]"},
 		{"GET", "/api/artifacts" + p1, "", 200, "GetArtifact", []any{id1}, artifactJSON},
-		{"POST", "/api/artifacts" + p1 + "/messages", `{"text":"more","version":1}`, 201, "ReviseArtifact", []any{id1, 1, "more"}, messageJSON},
+		{"POST", "/api/artifacts" + p1 + "/messages", `{"text":"more"}`, 201, "RequestArtifactChanges", []any{id1, "more"}, messageJSON},
+		{"POST", "/api/artifacts" + p1 + "/approve", "", 204, "ApproveArtifact", []any{id1}, ""},
 
 		{"GET", "/api/flows", "", 200, "ListFlows", nil, "[" + flowSummaryJSON + "]"},
 		{"POST", "/api/flows", `{"name":"dev"}`, 201, "CreateFlow", []any{"dev"}, flowJSON},
@@ -287,7 +288,7 @@ func TestErrors(t *testing.T) {
 		{"in use", domain.ErrInUse, 409, `{"code":"in_use","message":"in use"}`},
 		{"card busy", domain.ErrCardBusy, 409, `{"code":"card_busy","message":"a flow is running for the card"}`},
 		{"question closed", domain.ErrQuestionClosed, 409, `{"code":"question_closed","message":"the answer was already delivered to the agent"}`},
-		{"artifact frozen", domain.ErrArtifactFrozen, 409, `{"code":"artifact_frozen","message":"the artifact is frozen: the card left its lane"}`},
+		{"review closed", domain.ErrReviewClosed, 409, `{"code":"review_closed","message":"no review awaits the artifact"}`},
 		{"invalid reference", domain.ErrInvalidReference, 422, `{"code":"invalid_reference","message":"invalid reference"}`},
 		{"invalid graph", &domain.GraphError{Problems: []domain.GraphProblem{{Message: "no trigger"}}}, 422,
 			`{"code":"invalid_graph","message":"the draft has problems","problems":[{"message":"no trigger"}]}`},

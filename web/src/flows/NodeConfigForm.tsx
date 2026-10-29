@@ -11,6 +11,7 @@ import type {
   MoveCardConfig,
   TriggerConfig,
   WaitChildrenConfig,
+  HumanReviewConfig,
 } from '../api/client'
 import { agentKindLabels } from '../agents/labels'
 import { Button } from '../components/Button'
@@ -118,6 +119,26 @@ export function NodeConfigForm({
               onChange(laneId ? { done_lane_id: laneId } : {})
             }}
             options={laneOptions(lanes)}
+          />
+        </div>
+      )
+    case 'human_review':
+      return (
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-slate-500">
+            O fluxo espera um humano revisar os artefatos na aba Artefatos do
+            card. Cada mensagem dele sai por pediu ajustes, que deve levar ao
+            agente que refaz o trabalho; o fluxo volta a esta revisão quando o
+            agente termina. Aprovar sai por aprovado.
+          </p>
+          <ListField
+            label="Artefatos revisados"
+            placeholder="Plano"
+            hint="Nomes separados por vírgula. Vazio: os artefatos coletados neste run."
+            items={(data.config as HumanReviewConfig).artifacts}
+            onChange={(artifacts) => {
+              onChange(artifacts.length > 0 ? { artifacts } : {})
+            }}
           />
         </div>
       )
@@ -447,19 +468,19 @@ function ToolFields<C extends AgentConfig>({
 }: ToolFieldsProps<C>) {
   return (
     <>
-      <ToolsField
+      <ListField
         label="Tools liberadas"
         placeholder="Read, Edit, Bash(go test:*)"
         hint="Separadas por vírgula. Vazio: o padrão do agente."
-        tools={config.allowed_tools}
+        items={config.allowed_tools}
         onChange={(allowed_tools) => {
           onChange({ ...config, allowed_tools })
         }}
       />
-      <ToolsField
+      <ListField
         label="Tools bloqueadas"
         placeholder="Bash(git commit:*), Bash(git push:*)"
-        tools={config.disallowed_tools}
+        items={config.disallowed_tools}
         onChange={(disallowed_tools) => {
           onChange({ ...config, disallowed_tools })
         }}
@@ -468,23 +489,26 @@ function ToolFields<C extends AgentConfig>({
   )
 }
 
-interface ToolsFieldProps {
+interface ListFieldProps {
   label: string
   placeholder: string
   hint?: string
-  tools?: string[]
-  onChange: (tools: string[]) => void
+  items?: string[]
+  onChange: (items: string[]) => void
 }
 
-/** A tool list typed as text; the text is kept as typed while it is parsed. */
-function ToolsField({
+/**
+ * A comma-separated list (tools, names) typed as text; the text is kept as
+ * typed while it is parsed.
+ */
+function ListField({
   label,
   placeholder,
   hint,
-  tools,
+  items,
   onChange,
-}: ToolsFieldProps) {
-  const [text, setText] = useState(formatTools(tools))
+}: ListFieldProps) {
+  const [text, setText] = useState(formatTools(items))
   return (
     <TextField
       label={label}

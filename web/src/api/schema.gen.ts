@@ -446,8 +446,27 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Sends a message of the review chat to the agent that collected the artifact: the agent resumes its session, updates the file and the board collects it again; the card stays where it is. Fails with artifact_frozen once the card left the lane, and with card_busy while a flow runs for the card. */
-        post: operations["reviseArtifact"];
+        /** @description Asks for changes in the review the artifact is under, on its latest version: the human_review node leaves by changes_requested, and the agent it leads to gets the request in its session. Fails with review_closed when no review awaits the artifact. */
+        post: operations["requestArtifactChanges"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/artifacts/{id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Approves the review the artifact is under: the human_review node leaves by approved. Fails with review_closed when no review awaits the artifact. */
+        post: operations["approveArtifact"];
         delete?: never;
         options?: never;
         head?: never;
@@ -579,7 +598,7 @@ export interface components {
     schemas: {
         Error: {
             /** @enum {string} */
-            code: "bad_request" | "validation" | "not_found" | "conflict" | "in_use" | "invalid_reference" | "invalid_graph" | "card_busy" | "question_closed" | "artifact_frozen" | "internal";
+            code: "bad_request" | "validation" | "not_found" | "conflict" | "in_use" | "invalid_reference" | "invalid_graph" | "card_busy" | "question_closed" | "review_closed" | "internal";
             message: string;
             /** @description Invalid field, for validation errors. */
             field?: string;
@@ -717,8 +736,11 @@ export interface components {
             node_type: string;
             /** @description How many times the run entered the node (gateway rejections re-enter agents). */
             iteration: number;
-            /** @enum {string} */
-            status: "queued" | "running" | "awaiting_input" | "waiting" | "done" | "failed";
+            /**
+             * @description waiting is a wait_children node; awaiting_review a human_review node.
+             * @enum {string}
+             */
+            status: "queued" | "running" | "awaiting_input" | "waiting" | "awaiting_review" | "done" | "failed";
             /** @description The output the node left through; empty while it runs. */
             output_handle: string;
             error: string;
@@ -809,7 +831,7 @@ export interface components {
             /** Format: uuid */
             card_id: string;
             /**
-             * @description artifact_revision runs revise an artifact from its review chat.
+             * @description artifact_revision runs revised an artifact before human_review nodes; no new ones start.
              * @enum {string}
              */
             trigger: "card_created" | "card_entered_lane" | "artifact_revision";
@@ -873,7 +895,7 @@ export interface components {
         FlowEdge: {
             id: string;
             source: string;
-            /** @description Output of the source node: trigger and move_card have "next"; agent has "done" and "failed", or with the gateway on "approved", "rejected", "max_rounds_exceeded" and "failed"; create_cards has "next" and "failed"; wait_children has "all_done" and "some_failed"; end has none. */
+            /** @description Output of the source node: trigger and move_card have "next"; agent has "done" and "failed", or with the gateway on "approved", "rejected", "max_rounds_exceeded" and "failed"; create_cards has "next" and "failed"; wait_children has "all_done" and "some_failed"; human_review has "approved" and "changes_requested"; end has none. */
             source_handle: string;
             target: string;
         };
@@ -882,7 +904,7 @@ export interface components {
             y: number;
         };
         /** @description A step of the flow. Configs may be incomplete in drafts; publishing reports what is missing. */
-        FlowNode: components["schemas"]["TriggerNode"] | components["schemas"]["AgentNode"] | components["schemas"]["MoveCardNode"] | components["schemas"]["CreateCardsNode"] | components["schemas"]["WaitChildrenNode"] | components["schemas"]["EndNode"];
+        FlowNode: components["schemas"]["TriggerNode"] | components["schemas"]["AgentNode"] | components["schemas"]["MoveCardNode"] | components["schemas"]["CreateCardsNode"] | components["schemas"]["WaitChildrenNode"] | components["schemas"]["HumanReviewNode"] | components["schemas"]["EndNode"];
         TriggerNode: {
             id: string;
             /**
@@ -932,6 +954,16 @@ export interface components {
             type: "wait_children";
             position: components["schemas"]["Position"];
             config: components["schemas"]["WaitChildrenConfig"];
+        };
+        HumanReviewNode: {
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "human_review";
+            position: components["schemas"]["Position"];
+            config: components["schemas"]["HumanReviewConfig"];
         };
         EndNode: {
             id: string;
@@ -988,17 +1020,18 @@ export interface components {
             /** @description Relative to the card workspace. */
             path: string;
         };
-        /** @description A file an agent node collected on the card, with its versions and review chat. Moving the card to another lane freezes it. */
+        /** @description A file an agent node collected on the card, with its versions and review chat. A human_review node puts it under review. */
         Artifact: {
             /** Format: uuid */
             id: string;
             /** Format: uuid */
             card_id: string;
             name: string;
-            /** @description The card left the lane; the artifact can no longer be revised. */
-            frozen: boolean;
-            /** @description The agent is revising it now. */
-            revising: boolean;
+            /**
+             * @description Where its last review stands: open awaits the human, who can ask for changes or approve; revising while the agent works on the request; closed when its run ended without approval.
+             * @enum {string}
+             */
+            review: "none" | "open" | "revising" | "approved" | "closed";
             /** @description Oldest first. */
             versions: components["schemas"]["ArtifactVersion"][];
             /** @description The review chat, oldest first. */
@@ -1029,16 +1062,14 @@ export interface components {
             text: string;
             /**
              * Format: uuid
-             * @description The revision run the message belongs to.
+             * @description The human_review node run the human wrote at, or the agent answer reached.
              */
-            flow_run_id: string | null;
+            node_run_id: string | null;
             /** Format: date-time */
             created_at: string;
         };
         ArtifactMessageInput: {
             text: string;
-            /** @description The version the human is reading. */
-            version: number;
         };
         /** @description Moves the card to a lane. */
         MoveCardConfig: {
@@ -1068,6 +1099,11 @@ export interface components {
              * @description Required to publish.
              */
             done_lane_id?: string;
+        };
+        /** @description Waits for a human to review artifacts of the card: they ask for changes in the review chat or approve. changes_requested must lead to the node that redoes the work. */
+        HumanReviewConfig: {
+            /** @description Names of the artifacts reviewed; empty or absent means those collected in the run. */
+            artifacts?: string[];
         };
         AgentProfile: {
             /** Format: uuid */
@@ -2108,7 +2144,7 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
-    reviseArtifact: {
+    requestArtifactChanges: {
         parameters: {
             query?: never;
             header?: never;
@@ -2123,7 +2159,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Sent; the revision runs. */
+            /** @description Sent; the agent revises. */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -2131,6 +2167,27 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ArtifactMessage"];
                 };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    approveArtifact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Approved; the flow goes on. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Error"];
         };

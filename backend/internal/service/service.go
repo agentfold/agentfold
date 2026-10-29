@@ -63,8 +63,9 @@ type Repository interface {
 	ListCardArtifacts(ctx context.Context, cardID uuid.UUID) ([]domain.Artifact, error)
 	ListArtifactVersions(ctx context.Context, artifactID uuid.UUID) ([]domain.ArtifactVersion, error)
 	ListArtifactMessages(ctx context.Context, artifactID uuid.UUID) ([]domain.ArtifactMessage, error)
-	ArtifactRevising(ctx context.Context, artifactID uuid.UUID) (bool, error)
-	StartRevision(ctx context.Context, artifactID uuid.UUID, version int, text string) (domain.ArtifactMessage, domain.FlowRun, error)
+	ArtifactReview(ctx context.Context, artifactID uuid.UUID) (domain.ReviewState, error)
+	RequestChanges(ctx context.Context, artifactID uuid.UUID, text string) (domain.ArtifactMessage, domain.NodeRun, error)
+	ApproveReview(ctx context.Context, artifactID uuid.UUID) (domain.NodeRun, error)
 
 	AddQuestions(ctx context.Context, cardID, nodeRunID uuid.UUID, texts []string) ([]domain.Question, error)
 	ListCardQuestions(ctx context.Context, cardID uuid.UUID) ([]domain.Question, error)

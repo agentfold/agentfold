@@ -178,9 +178,19 @@ describe('summary', () => {
       { kind: 'wait_children', config: {} },
       'Espera os cards filhos chegarem à baia final',
     ],
+    [{ kind: 'human_review', config: {} }, 'Revisão dos artefatos do run'],
     [{ kind: 'end', config: {} }, 'Encerra o fluxo'],
   ] as const)('describes %j', (data, want) => {
     expect(summary(data)).toBe(want)
+  })
+
+  it('names the artifacts a review covers', () => {
+    expect(
+      summary({
+        kind: 'human_review',
+        config: { artifacts: ['Plano', 'Riscos'] },
+      }),
+    ).toBe('Revisão de Plano, Riscos')
   })
 })
 

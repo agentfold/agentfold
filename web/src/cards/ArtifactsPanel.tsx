@@ -3,7 +3,11 @@ import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 import type { Artifact } from '../api/client'
-import { useCardArtifacts, useReviseArtifact } from '../api/queries'
+import {
+  useApproveArtifact,
+  useCardArtifacts,
+  useRequestArtifactChanges,
+} from '../api/queries'
 import { Button } from '../components/Button'
 import { ErrorMessage } from '../components/ErrorMessage'
 import { SelectField, TextArea } from '../components/Field'
@@ -40,18 +44,30 @@ export function ArtifactsPanel({ cardId }: { cardId: string }) {
   )
 }
 
+const reviewNotes: Partial<Record<Artifact['review'], string>> = {
+  revising: 'O agente está revisando…',
+  approved: 'Aprovado.',
+  closed:
+    'A revisão terminou sem aprovação: a execução foi cancelada ou falhou.',
+}
+
 /**
  * One artifact: a version rendered as Markdown next to its review chat.
- * Selecting a passage and clicking "Revisar" quotes it in the message.
+ * While a review awaits the human, the latest version takes messages
+ * (selecting a passage and clicking "Revisar" quotes it) and approval.
  */
 function ArtifactReview({ artifact }: { artifact: Artifact }) {
-  const revise = useReviseArtifact()
+  const request = useRequestArtifactChanges()
+  const approve = useApproveArtifact()
   const latest = artifact.versions[artifact.versions.length - 1]
   const [picked, setPicked] = useState<number>()
   const [draft, setDraft] = useState('')
   const [passage, setPassage] = useState('')
   const shown = artifact.versions.find((v) => v.version === picked) ?? latest
-  const open = !artifact.frozen
+  const reviewing = artifact.review === 'open' || artifact.review === 'revising'
+  const open = artifact.review === 'open' && shown === latest
+  const busy = request.isPending || approve.isPending
+  const note = reviewNotes[artifact.review]
 
   const onSelect = (e: SyntheticEvent<HTMLDivElement>) => {
     const selection = window.getSelection()
@@ -65,8 +81,8 @@ function ArtifactReview({ artifact }: { artifact: Artifact }) {
     setPassage('')
   }
   const send = () => {
-    revise.mutate(
-      { id: artifact.id, text: draft, version: shown.version },
+    request.mutate(
+      { id: artifact.id, text: draft },
       {
         onSuccess: () => {
           setDraft('')
@@ -102,10 +118,10 @@ function ArtifactReview({ artifact }: { artifact: Artifact }) {
             />
           )}
         </div>
-        {artifact.frozen && (
+        {reviewing && shown !== latest && (
           <p className="text-sm text-slate-500">
-            Congelado: o card saiu da baia, então o artefato não pode mais ser
-            revisado.
+            Versão antiga: os comentários e a aprovação são sobre a versão{' '}
+            {String(latest.version)}.
           </p>
         )}
         {open && passage !== '' && (
@@ -126,9 +142,9 @@ function ArtifactReview({ artifact }: { artifact: Artifact }) {
         <h3 className="text-sm font-semibold">Revisão</h3>
         {artifact.messages.length === 0 && (
           <p className="text-sm text-slate-500">
-            {open
-              ? 'Selecione um trecho e clique em “Revisar”, ou escreva direto para o agente que gerou o artefato.'
-              : 'Nenhuma revisão.'}
+            {artifact.review === 'open'
+              ? 'Selecione um trecho e clique em “Revisar”, ou escreva o que ajustar. Aprovar segue o fluxo.'
+              : 'Nenhuma mensagem.'}
           </p>
         )}
         <ol className="flex flex-col gap-2">
@@ -149,28 +165,41 @@ function ArtifactReview({ artifact }: { artifact: Artifact }) {
             </li>
           ))}
         </ol>
-        {artifact.revising && (
-          <p className="text-sm text-indigo-700">O agente está revisando…</p>
+        {note && (
+          <p
+            className={`text-sm ${artifact.review === 'revising' ? 'text-indigo-700' : 'text-slate-500'}`}
+          >
+            {note}
+          </p>
         )}
-        {open && (
+        {reviewing && (
           <>
             <TextArea
               label="Mensagem para o agente"
               rows={5}
               value={draft}
               onChange={setDraft}
+              disabled={!open}
             />
-            <ErrorMessage error={revise.error} />
-            <Button
-              variant="primary"
-              className="self-end"
-              disabled={
-                revise.isPending || artifact.revising || draft.trim() === ''
-              }
-              onClick={send}
-            >
-              Enviar
-            </Button>
+            <ErrorMessage error={request.error ?? approve.error} />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                disabled={!open || busy}
+                onClick={() => {
+                  approve.mutate(artifact.id)
+                }}
+              >
+                Aprovar
+              </Button>
+              <Button
+                variant="primary"
+                disabled={!open || busy || draft.trim() === ''}
+                onClick={send}
+              >
+                Pedir ajustes
+              </Button>
+            </div>
           </>
         )}
       </section>

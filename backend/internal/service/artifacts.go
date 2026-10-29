@@ -15,8 +15,7 @@ type ArtifactDetail struct {
 	domain.Artifact
 	Versions []domain.ArtifactVersion
 	Messages []domain.ArtifactMessage
-	// Revising tells whether the agent is revising it now.
-	Revising bool
+	Review   domain.ReviewState
 }
 
 // ListCardArtifacts returns the artifacts of a card in detail, oldest first.
@@ -55,35 +54,42 @@ func (s *Service) artifactDetail(ctx context.Context, a domain.Artifact) (Artifa
 	if d.Messages, err = s.repo.ListArtifactMessages(ctx, a.ID); err != nil {
 		return d, err
 	}
-	d.Revising, err = s.repo.ArtifactRevising(ctx, a.ID)
+	d.Review, err = s.repo.ArtifactReview(ctx, a.ID)
 	return d, err
 }
 
-// ReviseArtifact sends what a human asks in the review chat of an artifact,
-// reading version, to the agent that collected it: the agent resumes its
-// session, updates the file and the board collects it again. The card stays
-// where it is.
-func (s *Service) ReviseArtifact(ctx context.Context, id uuid.UUID, version int, text string) (domain.ArtifactMessage, error) {
+// RequestArtifactChanges sends what a human asks in the review of an
+// artifact to the agent its HumanReview node sends changes to: the agent
+// updates the file in its session and the run comes back to the review.
+func (s *Service) RequestArtifactChanges(ctx context.Context, id uuid.UUID, text string) (domain.ArtifactMessage, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return domain.ArtifactMessage{}, &domain.ValidationError{Field: "text", Message: "is required"}
 	}
-	msg, run, err := s.repo.StartRevision(ctx, id, version, text)
+	msg, nr, err := s.repo.RequestChanges(ctx, id, text)
 	if err != nil {
 		return domain.ArtifactMessage{}, err
 	}
-	s.pub.Publish(events.Event{Type: "artifact.updated", ID: id})
-	s.pub.Publish(events.Event{Type: "flow_run.created", ID: run.ID, Data: run})
-	return msg, s.timeline(ctx, run.CardID, domain.FlowStarted, revisionStarted{
-		FlowRunID: run.ID, FlowID: run.FlowID, FlowName: run.FlowName, Trigger: run.Trigger, ArtifactID: id,
-	})
+	return msg, s.decided(ctx, id, nr)
 }
 
-// revisionStarted is the flow.started entry of a revision run.
-type revisionStarted struct {
-	FlowRunID  uuid.UUID `json:"flow_run_id"`
-	FlowID     uuid.UUID `json:"flow_id"`
-	FlowName   string    `json:"flow_name"`
-	Trigger    string    `json:"trigger"`
-	ArtifactID uuid.UUID `json:"artifact_id"`
+// ApproveArtifact approves the review an artifact is under: the flow goes
+// on from its HumanReview node.
+func (s *Service) ApproveArtifact(ctx context.Context, id uuid.UUID) error {
+	nr, err := s.repo.ApproveReview(ctx, id)
+	if err != nil {
+		return err
+	}
+	return s.decided(ctx, id, nr)
+}
+
+// decided announces a review the human decided; the engine follows it.
+func (s *Service) decided(ctx context.Context, artifactID uuid.UUID, nr domain.NodeRun) error {
+	s.pub.Publish(events.Event{Type: "artifact.updated", ID: artifactID})
+	s.pub.Publish(events.Event{Type: "node_run.updated", ID: nr.ID, Data: nr})
+	run, err := s.repo.GetFlowRun(ctx, nr.FlowRunID)
+	if err == nil {
+		s.pub.Publish(events.Event{Type: "flow_run.updated", ID: run.ID, Data: run})
+	}
+	return err
 }

@@ -59,8 +59,8 @@ tools `get_card`, `list_projects`, `ask_human`, `report_done`, `submit_output` (
 `approve`/`reject` (nós com gateway). A saída de cada nó chega ao agente seguinte como mensagem.
 Perguntas do agente aparecem na página do card (`#/cards/<id>`, aberta pelo clique no card) para
 resposta; o card fica parado até todas serem respondidas. A página mostra também a execução ao
-vivo (nós, saída do agente, decisões de gateway), os artefatos coletados (com um chat que pede
-revisões ao agente que os gerou; mover o card para outra baia os congela), a linha do tempo e o
+vivo (nós, saída do agente, decisões de gateway), os artefatos coletados (num nó de revisão humana, um chat pede
+ajustes ao agente que os gerou e "Aprovar" segue o fluxo), a linha do tempo e o
 consumo, e permite cancelar o fluxo. Sem token, o mesmo endpoint expõe tools de integração
 (`list_cards`, `create_card`, `move_card`, `list_questions`, `answer_questions`, `get_run`…).
 

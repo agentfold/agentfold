@@ -248,8 +248,7 @@ export function artifact(
     id,
     card_id: cardId,
     name,
-    frozen: false,
-    revising: false,
+    review: 'open',
     versions: contents.map((content, i) => ({
       version: i + 1,
       path: 'plan.md',
@@ -276,7 +275,7 @@ export function artifactMessage(
     version: 1,
     role,
     text,
-    flow_run_id: null,
+    node_run_id: null,
     created_at: stamp,
     ...extra,
   }
@@ -487,16 +486,25 @@ export function createFakeBackend(initial: Partial<State> = {}): FakeBackend {
       case 'POST /artifacts/:id/messages': {
         const a = state.artifacts.find((x) => x.id === id)
         if (!a) return notFound
-        if (a.frozen) {
-          return [409, { code: 'artifact_frozen', message: 'frozen' }]
+        if (a.review !== 'open') {
+          return [409, { code: 'review_closed', message: 'closed' }]
         }
         if (!str(body.text).trim()) return invalid('text')
         const msg = artifactMessage(a.id, 'human', str(body.text), {
-          version: Number(body.version),
+          version: a.versions.length,
         })
         a.messages.push(msg)
-        a.revising = true
+        a.review = 'revising'
         return [201, msg]
+      }
+      case 'POST /artifacts/:id/approve': {
+        const a = state.artifacts.find((x) => x.id === id)
+        if (!a) return notFound
+        if (a.review !== 'open') {
+          return [409, { code: 'review_closed', message: 'closed' }]
+        }
+        a.review = 'approved'
+        return [204, undefined]
       }
       case 'GET /node-runs/:id/output':
         return [200, state.outputs.filter((o) => o.node_run_id === id)]

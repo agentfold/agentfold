@@ -1,8 +1,10 @@
 import { useState } from 'react'
 
 import type { FlowRunDetail, NodeRun } from '../api/client'
+import { useApproveArtifact, useCardArtifacts } from '../api/queries'
 import { SelectField } from '../components/Field'
 import { Button } from '../components/Button'
+import { ErrorMessage } from '../components/ErrorMessage'
 import { kindLabels, outputLabels } from '../flows/graph'
 import { outcomes } from './timeline'
 import { formatTime, runLabel } from './format'
@@ -21,6 +23,7 @@ const nodeStatus: Record<NodeRun['status'], string> = {
   running: 'Rodando',
   awaiting_input: 'Aguardando resposta',
   waiting: 'Esperando os filhos',
+  awaiting_review: 'Aguardando revisão',
   done: 'Concluído',
   failed: 'Falhou',
 }
@@ -30,6 +33,7 @@ const nodeStatusStyle: Record<NodeRun['status'], string> = {
   running: 'bg-indigo-50 text-indigo-700',
   awaiting_input: 'bg-amber-50 text-amber-800',
   waiting: 'bg-amber-50 text-amber-800',
+  awaiting_review: 'bg-amber-50 text-amber-800',
   done: 'bg-emerald-50 text-emerald-700',
   failed: 'bg-red-50 text-red-700',
 }
@@ -66,7 +70,7 @@ export function RunsPanel({ runs }: { runs: FlowRunDetail[] }) {
       <ol className="flex flex-col gap-3">
         {run.nodes.map((n) => (
           <li key={n.id}>
-            <NodeRunItem node={n} />
+            <NodeRunItem node={n} cardId={run.card_id} />
           </li>
         ))}
       </ol>
@@ -74,7 +78,7 @@ export function RunsPanel({ runs }: { runs: FlowRunDetail[] }) {
   )
 }
 
-function NodeRunItem({ node }: { node: NodeRun }) {
+function NodeRunItem({ node, cardId }: { node: NodeRun; cardId: string }) {
   // The output of the node running now shows from the start.
   const [showOutput, setShowOutput] = useState(node.status === 'running')
   const label = (kindLabels as Record<string, string | undefined>)[
@@ -108,6 +112,7 @@ function NodeRunItem({ node }: { node: NodeRun }) {
         )}
       </header>
       {node.error && <p className="text-sm text-red-700">{node.error}</p>}
+      {node.status === 'awaiting_review' && <ReviewPending cardId={cardId} />}
       {node.summary && (
         <p className="text-sm text-slate-700">
           <span className="font-medium">Resumo: </span>
@@ -147,5 +152,35 @@ function NodeRunItem({ node }: { node: NodeRun }) {
         </>
       )}
     </article>
+  )
+}
+
+/** A human review awaiting: approve here, or ask for changes in Artefatos. */
+function ReviewPending({ cardId }: { cardId: string }) {
+  const artifacts = useCardArtifacts(cardId)
+  const approve = useApproveArtifact()
+  const open = (artifacts.data ?? []).filter((a) => a.review === 'open')
+  if (open.length === 0) {
+    return null
+  }
+  return (
+    <div className="flex flex-col gap-2 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="flex-1 text-slate-700">
+          Revise {open.map((a) => a.name).join(', ')} na aba Artefatos para
+          pedir ajustes, ou aprove para seguir o fluxo.
+        </span>
+        <Button
+          variant="secondary"
+          disabled={approve.isPending}
+          onClick={() => {
+            approve.mutate(open[0].id)
+          }}
+        >
+          Aprovar
+        </Button>
+      </div>
+      <ErrorMessage error={approve.error} />
+    </div>
   )
 }

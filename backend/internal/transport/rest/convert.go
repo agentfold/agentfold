@@ -104,7 +104,7 @@ func toNodeOutput(o domain.NodeOutput) openapi.NodeOutput {
 
 func toArtifact(a service.ArtifactDetail) openapi.Artifact {
 	return openapi.Artifact{
-		Id: a.ID, CardId: a.CardID, Name: a.Name, Frozen: a.FrozenAt != nil, Revising: a.Revising,
+		Id: a.ID, CardId: a.CardID, Name: a.Name, Review: openapi.ArtifactReview(a.Review),
 		Versions: mapAll(a.Versions, toArtifactVersion), Messages: mapAll(a.Messages, toArtifactMessage),
 		CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt,
 	}
@@ -119,7 +119,7 @@ func toArtifactVersion(v domain.ArtifactVersion) openapi.ArtifactVersion {
 func toArtifactMessage(m domain.ArtifactMessage) openapi.ArtifactMessage {
 	return openapi.ArtifactMessage{
 		Id: m.ID, ArtifactId: m.ArtifactID, Version: m.Version, Role: openapi.ArtifactMessageRole(m.Role),
-		Text: m.Text, FlowRunId: m.FlowRunID, CreatedAt: m.CreatedAt,
+		Text: m.Text, NodeRunId: m.NodeRunID, CreatedAt: m.CreatedAt,
 	}
 }
 

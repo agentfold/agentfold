@@ -71,6 +71,15 @@ type ChildChangedJob struct {
 	CardID uuid.UUID `json:"card_id"`
 }
 
+// JobFlowContinue is the queue job that follows the output of a node run
+// the board ended outside the engine: a human review decided.
+const JobFlowContinue = "flow.continue"
+
+// ContinueJob is the payload of a flow.continue job.
+type ContinueJob struct {
+	NodeRunID uuid.UUID `json:"node_run_id"`
+}
+
 // NodeStatus is the state of a node run.
 type NodeStatus string
 
@@ -81,8 +90,10 @@ const (
 	NodeAwaitingInput NodeStatus = "awaiting_input"
 	// NodeWaiting is a WaitChildren node waiting for the child cards.
 	NodeWaiting NodeStatus = "waiting"
-	NodeDone    NodeStatus = "done"
-	NodeFailed  NodeStatus = "failed"
+	// NodeAwaitingReview is a HumanReview node waiting for the human.
+	NodeAwaitingReview NodeStatus = "awaiting_review"
+	NodeDone           NodeStatus = "done"
+	NodeFailed         NodeStatus = "failed"
 )
 
 // Usage is what an agent run consumed.
@@ -142,16 +153,11 @@ const JobAgentRun = "agent.run"
 // AgentJob is the payload of an agent.run job.
 type AgentJob struct {
 	NodeRunID uuid.UUID `json:"node_run_id"`
-	// Prompt is the message for the agent: what the node before handed on,
-	// answers to its questions or a revision request. A new session starts
+	// Prompt is the message for the agent: what the node before handed on
+	// or answers to its questions. A new session starts
 	// with the node prompt and the card, followed by it.
 	Prompt string `json:"prompt,omitempty"`
 }
-
-// TriggerRevision is the trigger of the runs that revise an artifact: they
-// resume the node that collected it and end with it, without following
-// its outputs.
-const TriggerRevision = "artifact_revision"
 
 // MessageFrom is what an output hands to the next agent: the structured
 // output when there is one, else the result text.
@@ -226,19 +232,37 @@ type NodeOutput struct {
 }
 
 // Artifact is a file of the card workspace an agent node collected, by
-// name. Its review chat resumes that node until the card leaves the lane.
+// name. A HumanReview node puts it under review: ReviewNodeRunID is the
+// last node run that did.
 type Artifact struct {
-	ID        uuid.UUID
-	CardID    uuid.UUID
-	Name      string
-	NodeRunID uuid.UUID
-	FrozenAt  *time.Time
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID              uuid.UUID
+	CardID          uuid.UUID
+	Name            string
+	NodeRunID       uuid.UUID
+	ReviewNodeRunID *uuid.UUID
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // EntityID returns the artifact id.
 func (a Artifact) EntityID() uuid.UUID { return a.ID }
+
+// ReviewState is where the review of an artifact stands.
+type ReviewState string
+
+// Review states.
+const (
+	// ReviewNone: no HumanReview node put the artifact under review.
+	ReviewNone ReviewState = "none"
+	// ReviewOpen: the review awaits the human, who can ask or approve.
+	ReviewOpen ReviewState = "open"
+	// ReviewRevising: the agent works on what the human asked.
+	ReviewRevising ReviewState = "revising"
+	// ReviewApproved: the human approved the last review.
+	ReviewApproved ReviewState = "approved"
+	// ReviewClosed: the run of the last review ended without approval.
+	ReviewClosed ReviewState = "closed"
+)
 
 // ArtifactVersion is the content of an artifact as one run collected it.
 type ArtifactVersion struct {
@@ -262,16 +286,18 @@ type ArtifactMessage struct {
 	ID         uuid.UUID
 	ArtifactID uuid.UUID
 	// Version is the one the human was reading, or the agent revised.
-	Version   int
-	Role      string
-	Text      string
-	FlowRunID *uuid.UUID
+	Version int
+	Role    string
+	Text    string
+	// NodeRunID is the HumanReview node run the human wrote at, or the
+	// agent answer reached.
+	NodeRunID *uuid.UUID
 	CreatedAt time.Time
 }
 
-// RevisionPrompt is the message that resumes the agent of an artifact with
-// what the human asked in its review chat.
-func RevisionPrompt(name, path string, version int, text string) string {
-	return fmt.Sprintf("A human reviewed version %d of the artifact %q (the file %s) and asks:\n\n%s\n\n"+
-		"Update %s to address it, then finish; the board collects the file again.", version, name, path, text, path)
+// ReviewPrompt is the message that sends the agent of an artifact what
+// the human asked in its review.
+func ReviewPrompt(name, path, text string) string {
+	return fmt.Sprintf("A human reviewed the artifact %q (the file %s) and asks:\n\n%s\n\n"+
+		"Update %s to address it, then finish; the board collects the file again.", name, path, text, path)
 }

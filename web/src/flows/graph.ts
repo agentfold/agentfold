@@ -8,6 +8,7 @@ import type {
   MoveCardConfig,
   TriggerConfig,
   WaitChildrenConfig,
+  HumanReviewConfig,
 } from '../api/client'
 
 export type NodeKind = FlowNode['type']
@@ -17,6 +18,7 @@ export type StepConfig =
   | MoveCardConfig
   | CreateCardsConfig
   | WaitChildrenConfig
+  | HumanReviewConfig
   | Record<string, never>
 
 export interface StepData extends Record<string, unknown> {
@@ -35,6 +37,7 @@ export const kindLabels: Record<NodeKind, string> = {
   move_card: 'Mover card',
   create_cards: 'Criar cards',
   wait_children: 'Esperar filhos',
+  human_review: 'Revisão humana',
   end: 'Fim',
 }
 
@@ -45,6 +48,7 @@ const outputs: Record<NodeKind, string[]> = {
   move_card: ['next'],
   create_cards: ['next', 'failed'],
   wait_children: ['all_done', 'some_failed'],
+  human_review: ['approved', 'changes_requested'],
   end: [],
 }
 
@@ -67,6 +71,7 @@ export const outputLabels: Record<string, string> = {
   max_rounds_exceeded: 'limite de rodadas',
   all_done: 'todos concluídos',
   some_failed: 'algum falhou',
+  changes_requested: 'pediu ajustes',
 }
 
 export function defaultConfig(kind: NodeKind): StepConfig {
@@ -217,6 +222,12 @@ export function summary({ kind, config }: StepData): string {
       return 'Cria um card filho por item da saída anterior'
     case 'wait_children':
       return 'Espera os cards filhos chegarem à baia final'
+    case 'human_review': {
+      const names = (config as HumanReviewConfig).artifacts ?? []
+      return names.length > 0
+        ? `Revisão de ${names.join(', ')}`
+        : 'Revisão dos artefatos do run'
+    }
     case 'end':
       return 'Encerra o fluxo'
   }
