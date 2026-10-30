@@ -13,6 +13,8 @@ import type {
   HumanReviewConfig,
   SetPropertyConfig,
   CheckPropertyConfig,
+  HTTPHeader,
+  HTTPRequestConfig,
 } from '../api/client'
 import { agentKindLabels } from '../agents/labels'
 import { Button } from '../components/Button'
@@ -200,6 +202,13 @@ export function NodeConfigForm({
         </div>
       )
     }
+    case 'http_request':
+      return (
+        <HTTPRequestForm
+          config={data.config as HTTPRequestConfig}
+          onChange={onChange}
+        />
+      )
     case 'end':
       return (
         <p className="text-sm text-slate-500">
@@ -207,6 +216,238 @@ export function NodeConfigForm({
         </p>
       )
   }
+}
+
+const httpMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'] as const
+
+interface HTTPRequestFormProps {
+  config: HTTPRequestConfig
+  onChange: (config: HTTPRequestConfig) => void
+}
+
+/** The endpoint an HTTP Request calls, and how it waits and retries. */
+function HTTPRequestForm({ config, onChange }: HTTPRequestFormProps) {
+  const wait = config.mode !== 'fire_and_forget'
+  return (
+    <div className="flex flex-col gap-3">
+      <SelectField
+        label="Modo"
+        value={config.mode ?? 'wait'}
+        onChange={(mode) => {
+          onChange(
+            mode === 'fire_and_forget'
+              ? {
+                  ...config,
+                  mode,
+                  success_statuses: undefined,
+                  max_attempts: undefined,
+                  retry_delay_seconds: undefined,
+                  backoff: undefined,
+                }
+              : { ...config, mode: undefined },
+          )
+        }}
+        options={[
+          {
+            value: 'wait',
+            label: 'Esperar a resposta (sai por sucesso ou falhou)',
+          },
+          {
+            value: 'fire_and_forget',
+            label: 'Disparar e seguir (sai por próximo na hora)',
+          },
+        ]}
+      />
+      <div className="grid grid-cols-[auto_1fr] gap-3">
+        <SelectField
+          label="Método"
+          value={config.method ?? ''}
+          onChange={(method) => {
+            onChange({
+              ...config,
+              method: method as HTTPRequestConfig['method'],
+            })
+          }}
+          options={httpMethods.map((m) => ({ value: m, label: m }))}
+        />
+        <TextField
+          label="URL"
+          placeholder="https://api.exemplo.com/cards/{{card.id}}"
+          value={config.url ?? ''}
+          onChange={(url) => {
+            onChange({ ...config, url })
+          }}
+        />
+      </div>
+      <p className="text-xs text-slate-500">
+        URL, headers e body aceitam {'{{card.id}}'}, {'{{card.title}}'},{' '}
+        {'{{card.properties.chave}}'}, {'{{input}}'} (o que o nó anterior
+        passou) e {'{{input.campo}}'} (um valor da saída estruturada dele).
+      </p>
+      <HeadersField
+        headers={config.headers ?? []}
+        onChange={(headers) => {
+          onChange({
+            ...config,
+            headers: headers.length > 0 ? headers : undefined,
+          })
+        }}
+      />
+      <TextArea
+        label="Body (JSON, opcional)"
+        rows={5}
+        mono
+        value={config.body ?? ''}
+        onChange={(body) => {
+          onChange({ ...config, body: body || undefined })
+        }}
+      />
+      <TextField
+        label="Timeout (segundos)"
+        type="number"
+        placeholder="30"
+        value={numberText(config.timeout_seconds)}
+        onChange={(text) => {
+          onChange({ ...config, timeout_seconds: parseCount(text) })
+        }}
+      />
+      {wait && (
+        <>
+          <ListField
+            label="Status de sucesso"
+            placeholder="200, 201"
+            hint="Separados por vírgula. Vazio: qualquer 2xx."
+            items={config.success_statuses?.map(String)}
+            onChange={(items) => {
+              const statuses = items.map(Number).filter(Number.isInteger)
+              onChange({
+                ...config,
+                success_statuses: statuses.length > 0 ? statuses : undefined,
+              })
+            }}
+          />
+          <div className="grid grid-cols-3 gap-3">
+            <TextField
+              label="Tentativas"
+              type="number"
+              placeholder="1"
+              value={numberText(config.max_attempts)}
+              onChange={(text) => {
+                onChange({ ...config, max_attempts: parseCount(text) })
+              }}
+            />
+            <TextField
+              label="Intervalo (s)"
+              type="number"
+              placeholder="30"
+              value={numberText(config.retry_delay_seconds)}
+              onChange={(text) => {
+                onChange({ ...config, retry_delay_seconds: parseCount(text) })
+              }}
+            />
+            <SelectField
+              label="Backoff"
+              value={config.backoff ?? 'fixed'}
+              onChange={(backoff) => {
+                onChange({
+                  ...config,
+                  backoff: backoff === 'exponential' ? backoff : undefined,
+                })
+              }}
+              options={[
+                { value: 'fixed', label: 'Fixo' },
+                { value: 'exponential', label: 'Exponencial' },
+              ]}
+            />
+          </div>
+          <p className="text-xs text-slate-500">
+            Tenta de novo em erro de rede, timeout, 429 e 5xx; outro status fora
+            dos de sucesso sai por falhou na hora. A resposta (status e body)
+            segue para o próximo nó.
+          </p>
+        </>
+      )}
+    </div>
+  )
+}
+
+const numberText = (n?: number) => (n === undefined ? '' : String(n))
+
+interface HeadersFieldProps {
+  headers: HTTPHeader[]
+  onChange: (headers: HTTPHeader[]) => void
+}
+
+/**
+ * The request headers. The value of a secret one is sealed when the draft
+ * is saved and never comes back: typing replaces it.
+ */
+function HeadersField({ headers, onChange }: HeadersFieldProps) {
+  const set = (i: number, change: Partial<HTTPHeader>) => {
+    onChange(headers.map((h, j) => (j === i ? { ...h, ...change } : h)))
+  }
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="text-xs font-medium text-slate-600">Headers</legend>
+      {headers.map((h, i) => (
+        <div
+          key={i}
+          role="group"
+          aria-label={`Header ${String(i + 1)}`}
+          className="grid grid-cols-[1fr_1fr_auto_auto] items-end gap-2"
+        >
+          <TextField
+            label="Nome"
+            placeholder="Authorization"
+            value={h.name}
+            onChange={(name) => {
+              set(i, { name })
+            }}
+          />
+          <TextField
+            label="Valor"
+            placeholder={h.sealed ? 'guardado; digite para trocar' : ''}
+            value={h.value ?? ''}
+            onChange={(value) => {
+              set(i, { value, sealed: undefined })
+            }}
+          />
+          <label className="flex items-center gap-1 pb-2 text-xs">
+            <input
+              type="checkbox"
+              checked={h.secret ?? false}
+              onChange={(e) => {
+                set(
+                  i,
+                  e.target.checked
+                    ? { secret: true }
+                    : { secret: undefined, sealed: undefined },
+                )
+              }}
+            />
+            Secreto
+          </label>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              onChange(headers.filter((_, j) => j !== i))
+            }}
+          >
+            Remover
+          </Button>
+        </div>
+      ))}
+      <Button
+        variant="ghost"
+        className="self-start"
+        onClick={() => {
+          onChange([...headers, { name: '', value: '' }])
+        }}
+      >
+        Adicionar header
+      </Button>
+    </fieldset>
+  )
 }
 
 interface PropertyFieldsProps<C extends SetPropertyConfig> {

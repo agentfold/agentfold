@@ -6,6 +6,7 @@ package sqlcgen
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -110,6 +111,8 @@ type Querier interface {
 	ListRunnableFlows(ctx context.Context) ([]ListRunnableFlowsRow, error)
 	ListUndeliveredQuestions(ctx context.Context, nodeRunID uuid.UUID) ([]Question, error)
 	NextFlowVersion(ctx context.Context, flowID uuid.UUID) (int32, error)
+	// NextJobAt is when the next queued job the worker can run is due.
+	NextJobAt(ctx context.Context, capabilities []byte) (time.Time, error)
 	NotifyChange(ctx context.Context, change string) error
 	NotifyJobs(ctx context.Context) error
 	// OpenArtifactReview puts artifacts of the card under a human_review node

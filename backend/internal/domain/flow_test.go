@@ -180,6 +180,21 @@ func TestConfigProblems(t *testing.T) {
 		{"check property", NodeCheckProperty, `{"key":"dev","value":"ok","wait":true}`, nil},
 		{"check property without value", NodeCheckProperty, `{"key":"dev"}`, []string{"informe o valor da propriedade"}},
 		{"check property with bad JSON", NodeCheckProperty, `[]`, []string{"configuração inválida"}},
+		{"http request", NodeHTTPRequest, `{"method":"POST","url":"https://x.test/cards/{{card.id}}","body":"{\"t\":\"{{card.title}}\",\"o\":{{input.plan}}}",` +
+			`"headers":[{"name":"X-Prop","value":"{{card.properties.dev}}"},{"name":"Authorization","secret":true,"sealed":"AAEC"}],` +
+			`"mode":"wait","timeout_seconds":10,"success_statuses":[200,409],"max_attempts":3,"retry_delay_seconds":5,"backoff":"exponential"}`, nil},
+		{"http request firing and forgetting", NodeHTTPRequest, `{"method":"GET","url":"http://x.test","mode":"fire_and_forget","backoff":"fixed"}`, nil},
+		{"http request without config", NodeHTTPRequest, ``, []string{"escolha o método HTTP", "informe a URL"}},
+		{"http request with bad values", NodeHTTPRequest, `{"method":"TRACE","url":"ftp://x","headers":[{"name":"Bad Name"},{"name":"Token","secret":true}],` +
+			`"body":"{{card.nope}}","mode":"later","timeout_seconds":301,"success_statuses":[99,700],"max_attempts":21,"retry_delay_seconds":3601,"backoff":"random"}`, []string{
+			"escolha o método HTTP", "a URL precisa começar com http:// ou https://", `nome de header inválido: "Bad Name"`, "informe o valor do header Token",
+			"placeholder desconhecido: {{card.nope}}", `modo desconhecido: "later"`, "o timeout vai de 1 a 300 segundos", "status de sucesso inválido: 99",
+			"as tentativas vão de 1 a 20", "o intervalo entre tentativas vai de 1 a 3600 segundos", `backoff desconhecido: "random"`,
+		}},
+		{"http request with bad placeholders", NodeHTTPRequest, `{"method":"GET","url":"http://x/{{card.properties.}}/{{env.HOME}}","headers":[{"name":"A","value":"{{ }}"}]}`, []string{
+			"placeholder desconhecido: {{card.properties.}}", "placeholder desconhecido: {{ }}",
+		}},
+		{"http request with bad JSON", NodeHTTPRequest, `[]`, []string{"configuração inválida"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

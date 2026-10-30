@@ -46,6 +46,31 @@ describe('describe', () => {
     ],
     ['flow.finished', { flow_name: 'dev', status: 'odd' }, 'Fluxo dev odd'],
     [
+      'http.requested',
+      {
+        node_key: 'h',
+        method: 'POST',
+        url: 'https://x',
+        status: 503,
+        attempt: 1,
+        max_attempts: 3,
+        retry_in_seconds: 30,
+      },
+      'HTTP Request h: POST https://x → 503 (tentativa 1 de 3; nova tentativa em 30s)',
+    ],
+    [
+      'http.requested',
+      {
+        node_key: 'h',
+        method: 'GET',
+        url: 'https://x',
+        error: 'timeout',
+        attempt: 2,
+        max_attempts: 2,
+      },
+      'HTTP Request h: GET https://x → falhou: timeout (tentativa 2 de 2)',
+    ],
+    [
       'node.started',
       { node_key: 'dev', node_type: 'agent', iteration: 1 },
       'Agente dev iniciado',

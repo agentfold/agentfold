@@ -78,6 +78,7 @@ describe('newStep', () => {
     ['trigger', { event: 'card_created' }],
     ['agent', { prompt: '' }],
     ['move_card', {}],
+    ['http_request', { method: 'POST', url: '' }],
     ['end', {}],
   ] as const)('gives %s nodes a default config', (kind, config) => {
     expect(defaultConfig(kind)).toEqual(config)
@@ -200,6 +201,18 @@ describe('summary', () => {
       },
       'Espera dev=ok nas dependências',
     ],
+    [{ kind: 'http_request', config: {} }, '? sem URL'],
+    [
+      { kind: 'http_request', config: { method: 'GET', url: 'https://x' } },
+      'GET https://x',
+    ],
+    [
+      {
+        kind: 'http_request',
+        config: { method: 'POST', url: 'https://x', mode: 'fire_and_forget' },
+      },
+      'Dispara POST https://x',
+    ],
     [{ kind: 'end', config: {} }, 'Encerra o fluxo'],
   ] as const)('describes %j', (data, want) => {
     expect(summary(data)).toBe(want)
@@ -224,6 +237,8 @@ describe('nodeOutputs', () => {
       ['approved', 'rejected', 'max_rounds_exceeded', 'failed'],
     ],
     [{ kind: 'check_property', config: {} }, ['satisfied', 'pending']],
+    [{ kind: 'http_request', config: {} }, ['success', 'failed']],
+    [{ kind: 'http_request', config: { mode: 'fire_and_forget' } }, ['next']],
     [{ kind: 'end', config: {} }, []],
   ] as const)('lists the outputs of %j', (data, want) => {
     expect(nodeOutputs(data)).toEqual(want)

@@ -41,6 +41,8 @@ type NewJob struct {
 	Requirements map[string]string
 	// MaxAttempts counts runs after a worker died mid-job; 0 means 1.
 	MaxAttempts int
+	// Delay is how long after now the job is due; zero means right away.
+	Delay time.Duration
 }
 
 // EnqueueJob adds a job and wakes the workers.
@@ -62,11 +64,25 @@ func insertJob(ctx context.Context, q sqlcgen.Querier, j NewJob) (uuid.UUID, err
 	}
 	row, err := q.InsertJob(ctx, sqlcgen.InsertJobParams{
 		Kind: j.Kind, Payload: payload, Requirements: jsonObject(j.Requirements), MaxAttempts: int32(max(j.MaxAttempts, 1)), //nolint:gosec // small
+		DelaySeconds: j.Delay.Seconds(),
 	})
 	if err != nil {
 		return uuid.Nil, err
 	}
 	return row.ID, q.NotifyJobs(ctx)
+}
+
+// NextJobAt is when the next queued job the worker can run is due; nil
+// when there is none.
+func (s *Store) NextJobAt(ctx context.Context, capabilities map[string]string) (*time.Time, error) {
+	at, err := s.q.NextJobAt(ctx, jsonObject(capabilities))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &at, nil
 }
 
 // ClaimJob leases the next job the worker can run for lease; nil when

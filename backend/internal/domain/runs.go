@@ -93,6 +93,16 @@ type ContinueJob struct {
 	NodeRunID uuid.UUID `json:"node_run_id"`
 }
 
+// JobHTTPRequest is the queue job that makes an attempt of the request of
+// an http_request node run.
+const JobHTTPRequest = "http.request"
+
+// HTTPJob is the payload of an http.request job; Attempt counts from 1.
+type HTTPJob struct {
+	NodeRunID uuid.UUID `json:"node_run_id"`
+	Attempt   int       `json:"attempt"`
+}
+
 // NodeStatus is the state of a node run.
 type NodeStatus string
 

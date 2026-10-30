@@ -130,6 +130,24 @@ func TestSaveFlowDraft(t *testing.T) {
 	}
 }
 
+func TestSaveFlowDraftSealsSecrets(t *testing.T) {
+	s, repo, _ := newService()
+	draft := domain.Graph{Nodes: []domain.Node{{ID: "h", Type: domain.NodeHTTPRequest,
+		Config: json.RawMessage(`{"headers":[{"name":"Authorization","value":"Bearer x","secret":true}]}`)}}}
+	if _, err := s.SaveFlowDraft(ctx, id, draft); err != nil {
+		t.Fatal(err)
+	}
+	var c domain.HTTPRequestConfig
+	if err := json.Unmarshal(repo.draft.Nodes[0].Config, &c); err != nil || c.Headers[0].Value != "" || string(c.Headers[0].Sealed) != "sealed:Bearer x" {
+		t.Fatalf("saved %s, %v", repo.draft.Nodes[0].Config, err)
+	}
+
+	s = New(repo, fakeGit{}, &fakePub{}, fakeSealer{err: errors.New("boom")})
+	if _, err := s.SaveFlowDraft(ctx, id, draft); err == nil || err.Error() != "boom" {
+		t.Fatalf("seal failure: %v", err)
+	}
+}
+
 func TestPublishFlow(t *testing.T) {
 	t.Run("missing flow", func(t *testing.T) {
 		s, repo, _ := newService()

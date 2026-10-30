@@ -86,6 +86,39 @@ func TestExpiredLeases(t *testing.T) {
 	}
 }
 
+func TestDelayedJobs(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	caps := map[string]string{"host": "a"}
+	if next, err := s.NextJobAt(ctx, caps); err != nil || next != nil {
+		t.Fatalf("empty queue: %v, %v", next, err)
+	}
+	if _, err := s.EnqueueJob(ctx, NewJob{Kind: "k", Requirements: map[string]string{"host": "b"}}); err != nil {
+		t.Fatal(err)
+	}
+	before := time.Now()
+	id, err := s.EnqueueJob(ctx, NewJob{Kind: "k", Delay: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job, err := s.ClaimJob(ctx, "w", caps, lease); err != nil || job != nil {
+		t.Fatalf("a job due in an hour was claimed: %+v, %v", job, err)
+	}
+	next, err := s.NextJobAt(ctx, caps)
+	if err != nil || next == nil || next.Before(before.Add(59*time.Minute)) {
+		t.Fatalf("NextJobAt = %v, %v", next, err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE jobs SET run_at = now() WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if job, err := s.ClaimJob(ctx, "w", caps, lease); err != nil || job == nil || job.ID != id {
+		t.Fatalf("due job: %+v, %v", job, err)
+	}
+	if _, err := s.NextJobAt(cancelled(), caps); err == nil {
+		t.Fatal("NextJobAt: expected error")
+	}
+}
+
 func TestJobErrors(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()

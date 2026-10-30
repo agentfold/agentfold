@@ -14,6 +14,7 @@ export const outcomes: Record<string, string> = {
   max_rounds_exceeded: 'limite de rodadas atingido',
   all_done: 'todos os filhos concluídos',
   some_failed: 'algum filho falhou',
+  success: 'sucesso',
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
@@ -66,6 +67,14 @@ export function describeEvent(
         ? (p.cards as { title?: unknown }[])
         : []
       return `${String(cards.length)} cards filhos criados: ${cards.map((c) => str(c.title)).join(', ')}`
+    }
+    case 'http.requested': {
+      const answer = p.error ? `falhou: ${str(p.error)}` : String(p.status)
+      const attempt = `tentativa ${String(p.attempt)} de ${String(p.max_attempts)}`
+      const retry = p.retry_in_seconds
+        ? `; nova tentativa em ${String(Number(p.retry_in_seconds))}s`
+        : ''
+      return `HTTP Request ${str(p.node_key)}: ${str(p.method)} ${str(p.url)} → ${answer} (${attempt}${retry})`
     }
     case 'artifact.collected':
       return `Artefato ${str(p.name)} coletado (versão ${String(p.version)})`

@@ -23,6 +23,7 @@ type fakeRepo struct {
 	in    any            // input of the last call
 	ins   map[string]any // input of the last call of each method
 	flow  domain.Flow
+	draft domain.Graph // the last draft saved
 	// Agent profile and MCP server methods return these.
 	profile domain.AgentProfile
 	mcp     domain.McpServer
@@ -181,6 +182,7 @@ func (f *fakeRepo) UpdateFlow(_ context.Context, _ uuid.UUID, in domain.FlowInpu
 }
 
 func (f *fakeRepo) SaveFlowDraft(_ context.Context, _ uuid.UUID, draft domain.Graph) (domain.Flow, error) {
+	f.draft = draft
 	return f.flow, f.call("SaveFlowDraft", draft.Nodes != nil && draft.Edges != nil)
 }
 

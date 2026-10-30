@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -184,7 +185,9 @@ func runWorker(ctx context.Context, args []string, stdout, stderr io.Writer) err
 			BoardURL:   serverURL(),
 			Pub:        pub,
 		},
-		Pub: pub,
+		Pub:     pub,
+		HTTP:    &http.Client{},
+		Secrets: box,
 	}
 	w := &worker.Worker{
 		Queue:        st,
@@ -197,6 +200,7 @@ func runWorker(ctx context.Context, args []string, stdout, stderr io.Writer) err
 			domain.JobChildChanged: flows.HandleChildChanged,
 			domain.JobFlowContinue: flows.HandleContinue,
 			domain.JobFlowRetry:    flows.HandleRetry,
+			domain.JobHTTPRequest:  flows.HandleHTTP,
 		},
 		Lease: jobLease,
 		Beat:  jobBeat,

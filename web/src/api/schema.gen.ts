@@ -924,7 +924,7 @@ export interface components {
             y: number;
         };
         /** @description A step of the flow. Configs may be incomplete in drafts; publishing reports what is missing. */
-        FlowNode: components["schemas"]["TriggerNode"] | components["schemas"]["AgentNode"] | components["schemas"]["MoveCardNode"] | components["schemas"]["CreateCardsNode"] | components["schemas"]["WaitChildrenNode"] | components["schemas"]["HumanReviewNode"] | components["schemas"]["SetPropertyNode"] | components["schemas"]["CheckPropertyNode"] | components["schemas"]["EndNode"];
+        FlowNode: components["schemas"]["TriggerNode"] | components["schemas"]["AgentNode"] | components["schemas"]["MoveCardNode"] | components["schemas"]["CreateCardsNode"] | components["schemas"]["WaitChildrenNode"] | components["schemas"]["HumanReviewNode"] | components["schemas"]["SetPropertyNode"] | components["schemas"]["CheckPropertyNode"] | components["schemas"]["HTTPRequestNode"] | components["schemas"]["EndNode"];
         TriggerNode: {
             id: string;
             /**
@@ -1004,6 +1004,16 @@ export interface components {
             type: "check_property";
             position: components["schemas"]["Position"];
             config: components["schemas"]["CheckPropertyConfig"];
+        };
+        HTTPRequestNode: {
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "http_request";
+            position: components["schemas"]["Position"];
+            config: components["schemas"]["HTTPRequestConfig"];
         };
         EndNode: {
             id: string;
@@ -1157,6 +1167,39 @@ export interface components {
             key?: string;
             value?: string;
             wait?: boolean;
+        };
+        /** @description Calls an HTTP endpoint. url, header values and body take placeholders: {{card.<field>}} (id, title, description, lane_id, card_type_id, project_id, parent_card_id), {{card.properties.<key>}}, {{input}} (what the node before handed on) and {{input.<path>}} (a value in its structured output, by keys and array indexes split by dots). Values are URL-encoded in the url and JSON-escaped in the body, which gets a JSON content type unless a header sets one. In wait mode (the default) the node leaves by success when the status is one of success_statuses (2xx when empty), else by failed, after max_attempts attempts for network errors, timeouts, 429 and 5xx; it hands on {"output": {"status", "body"}}. In fire_and_forget mode it makes one attempt and goes on by next right away, handing on its input. method and url are required to publish. */
+        HTTPRequestConfig: {
+            /** @enum {string} */
+            method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD";
+            url?: string;
+            headers?: components["schemas"]["HTTPHeader"][];
+            body?: string;
+            /** @enum {string} */
+            mode?: "wait" | "fire_and_forget";
+            /** @description Bounds each attempt; 30 when absent. */
+            timeout_seconds?: number;
+            success_statuses?: number[];
+            /** @description Attempts in wait mode; 1 when absent. */
+            max_attempts?: number;
+            /** @description Wait before the second attempt; 30 when absent. */
+            retry_delay_seconds?: number;
+            /**
+             * @description exponential doubles the wait after each attempt, up to an hour.
+             * @enum {string}
+             */
+            backoff?: "fixed" | "exponential";
+        };
+        /** @description A request header. Saving the draft seals the value of a secret header into sealed and clears value; send sealed back unchanged to keep it, or a new value to replace it. */
+        HTTPHeader: {
+            name: string;
+            value?: string;
+            secret?: boolean;
+            /**
+             * Format: byte
+             * @description The encrypted value of a secret header.
+             */
+            sealed?: string;
         };
         /** @description Waits for a human to review artifacts of the card: they ask for changes in the review chat or approve. changes_requested must lead to the node that redoes the work. */
         HumanReviewConfig: {

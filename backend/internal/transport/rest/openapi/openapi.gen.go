@@ -321,6 +321,87 @@ func (e FlowRunDetailTrigger) Valid() bool {
 	}
 }
 
+// Defines values for HTTPRequestConfigBackoff.
+const (
+	Exponential HTTPRequestConfigBackoff = "exponential"
+	Fixed       HTTPRequestConfigBackoff = "fixed"
+)
+
+// Valid indicates whether the value is a known member of the HTTPRequestConfigBackoff enum.
+func (e HTTPRequestConfigBackoff) Valid() bool {
+	switch e {
+	case Exponential:
+		return true
+	case Fixed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HTTPRequestConfigMethod.
+const (
+	DELETE HTTPRequestConfigMethod = "DELETE"
+	GET    HTTPRequestConfigMethod = "GET"
+	HEAD   HTTPRequestConfigMethod = "HEAD"
+	PATCH  HTTPRequestConfigMethod = "PATCH"
+	POST   HTTPRequestConfigMethod = "POST"
+	PUT    HTTPRequestConfigMethod = "PUT"
+)
+
+// Valid indicates whether the value is a known member of the HTTPRequestConfigMethod enum.
+func (e HTTPRequestConfigMethod) Valid() bool {
+	switch e {
+	case DELETE:
+		return true
+	case GET:
+		return true
+	case HEAD:
+		return true
+	case PATCH:
+		return true
+	case POST:
+		return true
+	case PUT:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HTTPRequestConfigMode.
+const (
+	FireAndForget HTTPRequestConfigMode = "fire_and_forget"
+	Wait          HTTPRequestConfigMode = "wait"
+)
+
+// Valid indicates whether the value is a known member of the HTTPRequestConfigMode enum.
+func (e HTTPRequestConfigMode) Valid() bool {
+	switch e {
+	case FireAndForget:
+		return true
+	case Wait:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HTTPRequestNodeType.
+const (
+	HttpRequest HTTPRequestNodeType = "http_request"
+)
+
+// Valid indicates whether the value is a known member of the HTTPRequestNodeType enum.
+func (e HTTPRequestNodeType) Valid() bool {
+	switch e {
+	case HttpRequest:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HumanReviewNodeType.
 const (
 	HumanReview HumanReviewNodeType = "human_review"
@@ -974,6 +1055,58 @@ type GraphProblem struct {
 	Message string  `json:"message"`
 	NodeId  *string `json:"node_id,omitempty"`
 }
+
+// HTTPHeader A request header. Saving the draft seals the value of a secret header into sealed and clears value; send sealed back unchanged to keep it, or a new value to replace it.
+type HTTPHeader struct {
+	Name string `json:"name"`
+
+	// Sealed The encrypted value of a secret header.
+	Sealed *[]byte `json:"sealed,omitempty"`
+	Secret *bool   `json:"secret,omitempty"`
+	Value  *string `json:"value,omitempty"`
+}
+
+// HTTPRequestConfig Calls an HTTP endpoint. url, header values and body take placeholders: {{card.<field>}} (id, title, description, lane_id, card_type_id, project_id, parent_card_id), {{card.properties.<key>}}, {{input}} (what the node before handed on) and {{input.<path>}} (a value in its structured output, by keys and array indexes split by dots). Values are URL-encoded in the url and JSON-escaped in the body, which gets a JSON content type unless a header sets one. In wait mode (the default) the node leaves by success when the status is one of success_statuses (2xx when empty), else by failed, after max_attempts attempts for network errors, timeouts, 429 and 5xx; it hands on {"output": {"status", "body"}}. In fire_and_forget mode it makes one attempt and goes on by next right away, handing on its input. method and url are required to publish.
+type HTTPRequestConfig struct {
+	// Backoff exponential doubles the wait after each attempt, up to an hour.
+	Backoff *HTTPRequestConfigBackoff `json:"backoff,omitempty"`
+	Body    *string                   `json:"body,omitempty"`
+	Headers *[]HTTPHeader             `json:"headers,omitempty"`
+
+	// MaxAttempts Attempts in wait mode; 1 when absent.
+	MaxAttempts *int                     `json:"max_attempts,omitempty"`
+	Method      *HTTPRequestConfigMethod `json:"method,omitempty"`
+	Mode        *HTTPRequestConfigMode   `json:"mode,omitempty"`
+
+	// RetryDelaySeconds Wait before the second attempt; 30 when absent.
+	RetryDelaySeconds *int   `json:"retry_delay_seconds,omitempty"`
+	SuccessStatuses   *[]int `json:"success_statuses,omitempty"`
+
+	// TimeoutSeconds Bounds each attempt; 30 when absent.
+	TimeoutSeconds *int    `json:"timeout_seconds,omitempty"`
+	Url            *string `json:"url,omitempty"`
+}
+
+// HTTPRequestConfigBackoff exponential doubles the wait after each attempt, up to an hour.
+type HTTPRequestConfigBackoff string
+
+// HTTPRequestConfigMethod defines model for HTTPRequestConfig.Method.
+type HTTPRequestConfigMethod string
+
+// HTTPRequestConfigMode defines model for HTTPRequestConfig.Mode.
+type HTTPRequestConfigMode string
+
+// HTTPRequestNode defines model for HTTPRequestNode.
+type HTTPRequestNode struct {
+	// Config Calls an HTTP endpoint. url, header values and body take placeholders: {{card.<field>}} (id, title, description, lane_id, card_type_id, project_id, parent_card_id), {{card.properties.<key>}}, {{input}} (what the node before handed on) and {{input.<path>}} (a value in its structured output, by keys and array indexes split by dots). Values are URL-encoded in the url and JSON-escaped in the body, which gets a JSON content type unless a header sets one. In wait mode (the default) the node leaves by success when the status is one of success_statuses (2xx when empty), else by failed, after max_attempts attempts for network errors, timeouts, 429 and 5xx; it hands on {"output": {"status", "body"}}. In fire_and_forget mode it makes one attempt and goes on by next right away, handing on its input. method and url are required to publish.
+	Config   HTTPRequestConfig   `json:"config"`
+	Id       string              `json:"id"`
+	Position Position            `json:"position"`
+	Type     HTTPRequestNodeType `json:"type"`
+}
+
+// HTTPRequestNodeType defines model for HTTPRequestNode.Type.
+type HTTPRequestNodeType string
 
 // HumanReviewConfig Waits for a human to review artifacts of the card: they ask for changes in the review chat or approve. changes_requested must lead to the node that redoes the work.
 type HumanReviewConfig struct {
@@ -1635,6 +1768,40 @@ func (t *FlowNode) MergeCheckPropertyNode(v CheckPropertyNode) error {
 	return err
 }
 
+// AsHTTPRequestNode returns the union data inside the FlowNode as a HTTPRequestNode
+func (t FlowNode) AsHTTPRequestNode() (HTTPRequestNode, error) {
+	var body HTTPRequestNode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromHTTPRequestNode overwrites any union data inside the FlowNode as the provided HTTPRequestNode
+func (t *FlowNode) FromHTTPRequestNode(v HTTPRequestNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"http_request"}`))
+	t.union = b
+	return err
+}
+
+// MergeHTTPRequestNode performs a merge with any union data inside the FlowNode, using the provided HTTPRequestNode
+func (t *FlowNode) MergeHTTPRequestNode(v HTTPRequestNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"http_request"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 // AsEndNode returns the union data inside the FlowNode as a EndNode
 func (t FlowNode) AsEndNode() (EndNode, error) {
 	var body EndNode
@@ -1691,6 +1858,8 @@ func (t FlowNode) ValueByDiscriminator() (interface{}, error) {
 		return t.AsCreateCardsNode()
 	case "end":
 		return t.AsEndNode()
+	case "http_request":
+		return t.AsHTTPRequestNode()
 	case "human_review":
 		return t.AsHumanReviewNode()
 	case "move_card":

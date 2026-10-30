@@ -1,7 +1,14 @@
 -- name: InsertJob :one
-INSERT INTO jobs (kind, payload, requirements, status, max_attempts)
-VALUES ($1, $2, $3, 'queued', $4)
+INSERT INTO jobs (kind, payload, requirements, status, max_attempts, run_at)
+VALUES ($1, $2, $3, 'queued', $4, now() + make_interval(secs => sqlc.arg(delay_seconds)::double precision))
 RETURNING *;
+
+-- NextJobAt is when the next queued job the worker can run is due.
+-- name: NextJobAt :one
+SELECT run_at FROM jobs
+WHERE status = 'queued' AND requirements <@ sqlc.arg(capabilities)::jsonb
+ORDER BY run_at
+LIMIT 1;
 
 -- name: NotifyJobs :exec
 SELECT pg_notify('orq_jobs', '');

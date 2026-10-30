@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -598,4 +600,47 @@ func (s *stack) nodeStatus(t *testing.T, flowRunID uuid.UUID) domain.NodeStatus 
 		t.Fatalf("node runs %v, %v", nodes, err)
 	}
 	return nodes[len(nodes)-1].Status
+}
+
+// TestHTTPRequestEndToEnd: an http_request node calls an endpoint with a
+// secret header sealed when the draft was saved, tries again after a 503
+// and hands the response to the move after it.
+func TestHTTPRequestEndToEnd(t *testing.T) {
+	var mu sync.Mutex
+	var auths []string
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		auths = append(auths, r.Header.Get("Authorization"))
+		if len(auths) == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = io.WriteString(w, `{"id":42}`)
+	}))
+	defer endpoint.Close()
+	s := newStack(t)
+	call := domain.Node{ID: "call", Type: domain.NodeHTTPRequest, Config: fmt.Appendf(nil,
+		`{"method":"POST","url":"%s/hooks/{{card.id}}","body":"{\"title\":\"{{card.title}}\"}",`+
+			`"headers":[{"name":"Authorization","value":"Bearer s3cret","secret":true}],"max_attempts":2,"retry_delay_seconds":1}`, endpoint.URL)}
+	s.flow(t, []domain.Node{call, s.moveTo(s.done)})
+	var config string
+	if err := s.pool.QueryRow(context.Background(), `SELECT draft::text FROM flows`).Scan(&config); err != nil || strings.Contains(config, "s3cret") {
+		t.Fatalf("the secret was saved in the clear: %s, %v", config, err)
+	}
+	card := s.startCard(t)
+	s.waitRun(t, card, domain.RunDone)
+	mu.Lock()
+	if !slices.Equal(auths, []string{"Bearer s3cret", "Bearer s3cret"}) {
+		t.Fatalf("authorizations %q", auths)
+	}
+	mu.Unlock()
+	if got := countOf(s.timeline(t, card), "http.requested"); got != 2 {
+		t.Fatalf("%d attempts in the timeline", got)
+	}
+	var output string
+	if err := s.pool.QueryRow(context.Background(), `SELECT output::text FROM node_runs WHERE node_key = 'call'`).Scan(&output); err != nil || output != `{"output": {"body": {"id": 42}, "status": 200}}` {
+		t.Fatalf("output %s, %v", output, err)
+	}
+	s.stop(t)
 }

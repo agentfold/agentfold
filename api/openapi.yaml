@@ -1172,6 +1172,7 @@ components:
         - $ref: "#/components/schemas/HumanReviewNode"
         - $ref: "#/components/schemas/SetPropertyNode"
         - $ref: "#/components/schemas/CheckPropertyNode"
+        - $ref: "#/components/schemas/HTTPRequestNode"
         - $ref: "#/components/schemas/EndNode"
       discriminator:
         propertyName: type
@@ -1184,6 +1185,7 @@ components:
           human_review: "#/components/schemas/HumanReviewNode"
           set_property: "#/components/schemas/SetPropertyNode"
           check_property: "#/components/schemas/CheckPropertyNode"
+          http_request: "#/components/schemas/HTTPRequestNode"
           end: "#/components/schemas/EndNode"
     TriggerNode:
       type: object
@@ -1249,6 +1251,14 @@ components:
         type: { type: string, enum: [check_property] }
         position: { $ref: "#/components/schemas/Position" }
         config: { $ref: "#/components/schemas/CheckPropertyConfig" }
+    HTTPRequestNode:
+      type: object
+      required: [id, type, position, config]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [http_request] }
+        position: { $ref: "#/components/schemas/Position" }
+        config: { $ref: "#/components/schemas/HTTPRequestConfig" }
     EndNode:
       type: object
       required: [id, type, position, config]
@@ -1458,6 +1468,72 @@ components:
         key: { type: string }
         value: { type: string }
         wait: { type: boolean }
+    HTTPRequestConfig:
+      type: object
+      description: >
+        Calls an HTTP endpoint. url, header values and body take
+        placeholders: {{card.<field>}} (id, title, description, lane_id,
+        card_type_id, project_id, parent_card_id),
+        {{card.properties.<key>}}, {{input}} (what the node before handed
+        on) and {{input.<path>}} (a value in its structured output, by keys
+        and array indexes split by dots). Values are URL-encoded in the url
+        and JSON-escaped in the body, which gets a JSON content type unless a
+        header sets one. In wait mode (the default) the node leaves by
+        success when the status is one of success_statuses (2xx when empty),
+        else by failed, after max_attempts attempts for network errors,
+        timeouts, 429 and 5xx; it hands on {"output": {"status", "body"}}.
+        In fire_and_forget mode it makes one attempt and goes on by next
+        right away, handing on its input. method and url are required to
+        publish.
+      properties:
+        method:
+          type: string
+          enum: [GET, POST, PUT, PATCH, DELETE, HEAD]
+        url: { type: string }
+        headers:
+          type: array
+          items: { $ref: "#/components/schemas/HTTPHeader" }
+        body: { type: string }
+        mode:
+          type: string
+          enum: [wait, fire_and_forget]
+        timeout_seconds:
+          type: integer
+          minimum: 1
+          maximum: 300
+          description: Bounds each attempt; 30 when absent.
+        success_statuses:
+          type: array
+          items: { type: integer, minimum: 100, maximum: 599 }
+        max_attempts:
+          type: integer
+          minimum: 1
+          maximum: 20
+          description: Attempts in wait mode; 1 when absent.
+        retry_delay_seconds:
+          type: integer
+          minimum: 1
+          maximum: 3600
+          description: Wait before the second attempt; 30 when absent.
+        backoff:
+          type: string
+          enum: [fixed, exponential]
+          description: exponential doubles the wait after each attempt, up to an hour.
+    HTTPHeader:
+      type: object
+      required: [name]
+      description: >
+        A request header. Saving the draft seals the value of a secret
+        header into sealed and clears value; send sealed back unchanged to
+        keep it, or a new value to replace it.
+      properties:
+        name: { type: string }
+        value: { type: string }
+        secret: { type: boolean }
+        sealed:
+          type: string
+          format: byte
+          description: The encrypted value of a secret header.
     HumanReviewConfig:
       type: object
       description: >

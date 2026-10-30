@@ -7,6 +7,7 @@ package sqlcgen
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -106,8 +107,8 @@ func (q *Queries) FinishJob(ctx context.Context, arg FinishJobParams) (int64, er
 }
 
 const insertJob = `-- name: InsertJob :one
-INSERT INTO jobs (kind, payload, requirements, status, max_attempts)
-VALUES ($1, $2, $3, 'queued', $4)
+INSERT INTO jobs (kind, payload, requirements, status, max_attempts, run_at)
+VALUES ($1, $2, $3, 'queued', $4, now() + make_interval(secs => $5::double precision))
 RETURNING id, kind, payload, requirements, status, run_at, attempts, max_attempts, locked_by, lease_until, last_error, created_at, updated_at
 `
 
@@ -116,6 +117,7 @@ type InsertJobParams struct {
 	Payload      []byte
 	Requirements []byte
 	MaxAttempts  int32
+	DelaySeconds float64
 }
 
 func (q *Queries) InsertJob(ctx context.Context, arg InsertJobParams) (Job, error) {
@@ -124,6 +126,7 @@ func (q *Queries) InsertJob(ctx context.Context, arg InsertJobParams) (Job, erro
 		arg.Payload,
 		arg.Requirements,
 		arg.MaxAttempts,
+		arg.DelaySeconds,
 	)
 	var i Job
 	err := row.Scan(
@@ -142,6 +145,21 @@ func (q *Queries) InsertJob(ctx context.Context, arg InsertJobParams) (Job, erro
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const nextJobAt = `-- name: NextJobAt :one
+SELECT run_at FROM jobs
+WHERE status = 'queued' AND requirements <@ $1::jsonb
+ORDER BY run_at
+LIMIT 1
+`
+
+// NextJobAt is when the next queued job the worker can run is due.
+func (q *Queries) NextJobAt(ctx context.Context, capabilities []byte) (time.Time, error) {
+	row := q.db.QueryRow(ctx, nextJobAt, capabilities)
+	var run_at time.Time
+	err := row.Scan(&run_at)
+	return run_at, err
 }
 
 const notifyChange = `-- name: NotifyChange :exec

@@ -11,6 +11,7 @@ import type {
   HumanReviewConfig,
   SetPropertyConfig,
   CheckPropertyConfig,
+  HTTPRequestConfig,
 } from '../api/client'
 
 export type NodeKind = FlowNode['type']
@@ -23,6 +24,7 @@ export type StepConfig =
   | HumanReviewConfig
   | SetPropertyConfig
   | CheckPropertyConfig
+  | HTTPRequestConfig
   | Record<string, never>
 
 export interface StepData extends Record<string, unknown> {
@@ -44,6 +46,7 @@ export const kindLabels: Record<NodeKind, string> = {
   human_review: 'Revisão humana',
   set_property: 'Definir propriedade',
   check_property: 'Conferir propriedade',
+  http_request: 'HTTP Request',
   end: 'Fim',
 }
 
@@ -57,17 +60,28 @@ const outputs: Record<NodeKind, string[]> = {
   human_review: ['approved', 'changes_requested'],
   set_property: ['next'],
   check_property: ['satisfied', 'pending'],
+  http_request: ['success', 'failed'],
   end: [],
 }
 
 /** The outputs of an agent node with the gateway on. */
 const gatewayOutputs = ['approved', 'rejected', 'max_rounds_exceeded', 'failed']
 
-/** The outputs of a node: agents with the gateway on decide where to go. */
+/**
+ * The outputs of a node: agents with the gateway on decide where to go, and
+ * an HTTP Request firing and forgetting only goes on.
+ */
 export function nodeOutputs({ kind, config }: StepData): string[] {
-  return kind === 'agent' && (config as AgentConfig).gateway
-    ? gatewayOutputs
-    : outputs[kind]
+  if (kind === 'agent' && (config as AgentConfig).gateway) {
+    return gatewayOutputs
+  }
+  if (
+    kind === 'http_request' &&
+    (config as HTTPRequestConfig).mode === 'fire_and_forget'
+  ) {
+    return ['next']
+  }
+  return outputs[kind]
 }
 
 export const outputLabels: Record<string, string> = {
@@ -82,6 +96,7 @@ export const outputLabels: Record<string, string> = {
   changes_requested: 'pediu ajustes',
   satisfied: 'satisfeitas',
   pending: 'pendentes',
+  success: 'sucesso',
 }
 
 export function defaultConfig(kind: NodeKind): StepConfig {
@@ -90,6 +105,8 @@ export function defaultConfig(kind: NodeKind): StepConfig {
       return { event: 'card_created' }
     case 'agent':
       return { prompt: '' }
+    case 'http_request':
+      return { method: 'POST', url: '' }
     default:
       return {}
   }
@@ -250,6 +267,11 @@ export function summary({ kind, config }: StepData): string {
     case 'check_property': {
       const { key = '?', value = '?', wait } = config as CheckPropertyConfig
       return `${wait ? 'Espera' : 'Confere'} ${key}=${value} nas dependências`
+    }
+    case 'http_request': {
+      const { method = '?', url = '', mode } = config as HTTPRequestConfig
+      const call = `${method} ${url === '' ? 'sem URL' : url}`
+      return mode === 'fire_and_forget' ? `Dispara ${call}` : call
     }
     case 'end':
       return 'Encerra o fluxo'

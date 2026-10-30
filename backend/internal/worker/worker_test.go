@@ -26,6 +26,12 @@ type fakeQueue struct {
 	extended  int
 	finished  map[uuid.UUID]error
 	caps      map[string]string
+	next      *time.Time
+	nextErr   error
+}
+
+func (q *fakeQueue) NextJobAt(context.Context, map[string]string) (*time.Time, error) {
+	return q.next, q.nextErr
 }
 
 func (q *fakeQueue) ClaimJob(_ context.Context, _ string, caps map[string]string, _ time.Duration) (*store.Job, error) {
@@ -64,11 +70,16 @@ func (q *fakeQueue) FinishJob(_ context.Context, id uuid.UUID, _ string, jobErr 
 type fakeListener struct {
 	stop context.CancelFunc
 	err  error
+	// waited records the timeouts it got.
+	waited *[]time.Duration
 }
 
 func (fakeListener) Close() {}
 
-func (l fakeListener) Wait(ctx context.Context, _ time.Duration) error {
+func (l fakeListener) Wait(ctx context.Context, timeout time.Duration) error {
+	if l.waited != nil {
+		*l.waited = append(*l.waited, timeout)
+	}
 	if l.err != nil {
 		return l.err
 	}
@@ -188,6 +199,37 @@ func TestQueueErrorsStopTheWorker(t *testing.T) {
 	w.Listen = listen(nil, errors.New("no connection"))
 	if err := w.Run(ctx); err == nil || err.Error() != "no connection" {
 		t.Fatalf("listen: %v", err)
+	}
+}
+
+func TestWakesForDelayedJobs(t *testing.T) {
+	soon := time.Now().Add(100 * time.Millisecond)
+	var waited []time.Duration
+	q := &fakeQueue{next: &soon}
+	w, ctx, _ := newWorker(q, nil)
+	w.Listen = listen(fakeListener{stop: func() {}, err: errors.New("stop"), waited: &waited}, nil)
+	_ = w.Run(ctx)
+	if len(waited) != 1 || waited[0] > 100*time.Millisecond || waited[0] < 50*time.Millisecond {
+		t.Fatalf("waited %v for a job due in 100ms", waited)
+	}
+
+	past := time.Now().Add(-time.Second)
+	q.next, waited = &past, nil
+	_ = w.Run(ctx)
+	if len(waited) != 1 || waited[0] != minIdle {
+		t.Fatalf("waited %v for a job due already", waited)
+	}
+
+	later := time.Now().Add(time.Hour)
+	q.next, waited = &later, nil
+	_ = w.Run(ctx)
+	if len(waited) != 1 || waited[0] != w.Idle {
+		t.Fatalf("waited %v for a job due in an hour", waited)
+	}
+
+	q.nextErr = errors.New("db down")
+	if err := w.Run(ctx); err == nil || err.Error() != "db down" {
+		t.Fatalf("NextJobAt failure: %v", err)
 	}
 }
 

@@ -70,6 +70,10 @@ type Engine struct {
 	Store  Store
 	Agents AgentHandler
 	Pub    Publisher
+	// HTTP sends the requests of http_request nodes, whose secret headers
+	// Secrets opens.
+	HTTP    Doer
+	Secrets Opener
 }
 
 // HandleTrigger runs flow.trigger jobs: it starts every runnable flow whose
@@ -226,6 +230,11 @@ func (e *Engine) advance(ctx context.Context, r *run, key string, input json.Raw
 		if node.Type == domain.NodeHumanReview {
 			return e.review(ctx, r, node, nr, input)
 		}
+		if node.Type == domain.NodeHTTPRequest {
+			if err := e.queueHTTP(ctx, nr.ID, 1, 0); err != nil || !fireAndForget(node) {
+				return err
+			}
+		}
 		result, err := e.runBoardNode(ctx, r, node, input)
 		if err != nil {
 			return err
@@ -276,8 +285,8 @@ func (e *Engine) queueAgent(ctx context.Context, nr domain.NodeRun, input json.R
 }
 
 // runBoardNode runs a node that does not need an agent. MoveCard,
-// SetProperty and End hand on the output of the node before, so agents
-// after them still get it. A WaitChildren node whose children are on their
+// SetProperty, End and an http_request node firing and forgetting hand on
+// the output of the node before, so agents after them still get it. A WaitChildren node whose children are on their
 // way waits, as does a CheckProperty node that waits for the dependencies.
 func (e *Engine) runBoardNode(ctx context.Context, r *run, node domain.Node, input json.RawMessage) (domain.NodeResult, error) {
 	var result domain.NodeResult
@@ -291,6 +300,8 @@ func (e *Engine) runBoardNode(ctx context.Context, r *run, node domain.Node, inp
 		return e.createCards(ctx, r, node, input)
 	case domain.NodeSetProperty:
 		result, err = e.setProperty(ctx, r, node)
+	case domain.NodeHTTPRequest:
+		result = domain.NodeResult{Status: domain.NodeDone, OutputHandle: "next"}
 	case domain.NodeWaitChildren, domain.NodeCheckProperty:
 		settled, err := e.waitResult(ctx, r.CardID, node)
 		if settled == nil {

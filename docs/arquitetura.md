@@ -127,6 +127,7 @@ Fluxos são **versionados**: um FlowRun em andamento continua na versão em que 
 | **HumanReview** | nomes dos artefatos revisados (vazio: os coletados no run) | `approved`, `changes_requested` |
 | **SetProperty** | chave e valor | `next` |
 | **CheckProperty** | chave e valor; esperar (sim/não) | `satisfied`, `pending` |
+| **HTTP Request** (`http_request`) | método, URL, headers (alguns secretos), body, modo (`wait` ou `fire_and_forget`), timeout, status de sucesso, tentativas, intervalo e backoff (`fixed` ou `exponential`) | `success`, `failed`; em `fire_and_forget`: `next` |
 
 **Cards filhos** são criados pelo agente, com a tool `create_cards` (seção 5): o nó Agent
 escolhe os tipos que ele cria, e o prompt do nó diz o que criar. Todos os filhos de uma chamada
@@ -166,6 +167,29 @@ do card pai e o CheckProperty dos cards que dependem deste.
 dependência receber a propriedade. Um desvio para trás quando uma dependência não está pronta
 é só ligar `pending` no fluxo. A saída traz a lista das dependências e se cada uma está
 satisfeita.
+
+**HTTP Request** chama um endpoint. URL, valores de header e body aceitam placeholders:
+`{{card.id}}`, `{{card.title}}`, `{{card.description}}`, `{{card.lane_id}}`,
+`{{card.card_type_id}}`, `{{card.project_id}}`, `{{card.parent_card_id}}`,
+`{{card.properties.<chave>}}`, `{{input}}` (o que o nó anterior passou, como o agente o
+recebe) e `{{input.<caminho>}}` (um valor da saída estruturada dele, por chaves e índices
+separados por ponto). Na URL os valores vão codificados; no body vão escapados como string
+JSON (`"{{card.title}}"` continua válido), e objetos e números entram como JSON. Um body sem
+header `Content-Type` sai como `application/json`. O valor de um header secreto é cifrado
+(AES-GCM, a mesma chave dos segredos de MCP) quando o rascunho é salvo: o banco e a API só
+guardam `sealed`, e o worker abre o valor na hora da chamada.
+
+A chamada roda num job `http.request` no worker, não dentro da engine. No modo `wait` (o
+padrão) o nó espera: sai por `success` quando o status está entre os de sucesso (qualquer 2xx
+quando vazio), e a resposta segue para o próximo nó como `{"output": {"status", "body"}}`, com
+o body em JSON quando é JSON e em texto quando não é (até 1 MiB). Erro de rede, timeout, 429 e
+5xx são tentados de novo até o número de tentativas, esperando o intervalo (30 s por padrão,
+dobrando a cada vez no backoff exponencial, até 1 h); a próxima tentativa é um job com
+`run_at` no futuro. Outro status fora dos de sucesso sai por `failed` na hora, com a resposta e
+o erro (`a chamada respondeu 404`). Um run cancelado descarta as tentativas pendentes. No modo
+`fire_and_forget` o nó enfileira uma tentativa e sai por `next` na hora, repassando a entrada;
+o resultado fica só na timeline. Cada tentativa registra um evento `http.requested` na
+timeline (método, URL, status ou erro, duração e quando vem a próxima).
 
 O `get_card` do MCP devolve os artefatos do card (última versão e o estado da revisão, `approved` depois da aprovação) e, num
 card filho, o card pai com os artefatos dele: o agente que divide o trabalho e os que
@@ -286,11 +310,14 @@ O agente **não comita nem abre PR** (garantido pelas tools bloqueadas/prompt; o
 
 - Worker pega job com `SELECT … FOR UPDATE SKIP LOCKED`, grava `locked_by` e `lease_until`.
 - Heartbeat renova o lease durante a execução; job com lease vencido volta para a fila.
-- `LISTEN/NOTIFY` acorda workers sem polling agressivo.
+- `LISTEN/NOTIFY` acorda workers sem polling agressivo; um job agendado (`run_at` futuro, como a
+  próxima tentativa de um HTTP Request) acorda o worker na hora dele. O worker roda um job por
+  vez, então uma tentativa espera o job em andamento (um agente, por exemplo) terminar.
 - Kinds: `flow.trigger` (enfileirado na mesma transação do evento `card.created`/`card.moved`;
   dispara os fluxos cujo gatilho combina) e `agent.run` (roda o nó Agent e, em seguida, a engine
   segue a saída dele). `flow.retry` roda de novo, do gatilho e na versão mais recente, o fluxo da
-  última execução de um card filho (`retry_card`). A engine roda no worker; os nós do board (MoveCard,
+  última execução de um card filho (`retry_card`). `http.request` faz uma tentativa da chamada
+de um nó HTTP Request. A engine roda no worker; os nós do board (MoveCard,
   SetProperty, End…) executam dentro do job que chega até eles.
 - **Afinidade:** cada job tem `requirements` (ex.: `{"host": "x"}`, futuramente `{"runner": "docker"}`);
   cada worker anuncia suas capacidades e só pega jobs compatíveis. Projetos `local` exigem o host
@@ -406,7 +433,11 @@ em dólar é estimativa.
 - **SSE** — eventos em tempo real (card movido, saída do agente, perguntas, status de nós).
 - **MCP** — tools para integrações (`list_cards`, `create_card`, `move_card`,
   `answer_questions`, `list_flows`, `get_run`…) e as tools de agente da seção 5.
-- **Webhooks de saída** — fora do MVP.
+- **Disparar um fluxo de fora** — criar um card (`POST /api/cards`) dispara os gatilhos
+  `card_created` e o `card_entered_lane` da baia dele; mover (`POST /api/cards/{id}/move`)
+  dispara o `card_entered_lane`. O MCP de integração faz o mesmo. A API ainda não tem
+  autenticação.
+- **Chamar APIs de fora** — o nó HTTP Request (seção 4).
 
 ---
 

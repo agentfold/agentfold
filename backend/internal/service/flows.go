@@ -55,10 +55,15 @@ func (s *Service) UpdateFlow(ctx context.Context, id uuid.UUID, in domain.FlowIn
 	return s.detail(ctx)(changed(s, "flow.updated", flow, err))
 }
 
-// SaveFlowDraft replaces the draft of a flow. Drafts may have problems; they
-// are returned so the editor can show them.
+// SaveFlowDraft replaces the draft of a flow, sealing the secret headers of
+// its http_request nodes. Drafts may have problems; they are returned so
+// the editor can show them.
 func (s *Service) SaveFlowDraft(ctx context.Context, id uuid.UUID, draft domain.Graph) (FlowDetail, error) {
-	flow, err := s.repo.SaveFlowDraft(ctx, id, draft.Normalized())
+	sealed, err := draft.Normalized().SealSecrets(s.secrets.Seal)
+	if err != nil {
+		return FlowDetail{}, err
+	}
+	flow, err := s.repo.SaveFlowDraft(ctx, id, sealed)
 	return s.detail(ctx)(changed(s, "flow.updated", flow, err))
 }
 

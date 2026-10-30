@@ -339,4 +339,101 @@ describe('NodeConfigForm', () => {
     setup('end', {})
     expect(screen.getByText(/Não tem configuração/)).toBeInTheDocument()
   })
+
+  it('configures an HTTP request', async () => {
+    const result = setup('http_request', { method: 'POST', url: '' })
+    await userEvent.selectOptions(screen.getByLabelText('Método'), 'PUT')
+    await userEvent.type(
+      screen.getByLabelText('URL'),
+      'https://x/{{{{card.id}}',
+    )
+    await userEvent.type(screen.getByLabelText('Body (JSON, opcional)'), 'b')
+    await userEvent.type(screen.getByLabelText('Timeout (segundos)'), '10')
+    await userEvent.type(
+      screen.getByLabelText('Status de sucesso'),
+      '200, x, 409',
+    )
+    await userEvent.type(screen.getByLabelText('Tentativas'), '3')
+    await userEvent.type(screen.getByLabelText('Intervalo (s)'), '5')
+    await userEvent.selectOptions(
+      screen.getByLabelText('Backoff'),
+      'exponential',
+    )
+    expect(result.config).toEqual({
+      method: 'PUT',
+      url: 'https://x/{{card.id}}',
+      body: 'b',
+      timeout_seconds: 10,
+      success_statuses: [200, 409],
+      max_attempts: 3,
+      retry_delay_seconds: 5,
+      backoff: 'exponential',
+    })
+
+    await userEvent.clear(screen.getByLabelText('Body (JSON, opcional)'))
+    await userEvent.clear(screen.getByLabelText('Status de sucesso'))
+    await userEvent.selectOptions(screen.getByLabelText('Backoff'), 'fixed')
+    expect(result.config).toMatchObject({
+      body: undefined,
+      success_statuses: undefined,
+      backoff: undefined,
+    })
+
+    await userEvent.selectOptions(
+      screen.getByLabelText('Modo'),
+      'fire_and_forget',
+    )
+    expect(screen.queryByLabelText('Tentativas')).not.toBeInTheDocument()
+    expect(result.config).toMatchObject({
+      mode: 'fire_and_forget',
+      max_attempts: undefined,
+      retry_delay_seconds: undefined,
+    })
+    await userEvent.selectOptions(screen.getByLabelText('Modo'), 'wait')
+    expect(result.config).toMatchObject({ mode: undefined })
+  })
+
+  it('shows an HTTP request without config', () => {
+    setup('http_request', {})
+    expect(screen.getByLabelText('URL')).toHaveValue('')
+    expect(screen.getByLabelText('Modo')).toHaveValue('wait')
+  })
+
+  it('edits the headers of an HTTP request', async () => {
+    const result = setup('http_request', {
+      method: 'GET',
+      url: 'https://x',
+      headers: [{ name: 'Authorization', secret: true, sealed: 'AAEC' }],
+    })
+    const sealed = within(screen.getByRole('group', { name: 'Header 1' }))
+    expect(sealed.getByLabelText('Valor')).toHaveAttribute(
+      'placeholder',
+      'guardado; digite para trocar',
+    )
+    await userEvent.type(sealed.getByLabelText('Valor'), 'k')
+    expect(result.config).toMatchObject({
+      headers: [
+        { name: 'Authorization', secret: true, value: 'k', sealed: undefined },
+      ],
+    })
+    expect(sealed.getByLabelText('Valor')).toHaveAttribute('placeholder', '')
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Adicionar header' }),
+    )
+    const added = within(screen.getByRole('group', { name: 'Header 2' }))
+    await userEvent.type(added.getByLabelText('Nome'), 'X')
+    await userEvent.click(added.getByLabelText('Secreto'))
+    expect(result.config).toMatchObject({
+      headers: [{ name: 'Authorization' }, { name: 'X', secret: true }],
+    })
+    await userEvent.click(added.getByLabelText('Secreto'))
+    expect(result.config).toMatchObject({
+      headers: [{}, { name: 'X', secret: undefined, sealed: undefined }],
+    })
+
+    await userEvent.click(sealed.getByRole('button', { name: 'Remover' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Remover' }))
+    expect(result.config).toMatchObject({ headers: undefined })
+  })
 })

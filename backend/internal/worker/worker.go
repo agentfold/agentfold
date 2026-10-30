@@ -18,6 +18,7 @@ type Queue interface {
 	ClaimJob(ctx context.Context, worker string, capabilities map[string]string, lease time.Duration) (*store.Job, error)
 	ExtendJobLease(ctx context.Context, id uuid.UUID, worker string, lease time.Duration) error
 	FinishJob(ctx context.Context, id uuid.UUID, worker string, jobErr error) error
+	NextJobAt(ctx context.Context, capabilities map[string]string) (*time.Time, error)
 }
 
 // Listener wakes the worker when jobs are enqueued. *store.JobListener
@@ -45,7 +46,8 @@ type Worker struct {
 	// Beat is how often heartbeats renew the lease, which is also how soon
 	// a job canceled meanwhile stops; Lease/3 when zero.
 	Beat time.Duration
-	// Idle bounds the wait for new jobs, in case a notification is missed.
+	// Idle bounds the wait for new jobs, in case a notification is missed;
+	// the worker wakes sooner when a delayed job is due.
 	Idle time.Duration
 	Log  *slog.Logger
 }
@@ -61,7 +63,10 @@ func (w *Worker) Run(ctx context.Context) error {
 	for ctx.Err() == nil {
 		job, err := w.Queue.ClaimJob(ctx, w.ID, w.Capabilities, w.Lease)
 		if err == nil && job == nil {
-			err = listener.Wait(ctx, w.Idle)
+			var idle time.Duration
+			if idle, err = w.idle(ctx); err == nil {
+				err = listener.Wait(ctx, idle)
+			}
 		} else if err == nil {
 			w.process(ctx, job)
 		}
@@ -71,6 +76,19 @@ func (w *Worker) Run(ctx context.Context) error {
 	}
 	return nil
 }
+
+// idle is how long to wait for new jobs: Idle, or less when a delayed job
+// is due before.
+func (w *Worker) idle(ctx context.Context) (time.Duration, error) {
+	next, err := w.Queue.NextJobAt(ctx, w.Capabilities)
+	if err != nil || next == nil {
+		return w.Idle, err
+	}
+	return min(w.Idle, max(time.Until(*next), minIdle)), nil
+}
+
+// minIdle keeps a job that is due already from spinning the worker.
+const minIdle = 10 * time.Millisecond
 
 // process runs a job while renewing its lease, then records its result.
 // The job is interrupted only if another worker takes it over.

@@ -128,6 +128,9 @@ const (
 	ChildrenCreated CardEventType = "children.created"
 
 	PropertySet CardEventType = "property.set"
+
+	// HTTPRequested is an attempt of an http_request node.
+	HTTPRequested CardEventType = "http.requested"
 )
 
 // CardEvent is an entry of the card timeline.

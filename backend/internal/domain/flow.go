@@ -71,6 +71,8 @@ const (
 	// checks it on the cards the card depends on.
 	NodeSetProperty   NodeType = "set_property"
 	NodeCheckProperty NodeType = "check_property"
+	// NodeHTTPRequest calls an HTTP endpoint (HTTPRequestConfig).
+	NodeHTTPRequest NodeType = "http_request"
 )
 
 // Outputs lists the outputs (edge source handles) of each node type. Agent
@@ -91,6 +93,8 @@ var Outputs = map[NodeType][]string{
 	NodeSetProperty: {"next"},
 	// pending: some dependency lacks the property (never with wait on).
 	NodeCheckProperty: {"satisfied", "pending"},
+	// In wait mode; fire_and_forget has HTTPOutputs.
+	NodeHTTPRequest: {"success", "failed"},
 }
 
 // GatewayOutputs are the outputs of an agent node with the gateway on.
@@ -98,10 +102,16 @@ var GatewayOutputs = []string{"approved", "rejected", "max_rounds_exceeded", "fa
 
 // NodeOutputs returns the outputs of a node of a known type.
 func NodeOutputs(n Node) []string {
-	if n.Type == NodeAgent {
+	switch n.Type {
+	case NodeAgent:
 		var c AgentConfig
 		if json.Unmarshal(n.Config, &c) == nil && c.Gateway {
 			return GatewayOutputs
+		}
+	case NodeHTTPRequest:
+		var c HTTPRequestConfig
+		if json.Unmarshal(n.Config, &c) == nil && c.FireAndForget() {
+			return HTTPOutputs
 		}
 	}
 	return Outputs[n.Type]
@@ -572,6 +582,12 @@ func (v *validator) configProblems(n Node) []string {
 			return []string{invalidConfig(err)}
 		}
 		return propertyProblems(c.Key, c.Value)
+	case NodeHTTPRequest:
+		var c HTTPRequestConfig
+		if err := json.Unmarshal(config, &c); err != nil {
+			return []string{invalidConfig(err)}
+		}
+		return httpRequestProblems(c)
 	}
 	return nil
 }

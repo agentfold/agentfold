@@ -18,6 +18,7 @@ const accents: Record<StepData['kind'], string> = {
   human_review: 'bg-rose-500',
   set_property: 'bg-violet-500',
   check_property: 'bg-violet-700',
+  http_request: 'bg-teal-600',
   end: 'bg-slate-500',
 }
 
