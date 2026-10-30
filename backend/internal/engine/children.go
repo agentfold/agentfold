@@ -94,7 +94,7 @@ func (e *Engine) childrenResult(ctx context.Context, cardID uuid.UUID, node doma
 	count := map[string]int{}
 	for _, c := range children {
 		if c.CanceledAt != nil {
-			continue // canceled tasks no longer count
+			continue // canceled children no longer count
 		}
 		state := childCard{ID: c.ID, Title: c.Title, State: childPending}
 		done := c.HasProperty(key, value)
@@ -140,10 +140,10 @@ func (e *Engine) failure(ctx context.Context, childID uuid.UUID, state *childCar
 // childrenReport tells how the children went, in words for an agent.
 func childrenReport(states []childCard, count map[string]int) string {
 	if count[childFailed] == 0 {
-		return fmt.Sprintf("Todas as %d tasks foram concluídas.", len(states))
+		return fmt.Sprintf("Todos os %d cards filhos foram concluídos.", len(states))
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%d de %d tasks concluídas; %d falharam", count[childDone], len(states), count[childFailed])
+	fmt.Fprintf(&b, "%d de %d cards filhos concluídos; %d falharam", count[childDone], len(states), count[childFailed])
 	if count[childPending] > 0 {
 		fmt.Fprintf(&b, " e %d ainda não terminaram", count[childPending])
 	}

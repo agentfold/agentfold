@@ -387,9 +387,10 @@ func TestOpencodeEndToEnd(t *testing.T) {
 	s.stop(t)
 }
 
-// TestChildCardsEndToEnd: a planner splits the card into two children,
-// which run their own flow from their lane and mark themselves done; the
-// parent waits and moves on once both are.
+// TestChildCardsEndToEnd: a planner splits the card into two children
+// with create_cards, which start in the initial lane of their type, run
+// their own flow from there and mark themselves done; the parent waits and
+// moves on once both are.
 func TestChildCardsEndToEnd(t *testing.T) {
 	s := newStack(t)
 	ctx := context.Background()
@@ -397,12 +398,15 @@ func TestChildCardsEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := s.board.UpdateCardType(ctx, s.typ, domain.CardTypeInput{Name: "task", InitialLaneID: &kids.ID}); err != nil {
+		t.Fatal(err)
+	}
 	mark := domain.Node{ID: "mark", Type: domain.NodeSetProperty, Config: json.RawMessage(`{"key":"dev","value":"ok"}`)}
 	s.flowOn(t, "impl", kids.ID, []domain.Node{s.agent("Implement it [done:implemented]"), mark, s.moveTo(s.done)})
-	planner := s.agentWith("plan", "Split it [cards:API,Web] [done:split]", `"output_schema":`+domain.ChildCardsSchema)
-	create := domain.Node{ID: "create", Type: domain.NodeCreateCards, Config: fmt.Appendf(nil, `{"lane_id":%q,"card_type_id":%q}`, kids.ID, s.typ)}
+	planner := s.agentWith("plan", "Split it [cards:API,Web] [done:split]",
+		fmt.Sprintf(`"allowed_tools":["mcp__orquestrator__create_cards"],"card_type_ids":[%q]`, s.typ))
 	wait := domain.Node{ID: "wait", Type: domain.NodeWaitChildren, Config: json.RawMessage(`{"property_key":"dev","property_value":"ok"}`)}
-	s.flow(t, []domain.Node{planner, create, wait, s.moveTo(s.done)})
+	s.flow(t, []domain.Node{planner, wait, s.moveTo(s.done)})
 	card := s.startCard(t)
 
 	run := s.waitRun(t, card, domain.RunDone)

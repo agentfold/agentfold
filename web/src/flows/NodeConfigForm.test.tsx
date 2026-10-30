@@ -12,7 +12,7 @@ const dev = agentProfile('dev')
 const fresh = agentProfile('fresh', { ready: false })
 const sg = mcpServer('sg')
 const bug = cardType('bug')
-const task = cardType('task')
+const task = cardType('task', { initial_lane_id: todo.id })
 
 /** Renders the form for a node and exposes the latest config. */
 function setup(kind: NodeKind, initial: StepConfig, mcpServers = [sg]) {
@@ -228,30 +228,9 @@ describe('NodeConfigForm', () => {
     expect(result.config).toEqual({})
   })
 
-  it('configures the cards to create', async () => {
-    const result = setup('create_cards', {})
-    expect(screen.getByText(/Cria um card filho/)).toBeInTheDocument()
-    await userEvent.selectOptions(
-      screen.getByLabelText('Baia dos cards criados'),
-      'Todo',
-    )
-    await userEvent.selectOptions(
-      screen.getByLabelText('Tipo dos cards criados'),
-      'task',
-    )
-    expect(result.config).toEqual({ lane_id: todo.id, card_type_id: task.id })
-    await userEvent.selectOptions(
-      screen.getByLabelText('Baia dos cards criados'),
-      'Escolha a baia',
-    )
-    await userEvent.selectOptions(
-      screen.getByLabelText('Tipo dos cards criados'),
-      'Escolha o tipo',
-    )
-    expect(result.config).toEqual({
-      lane_id: undefined,
-      card_type_id: undefined,
-    })
+  it('tells the create cards node is retired', () => {
+    setup('create_cards', {})
+    expect(screen.getByText(/Este nó foi aposentado/)).toBeInTheDocument()
   })
 
   it('configures the wait for the children', async () => {
@@ -292,30 +271,18 @@ describe('NodeConfigForm', () => {
     expect(result.config).toEqual({})
   })
 
-  it('fills in the child cards schema', async () => {
-    const result = setup('agent', {})
-    await userEvent.type(screen.getByLabelText(/Schema de saída/), '[[')
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Usar o schema de cards filhos' }),
-    )
-    expect(screen.queryByText(/JSON inválido/)).not.toBeInTheDocument()
-    expect(
-      screen.getByLabelText<HTMLTextAreaElement>(/Schema de saída/).value,
-    ).toContain('"cards"')
-    expect(result.config).toMatchObject({
-      output_schema: { required: ['cards'] },
-    })
-  })
-
-  it('grants the board task tools', async () => {
+  it('grants the board tools', async () => {
     const result = setup('agent', { prompt: 'p', allowed_tools: ['Read'] })
-    await userEvent.click(screen.getByLabelText('Criar tasks (cards filhos)'))
-    await userEvent.click(screen.getByLabelText('Ver as tasks'))
+    expect(
+      screen.queryByText('Tipos dos cards criados'),
+    ).not.toBeInTheDocument()
+    await userEvent.click(screen.getByLabelText('Criar cards filhos'))
+    await userEvent.click(screen.getByLabelText('Ver os cards filhos'))
     expect(result.config).toMatchObject({
       allowed_tools: [
         'Read',
-        'mcp__orquestrator__create_tasks',
-        'mcp__orquestrator__list_tasks',
+        'mcp__orquestrator__create_cards',
+        'mcp__orquestrator__list_cards',
       ],
     })
     // The text field lists the other tools and keeps the granted ones.
@@ -326,14 +293,28 @@ describe('NodeConfigForm', () => {
       allowed_tools: [
         'Read',
         'Edit',
-        'mcp__orquestrator__create_tasks',
-        'mcp__orquestrator__list_tasks',
+        'mcp__orquestrator__create_cards',
+        'mcp__orquestrator__list_cards',
       ],
     })
-    await userEvent.click(screen.getByLabelText('Criar tasks (cards filhos)'))
+    await userEvent.click(screen.getByLabelText('Criar cards filhos'))
     expect(result.config).toMatchObject({
-      allowed_tools: ['Read', 'Edit', 'mcp__orquestrator__list_tasks'],
+      allowed_tools: ['Read', 'Edit', 'mcp__orquestrator__list_cards'],
     })
+  })
+
+  it('picks the card types the agent creates', async () => {
+    const result = setup('agent', {
+      prompt: 'p',
+      allowed_tools: ['mcp__orquestrator__create_cards'],
+    })
+    const types = screen.getByRole('group', { name: 'Tipos dos cards criados' })
+    expect(within(types).getByText('sem baia inicial')).toBeInTheDocument()
+    await userEvent.click(within(types).getByLabelText(/bug/))
+    await userEvent.click(within(types).getByLabelText('task'))
+    expect(result.config).toMatchObject({ card_type_ids: [bug.id, task.id] })
+    await userEvent.click(within(types).getByLabelText(/bug/))
+    expect(result.config).toMatchObject({ card_type_ids: [task.id] })
   })
 
   it('sets a property', async () => {

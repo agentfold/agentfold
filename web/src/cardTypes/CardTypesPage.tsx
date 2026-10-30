@@ -28,7 +28,7 @@ export function CardTypesPage() {
           <h2 className="text-base font-semibold">Tipos de card</h2>
           <p className="text-sm text-slate-500">
             Classificam os cards; os gatilhos dos fluxos podem filtrar por tipo.
-            Agentes só criam tasks dos tipos com baia inicial.
+            Agentes só criam cards filhos dos tipos com baia inicial.
           </p>
         </div>
         <Button
@@ -55,7 +55,7 @@ export function CardTypesPage() {
               <p className="flex-1 text-sm font-medium">{t.name}</p>
               {t.initial_lane_id && (
                 <span className="text-xs text-slate-500">
-                  Tasks em{' '}
+                  Nasce em{' '}
                   {lanes.data?.find((l) => l.id === t.initial_lane_id)?.name}
                 </span>
               )}
@@ -132,7 +132,7 @@ function CardTypeForm({ cardType, lanes, onClose }: FormProps) {
         <TextField label="Nome" value={name} onChange={setName} autoFocus />
         <ColorField value={color} onChange={setColor} />
         <SelectField
-          label="Baia inicial das tasks"
+          label="Baia inicial"
           value={lane}
           onChange={setLane}
           options={[
@@ -141,8 +141,8 @@ function CardTypeForm({ cardType, lanes, onClose }: FormProps) {
           ]}
         />
         <p className="text-xs text-slate-500">
-          Onde nascem as tasks que agentes criam deste tipo. Nenhuma: agentes
-          não criam tasks dele.
+          Onde nascem os cards que agentes criam deste tipo. Nenhuma: agentes
+          não criam cards dele.
         </p>
         <ErrorMessage error={save.error} />
         <div className="flex justify-end gap-2">

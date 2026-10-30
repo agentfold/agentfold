@@ -1038,7 +1038,10 @@ export interface components {
             mcp_server_ids?: string[];
             /** @description Initial prompt. Required to publish. */
             prompt?: string;
+            /** @description Tools the agent may use. The board tools create_cards, list_cards, retry_card and cancel_card only exist when listed (mcp__orquestrator__<name>, or mcp__orquestrator for all). */
             allowed_tools?: string[];
+            /** @description Card types the agent creates child cards of, with create_cards (in the initial lane of each type). Required to publish with create_cards listed. */
+            card_type_ids?: string[];
             disallowed_tools?: string[];
             /** @description JSON Schema the agent's structured output must satisfy. */
             output_schema?: {
@@ -1119,7 +1122,7 @@ export interface components {
              */
             lane_id?: string;
         };
-        /** @description Creates a child card for each item of the "cards" list the node before hands on (an agent's structured output, with title, description and project by name). */
+        /** @description Retired: agents create child cards with the create_cards tool. Versions published with it still create a child card for each item of the "cards" list the node before hands on; drafts with it do not publish. */
         CreateCardsConfig: {
             /**
              * Format: uuid

@@ -39,7 +39,7 @@ export const kindLabels: Record<NodeKind, string> = {
   trigger: 'Gatilho',
   agent: 'Agente',
   move_card: 'Mover card',
-  create_cards: 'Criar cards',
+  create_cards: 'Criar cards (aposentado)',
   wait_children: 'Esperar filhos',
   human_review: 'Revisão humana',
   set_property: 'Definir propriedade',

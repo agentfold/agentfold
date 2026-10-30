@@ -122,7 +122,7 @@ type Querier interface {
 	// back to the agent.
 	ReviewRequest(ctx context.Context, nodeRunID *uuid.UUID) (ArtifactMessage, error)
 	SetAgentCredential(ctx context.Context, arg SetAgentCredentialParams) (AgentProfile, error)
-	// SetCardCanceled marks a card canceled as a task, or (canceled false)
+	// SetCardCanceled marks a child card canceled, or (canceled false)
 	// not anymore.
 	SetCardCanceled(ctx context.Context, arg SetCardCanceledParams) (Card, error)
 	SetCardProperty(ctx context.Context, arg SetCardPropertyParams) (Card, error)

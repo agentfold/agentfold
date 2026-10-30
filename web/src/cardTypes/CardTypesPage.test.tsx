@@ -44,17 +44,17 @@ describe('CardTypesPage', () => {
     })
   })
 
-  it('sets the lane tasks of the type start in', async () => {
+  it('sets the lane the cards agents create of the type start in', async () => {
     const todo = lane('Todo', 0)
     const backend = createFakeBackend({
       lanes: [todo],
       cardTypes: [cardType('task', { initial_lane_id: todo.id })],
     })
     renderWithApi(<CardTypesPage />, backend)
-    expect(await screen.findByText('Tasks em Todo')).toBeInTheDocument()
+    expect(await screen.findByText('Nasce em Todo')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Editar task' }))
     const dialog = screen.getByRole('dialog', { name: 'Editar tipo de card' })
-    const select = within(dialog).getByLabelText('Baia inicial das tasks')
+    const select = within(dialog).getByLabelText('Baia inicial')
     expect(select).toHaveValue(todo.id)
     await userEvent.selectOptions(select, 'Nenhuma')
     await userEvent.click(
@@ -68,7 +68,7 @@ describe('CardTypesPage', () => {
     const create = screen.getByRole('dialog', { name: 'Novo tipo de card' })
     await userEvent.type(within(create).getByLabelText('Nome'), 'bug')
     await userEvent.selectOptions(
-      within(create).getByLabelText('Baia inicial das tasks'),
+      within(create).getByLabelText('Baia inicial'),
       'Todo',
     )
     await userEvent.click(
@@ -89,7 +89,7 @@ describe('CardTypesPage', () => {
     await userEvent.click(
       await screen.findByRole('button', { name: 'Editar task' }),
     )
-    const select = screen.getByLabelText('Baia inicial das tasks')
+    const select = screen.getByLabelText('Baia inicial')
     expect(within(select).getAllByRole('option')).toHaveLength(1)
   })
 

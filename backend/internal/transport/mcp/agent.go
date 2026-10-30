@@ -70,7 +70,7 @@ func cardWithArtifacts(ctx context.Context, board Board, id uuid.UUID) (cardArti
 }
 
 // agentServer exposes the tools of the agent running a node.
-func agentServer(board Board, run service.AgentRun) *sdk.Server {
+func agentServer(ctx context.Context, board Board, run service.AgentRun) *sdk.Server {
 	s := sdk.NewServer(implementation, nil)
 	addTool(s, "get_card", "The card you are working on, with its artifacts (latest versions), and its parent card with the parent's artifacts, if it has one.",
 		func(ctx context.Context, _ *sdk.CallToolRequest, _ noInput) (*sdk.CallToolResult, agentCardView, error) {
@@ -103,10 +103,9 @@ func agentServer(board Board, run service.AgentRun) *sdk.Server {
 			}
 			return text("Summary recorded."), nil, nil
 		})
-	addCardTypes(s, board)
 	var cfg domain.AgentConfig
 	_ = json.Unmarshal(run.Node.Config, &cfg) // published configs are valid
-	addTasks(s, board, run, cfg)
+	addCards(ctx, s, board, run, cfg)
 	if cfg.HasOutputSchema() {
 		addSubmitOutput(s, board, run, cfg.OutputSchema)
 	}

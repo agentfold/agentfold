@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -12,25 +14,27 @@ import (
 	"orquestrator/internal/events"
 )
 
-// TaskSpec is a task an agent creates: a child card of its card, of the
-// card type named Type, which starts in the type's initial lane.
-type TaskSpec struct {
+// CardSpec is a child card an agent creates of its card, of the card type
+// named Type (optional when the node creates a single type), which starts
+// in the type's initial lane.
+type CardSpec struct {
 	domain.ChildCardSpec
 	Type string
 }
 
-// Task is a child card as the agent that splits its card sees it.
-type Task struct {
+// Child is a child card as the agent that splits its card sees it.
+type Child struct {
 	Card     domain.Card
 	TypeName string
 	LaneName string
-	// LastRun is the last flow run of the task, nil before any.
-	LastRun *TaskRun
+	// LastRun is the last flow run of the card, nil before any.
+	LastRun *ChildRun
 }
 
-// TaskRun is how the last flow run of a task went. Result is the last
-// message an agent of the run handed on (a gateway's feedback included).
-type TaskRun struct {
+// ChildRun is how the last flow run of a child card went. Result is the
+// last message an agent of the run handed on (a gateway's feedback
+// included).
+type ChildRun struct {
 	FlowName string
 	Status   domain.RunStatus
 	Error    string
@@ -50,25 +54,35 @@ type childCardPayload struct {
 	Project string    `json:"project,omitempty"`
 }
 
-// CreateTasks creates the tasks of an agent as child cards of its card,
+// CardTypesOf returns the card types the agent of a run creates cards of,
+// those of its node that still exist.
+func (s *Service) CardTypesOf(ctx context.Context, run AgentRun) ([]domain.CardType, error) {
+	var cfg domain.AgentConfig
+	_ = json.Unmarshal(run.Node.Config, &cfg) // published configs are valid
+	types, err := s.repo.ListCardTypes(ctx)
+	return slices.DeleteFunc(types, func(t domain.CardType) bool { return !slices.Contains(cfg.CardTypeIDs, t.ID) }), err
+}
+
+// CreateCards creates the cards of an agent as child cards of its card,
 // all or none, and returns them in the order of specs. The error messages
 // are meant for the agent.
-func (s *Service) CreateTasks(ctx context.Context, run AgentRun, specs []TaskSpec) ([]domain.Card, error) {
+func (s *Service) CreateCards(ctx context.Context, run AgentRun, specs []CardSpec) ([]domain.Card, error) {
 	if len(specs) == 0 {
-		return nil, errors.New("informe ao menos uma task")
+		return nil, errors.New("informe ao menos um card")
 	}
-	types, err := s.repo.ListCardTypes(ctx)
+	types, err := s.CardTypesOf(ctx, run)
 	if err != nil {
 		return nil, err
+	}
+	if len(types) == 0 {
+		return nil, errors.New("nenhum dos tipos de card deste passo existe mais: peça a um humano para revisar o fluxo")
 	}
 	projects, err := s.repo.ListProjects(ctx)
 	if err != nil {
 		return nil, err
 	}
-	byName := map[string]domain.CardType{}
 	names := make([]string, len(types))
 	for i, t := range types {
-		byName[t.Name] = t
 		names[i] = t.Name
 	}
 	children := make([]domain.ChildCardSpec, len(specs))
@@ -77,10 +91,14 @@ func (s *Service) CreateTasks(ctx context.Context, run AgentRun, specs []TaskSpe
 	}
 	cards, err := domain.ChildCards(run.FlowRun.CardID, children, projects, func(i int) (domain.Placement, error) {
 		name := strings.TrimSpace(specs[i].Type)
-		t, ok := byName[name]
-		if !ok {
-			return domain.Placement{}, fmt.Errorf("a task %q usa o tipo %q, que não existe (tipos: %s)", children[i].Title, name, strings.Join(names, ", "))
+		k := slices.IndexFunc(types, func(t domain.CardType) bool { return t.Name == name })
+		switch {
+		case name == "" && len(types) == 1:
+			k = 0
+		case k < 0:
+			return domain.Placement{}, fmt.Errorf("o card %q usa o tipo %q, mas este passo cria cards dos tipos: %s", children[i].Title, name, strings.Join(names, ", "))
 		}
+		t := types[k]
 		if t.InitialLaneID == nil {
 			return domain.Placement{}, fmt.Errorf("o tipo %q não tem baia inicial: peça a um humano para configurá-la no cadastro de tipos de card", t.Name)
 		}
@@ -92,7 +110,7 @@ func (s *Service) CreateTasks(ctx context.Context, run AgentRun, specs []TaskSpe
 	created, err := s.repo.CreateChildCards(ctx, cards)
 	switch {
 	case errors.Is(err, domain.ErrUnknownDependency):
-		return nil, errors.New("uma task depende de um id que não é de nenhum card")
+		return nil, errors.New("um card depende de um id que não é de nenhum card")
 	case err != nil:
 		return nil, err
 	}
@@ -104,9 +122,9 @@ func (s *Service) CreateTasks(ctx context.Context, run AgentRun, specs []TaskSpe
 	return created, s.timeline(ctx, run.FlowRun.CardID, domain.ChildrenCreated, payload)
 }
 
-// ListTasks returns the child cards of the card of an agent, with how
+// ListChildren returns the child cards of the card of an agent, with how
 // their last flow run went.
-func (s *Service) ListTasks(ctx context.Context, run AgentRun) ([]Task, error) {
+func (s *Service) ListChildren(ctx context.Context, run AgentRun) ([]Child, error) {
 	children, err := s.repo.ListChildCards(ctx, run.FlowRun.CardID)
 	if err != nil {
 		return nil, err
@@ -126,9 +144,9 @@ func (s *Service) ListTasks(ctx context.Context, run AgentRun) ([]Task, error) {
 	for _, l := range lanes {
 		names[l.ID] = l.Name
 	}
-	out := make([]Task, len(children))
+	out := make([]Child, len(children))
 	for i, c := range children {
-		out[i] = Task{Card: c, TypeName: names[c.CardTypeID], LaneName: names[c.LaneID]}
+		out[i] = Child{Card: c, TypeName: names[c.CardTypeID], LaneName: names[c.LaneID]}
 		if out[i].LastRun, err = s.lastRun(ctx, c.ID); err != nil {
 			return nil, err
 		}
@@ -137,7 +155,7 @@ func (s *Service) ListTasks(ctx context.Context, run AgentRun) ([]Task, error) {
 }
 
 // lastRun tells how the last flow run of a card went, nil before any.
-func (s *Service) lastRun(ctx context.Context, cardID uuid.UUID) (*TaskRun, error) {
+func (s *Service) lastRun(ctx context.Context, cardID uuid.UUID) (*ChildRun, error) {
 	runs, err := s.repo.ListCardFlowRuns(ctx, cardID)
 	if err != nil || len(runs) == 0 {
 		return nil, err
@@ -147,23 +165,23 @@ func (s *Service) lastRun(ctx context.Context, cardID uuid.UUID) (*TaskRun, erro
 	if err != nil {
 		return nil, err
 	}
-	return &TaskRun{FlowName: last.FlowName, Status: last.Status, Error: last.Error, Result: domain.LastMessage(nodes)}, nil
+	return &ChildRun{FlowName: last.FlowName, Status: last.Status, Error: last.Error, Result: domain.LastMessage(nodes)}, nil
 }
 
-// task returns a child card of the card of an agent.
-func (s *Service) task(ctx context.Context, run AgentRun, id uuid.UUID) (domain.Card, error) {
+// child returns a child card of the card of an agent.
+func (s *Service) child(ctx context.Context, run AgentRun, id uuid.UUID) (domain.Card, error) {
 	card, err := s.repo.GetCard(ctx, id)
 	if errors.Is(err, domain.ErrNotFound) || err == nil && (card.ParentCardID == nil || *card.ParentCardID != run.FlowRun.CardID) {
-		return domain.Card{}, fmt.Errorf("o card %s não é uma task deste card (veja list_tasks)", id)
+		return domain.Card{}, fmt.Errorf("o card %s não é filho deste card (veja list_cards)", id)
 	}
 	return card, err
 }
 
-// RetryTask runs again the flow whose last run of a task failed or was
-// canceled, after taking back its cancel. A description replaces the
-// task's own, to tell what to do differently.
-func (s *Service) RetryTask(ctx context.Context, run AgentRun, id uuid.UUID, description string) (domain.Card, error) {
-	card, err := s.task(ctx, run, id)
+// RetryChild runs again the flow whose last run of a child card failed
+// or was canceled, after taking back its cancel. A description replaces
+// the card's own, to tell what to do differently.
+func (s *Service) RetryChild(ctx context.Context, run AgentRun, id uuid.UUID, description string) (domain.Card, error) {
+	card, err := s.child(ctx, run, id)
 	if err != nil {
 		return domain.Card{}, err
 	}
@@ -172,9 +190,9 @@ func (s *Service) RetryTask(ctx context.Context, run AgentRun, id uuid.UUID, des
 	case err != nil:
 		return domain.Card{}, err
 	case len(runs) == 0:
-		return domain.Card{}, errors.New("a task ainda não rodou nenhum fluxo: não há o que tentar de novo")
+		return domain.Card{}, errors.New("o card ainda não rodou nenhum fluxo: não há o que tentar de novo")
 	case runs[0].Status.Active():
-		return domain.Card{}, errors.New("a task ainda está rodando: espere ela terminar ou cancele-a")
+		return domain.Card{}, errors.New("o card ainda está rodando: espere ele terminar ou cancele-o")
 	}
 	if description = strings.TrimSpace(description); description != "" {
 		card, err = s.UpdateCard(ctx, id, domain.CardInput{
@@ -188,10 +206,10 @@ func (s *Service) RetryTask(ctx context.Context, run AgentRun, id uuid.UUID, des
 	return changed(s, "card.updated", card, err)
 }
 
-// CancelTask marks a task canceled, so WaitChildren no longer counts it,
-// and cancels its active flow run, if any.
-func (s *Service) CancelTask(ctx context.Context, run AgentRun, id uuid.UUID) (domain.Card, error) {
-	if _, err := s.task(ctx, run, id); err != nil {
+// CancelChild marks a child card canceled, so WaitChildren no longer
+// counts it, and cancels its active flow run, if any.
+func (s *Service) CancelChild(ctx context.Context, run AgentRun, id uuid.UUID) (domain.Card, error) {
+	if _, err := s.child(ctx, run, id); err != nil {
 		return domain.Card{}, err
 	}
 	card, err := s.repo.CancelCard(ctx, id)

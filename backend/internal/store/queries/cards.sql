@@ -43,7 +43,7 @@ SELECT * FROM cards WHERE id = ANY(sqlc.arg(ids)::uuid[]) ORDER BY created_at, i
 -- name: ListDependentCards :many
 SELECT * FROM cards WHERE sqlc.arg(id)::uuid = ANY(depends_on) ORDER BY created_at, id;
 
--- SetCardCanceled marks a card canceled as a task, or (canceled false)
+-- SetCardCanceled marks a child card canceled, or (canceled false)
 -- not anymore.
 -- name: SetCardCanceled :one
 UPDATE cards SET canceled_at = CASE WHEN sqlc.arg(canceled)::boolean THEN now() END, updated_at = now()

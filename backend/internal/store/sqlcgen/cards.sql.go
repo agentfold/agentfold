@@ -395,7 +395,7 @@ type SetCardCanceledParams struct {
 	ID       uuid.UUID
 }
 
-// SetCardCanceled marks a card canceled as a task, or (canceled false)
+// SetCardCanceled marks a child card canceled, or (canceled false)
 // not anymore.
 func (q *Queries) SetCardCanceled(ctx context.Context, arg SetCardCanceledParams) (Card, error) {
 	row := q.db.QueryRow(ctx, setCardCanceled, arg.Canceled, arg.ID)

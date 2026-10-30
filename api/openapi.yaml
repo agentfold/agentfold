@@ -1291,7 +1291,18 @@ components:
           description: Initial prompt. Required to publish.
         allowed_tools:
           type: array
+          description: >
+            Tools the agent may use. The board tools create_cards, list_cards,
+            retry_card and cancel_card only exist when listed
+            (mcp__orquestrator__<name>, or mcp__orquestrator for all).
           items: { type: string }
+        card_type_ids:
+          type: array
+          description: >
+            Card types the agent creates child cards of, with create_cards
+            (in the initial lane of each type). Required to publish with
+            create_cards listed.
+          items: { type: string, format: uuid }
         disallowed_tools:
           type: array
           items: { type: string }
@@ -1398,9 +1409,10 @@ components:
     CreateCardsConfig:
       type: object
       description: >
-        Creates a child card for each item of the "cards" list the node
-        before hands on (an agent's structured output, with title,
-        description and project by name).
+        Retired: agents create child cards with the create_cards tool.
+        Versions published with it still create a child card for each item
+        of the "cards" list the node before hands on; drafts with it do not
+        publish.
       properties:
         lane_id:
           type: string

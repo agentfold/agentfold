@@ -145,6 +145,12 @@ func TestConfigProblems(t *testing.T) {
 		{"agent with invalid schema", NodeAgent, `{` + profile + `,"prompt":"p","output_schema":{"type":1}}`, []string{"o schema de saída é inválido: "}},
 		{"agent with null schema", NodeAgent, `{` + profile + `,"prompt":"p","output_schema":null}`, nil},
 		{"agent with bad JSON", NodeAgent, `[]`, []string{"configuração inválida"}},
+		{"agent creating cards", NodeAgent, `{` + profile + `,"prompt":"p","allowed_tools":["mcp__orquestrator__create_cards"],"card_type_ids":["` + typeID.String() + `"]}`, nil},
+		{"agent creating cards without types", NodeAgent, `{` + profile + `,"prompt":"p","allowed_tools":["mcp__orquestrator__create_cards"]}`,
+			[]string{"escolha os tipos de card que o agente cria"}},
+		{"agent with the whole board server", NodeAgent, `{` + profile + `,"prompt":"p","allowed_tools":["mcp__orquestrator"]}`, nil},
+		{"agent with a missing card type", NodeAgent, `{` + profile + `,"prompt":"p","card_type_ids":["` + uuid.NewString() + `"]}`,
+			[]string{"um dos tipos de card que o agente cria não existe mais"}},
 		{"gateway without rounds", NodeAgent, `{` + profile + `,"prompt":"p","gateway":true}`, []string{
 			"o gateway precisa de um máximo de rodadas de pelo menos 1",
 		}},
@@ -157,9 +163,7 @@ func TestConfigProblems(t *testing.T) {
 		}},
 		{"move without lane", NodeMoveCard, `{}`, []string{"escolha a baia de destino"}},
 		{"move with bad JSON", NodeMoveCard, `[]`, []string{"configuração inválida"}},
-		{"create cards", NodeCreateCards, `{"lane_id":"` + laneID.String() + `","card_type_id":"` + typeID.String() + `"}`, nil},
-		{"create cards without config", NodeCreateCards, `{}`, []string{"escolha a baia dos cards criados", "escolha o tipo dos cards criados"}},
-		{"create cards with bad JSON", NodeCreateCards, `[]`, []string{"configuração inválida"}},
+		{"create cards", NodeCreateCards, `{"lane_id":"` + laneID.String() + `","card_type_id":"` + typeID.String() + `"}`, []string{"o nó Criar cards foi aposentado"}},
 		{"wait children", NodeWaitChildren, `{"mode":"all_finished","property_key":"dev","property_value":"ok"}`, nil},
 		{"wait children failing fast", NodeWaitChildren, `{"mode":"all_succeed","property_key":"dev","property_value":"ok"}`, nil},
 		{"wait children by lane", NodeWaitChildren, `{"done_lane_id":"` + laneID.String() + `"}`, []string{"informe a chave da propriedade", "informe o valor da propriedade"}},
@@ -281,13 +285,6 @@ func TestChildCardsFrom(t *testing.T) {
 			t.Errorf("%q: %v", in, err)
 		}
 	}
-	var schema map[string]any
-	if json.Unmarshal([]byte(ChildCardsSchema), &schema) != nil {
-		t.Fatal("ChildCardsSchema is not JSON")
-	}
-	if _, err := compileSchema(json.RawMessage(ChildCardsSchema)); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestChildCards(t *testing.T) {
@@ -335,11 +332,17 @@ func TestChildCards(t *testing.T) {
 }
 
 func TestAllowsBoardTool(t *testing.T) {
-	c := AgentConfig{AllowedTools: []string{"Read", "mcp__orquestrator__create_tasks"}}
-	if !c.AllowsBoardTool("create_tasks") || c.AllowsBoardTool("list_tasks") {
+	c := AgentConfig{AllowedTools: []string{"Read", "mcp__orquestrator__create_cards"}}
+	if !c.AllowsBoardTool("create_cards") || c.AllowsBoardTool("list_cards") {
 		t.Fatal("a listed tool")
 	}
-	if c := (AgentConfig{AllowedTools: []string{"mcp__orquestrator"}}); !c.AllowsBoardTool("list_tasks") {
+	if c := (AgentConfig{AllowedTools: []string{"mcp__orquestrator"}}); !c.AllowsBoardTool("list_cards") {
 		t.Fatal("the whole server")
+	}
+	if c.CreatesCards() {
+		t.Fatal("create_cards without card types")
+	}
+	if c.CardTypeIDs = []uuid.UUID{uuid.New()}; !c.CreatesCards() {
+		t.Fatal("create_cards with card types")
 	}
 }

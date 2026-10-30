@@ -6,7 +6,6 @@ import type {
   ArtifactSpec,
   McpServer,
   CardType,
-  CreateCardsConfig,
   Lane,
   MoveCardConfig,
   TriggerConfig,
@@ -18,13 +17,7 @@ import type {
 import { agentKindLabels } from '../agents/labels'
 import { Button } from '../components/Button'
 import { SelectField, TextArea, TextField } from '../components/Field'
-import {
-  childCardsSchema,
-  formatTools,
-  parseCount,
-  parseSchema,
-  parseTools,
-} from './config'
+import { formatTools, parseCount, parseSchema, parseTools } from './config'
 import type { StepConfig, StepData } from './graph'
 
 interface Props {
@@ -59,6 +52,7 @@ export function NodeConfigForm({
       return (
         <AgentForm
           config={data.config as AgentConfig}
+          cardTypes={cardTypes}
           profiles={profiles}
           mcpServers={mcpServers}
           onChange={onChange}
@@ -75,39 +69,15 @@ export function NodeConfigForm({
           options={laneOptions(lanes)}
         />
       )
-    case 'create_cards': {
-      const config = data.config as CreateCardsConfig
+    case 'create_cards':
       return (
-        <div className="flex flex-col gap-3">
-          <p className="text-sm text-slate-500">
-            Cria um card filho para cada item da lista <code>cards</code> que o
-            nó anterior entrega (a saída estruturada de um agente com o schema
-            de cards filhos). O projeto de cada card vai pelo nome, e{' '}
-            <code>depends_on</code> liga o card ao <code>ref</code> de outro da
-            lista ou ao id de um card existente.
-          </p>
-          <SelectField
-            label="Baia dos cards criados"
-            value={config.lane_id ?? ''}
-            onChange={(laneId) => {
-              onChange({ ...config, lane_id: laneId || undefined })
-            }}
-            options={laneOptions(lanes)}
-          />
-          <SelectField
-            label="Tipo dos cards criados"
-            value={config.card_type_id ?? ''}
-            onChange={(typeId) => {
-              onChange({ ...config, card_type_id: typeId || undefined })
-            }}
-            options={[
-              { value: '', label: 'Escolha o tipo' },
-              ...cardTypes.map((t) => ({ value: t.id, label: t.name })),
-            ]}
-          />
-        </div>
+        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Este nó foi aposentado: as versões já publicadas com ele continuam
+          rodando, mas um rascunho com ele não publica. Para criar cards filhos,
+          libere &quot;Criar cards filhos&quot; nas tools do board do agente que
+          planeja e escolha os tipos.
+        </p>
       )
-    }
     case 'wait_children': {
       const config = data.config as WaitChildrenConfig
       return (
@@ -344,12 +314,19 @@ function TriggerForm({ config, lanes, cardTypes, onChange }: TriggerFormProps) {
 
 interface AgentFormProps {
   config: AgentConfig
+  cardTypes: CardType[]
   profiles: AgentProfile[]
   mcpServers: McpServer[]
   onChange: (config: AgentConfig) => void
 }
 
-function AgentForm({ config, profiles, mcpServers, onChange }: AgentFormProps) {
+function AgentForm({
+  config,
+  cardTypes,
+  profiles,
+  mcpServers,
+  onChange,
+}: AgentFormProps) {
   const selected = new Set(config.mcp_server_ids ?? [])
   return (
     <div className="flex flex-col gap-3">
@@ -387,7 +364,7 @@ function AgentForm({ config, profiles, mcpServers, onChange }: AgentFormProps) {
           onChange({ ...config, prompt })
         }}
       />
-      <ToolFields config={config} onChange={onChange} />
+      <ToolFields config={config} cardTypes={cardTypes} onChange={onChange} />
       <div className="grid grid-cols-2 gap-3">
         <TextField
           label="Modelo"
@@ -577,26 +554,27 @@ function ProfileField<C extends AgentConfig>({
   )
 }
 
-interface ToolFieldsProps<C extends AgentConfig> {
-  config: C
-  onChange: (config: C) => void
+interface ToolFieldsProps {
+  config: AgentConfig
+  cardTypes: CardType[]
+  onChange: (config: AgentConfig) => void
 }
 
 /** The board tools a node only has when its allowed tools list them. */
 const boardTools = [
-  { name: 'create_tasks', label: 'Criar tasks (cards filhos)' },
-  { name: 'list_tasks', label: 'Ver as tasks' },
-  { name: 'retry_task', label: 'Rodar uma task de novo' },
-  { name: 'cancel_task', label: 'Cancelar uma task' },
+  { name: 'create_cards', label: 'Criar cards filhos' },
+  { name: 'list_cards', label: 'Ver os cards filhos' },
+  { name: 'retry_card', label: 'Rodar um card filho de novo' },
+  { name: 'cancel_card', label: 'Cancelar um card filho' },
 ].map((t) => ({ ...t, tool: `mcp__orquestrator__${t.name}` }))
+
+const createCardsTool = 'mcp__orquestrator__create_cards'
 
 const isBoardTool = (tool: string) => boardTools.some((t) => t.tool === tool)
 
-function ToolFields<C extends AgentConfig>({
-  config,
-  onChange,
-}: ToolFieldsProps<C>) {
+function ToolFields({ config, cardTypes, onChange }: ToolFieldsProps) {
   const allowed = config.allowed_tools ?? []
+  const types = new Set(config.card_type_ids ?? [])
   const granted = allowed.filter(isBoardTool)
   const others = allowed.filter((tool) => !isBoardTool(tool))
   return (
@@ -606,8 +584,8 @@ function ToolFields<C extends AgentConfig>({
           Tools do board
         </legend>
         <p className="text-xs text-slate-500">
-          Com elas o agente divide o card em tasks, cards filhos que seguem os
-          fluxos do tipo delas.
+          Com elas o agente divide o card em cards filhos, que seguem os fluxos
+          do tipo deles.
         </p>
         {boardTools.map((t) => (
           <label key={t.name} className="flex items-center gap-2 text-sm">
@@ -625,6 +603,35 @@ function ToolFields<C extends AgentConfig>({
           </label>
         ))}
       </fieldset>
+      {granted.includes(createCardsTool) && (
+        <fieldset className="flex flex-col gap-1">
+          <legend className="text-xs font-medium text-slate-600">
+            Tipos dos cards criados
+          </legend>
+          <p className="text-xs text-slate-500">
+            O agente só cria cards destes tipos, cada um na baia inicial do
+            tipo. Com um só, ele nem escolhe.
+          </p>
+          {cardTypes.map((t) => (
+            <label key={t.id} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={types.has(t.id)}
+                onChange={(e) => {
+                  const ids = e.target.checked
+                    ? [...types, t.id]
+                    : [...types].filter((id) => id !== t.id)
+                  onChange({ ...config, card_type_ids: ids })
+                }}
+              />
+              {t.name}
+              {!t.initial_lane_id && (
+                <span className="text-xs text-amber-700">sem baia inicial</span>
+              )}
+            </label>
+          ))}
+        </fieldset>
+      )}
       <ListField
         label="Tools liberadas"
         placeholder="Read, Edit, Bash(go test:*)"
@@ -714,17 +721,6 @@ function SchemaField({ schema, onChange }: SchemaFieldProps) {
           JSON inválido: precisa ser um objeto.
         </p>
       )}
-      <Button
-        variant="ghost"
-        className="self-start"
-        onClick={() => {
-          setText(JSON.stringify(childCardsSchema, null, 2))
-          setInvalid(false)
-          onChange(childCardsSchema)
-        }}
-      >
-        Usar o schema de cards filhos
-      </Button>
     </div>
   )
 }

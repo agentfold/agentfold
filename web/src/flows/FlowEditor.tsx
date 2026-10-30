@@ -52,7 +52,6 @@ export function FlowEditor({ flowId }: { flowId: string }) {
 const palette: NodeKind[] = [
   'agent',
   'move_card',
-  'create_cards',
   'wait_children',
   'human_review',
   'set_property',

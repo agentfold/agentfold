@@ -563,9 +563,13 @@ func (e WaitChildrenNodeType) Valid() bool {
 
 // AgentConfig Runs an agent session on the card's workspace.
 type AgentConfig struct {
-	AllowedTools    *[]string       `json:"allowed_tools,omitempty"`
-	Artifacts       *[]ArtifactSpec `json:"artifacts,omitempty"`
-	DisallowedTools *[]string       `json:"disallowed_tools,omitempty"`
+	// AllowedTools Tools the agent may use. The board tools create_cards, list_cards, retry_card and cancel_card only exist when listed (mcp__orquestrator__<name>, or mcp__orquestrator for all).
+	AllowedTools *[]string       `json:"allowed_tools,omitempty"`
+	Artifacts    *[]ArtifactSpec `json:"artifacts,omitempty"`
+
+	// CardTypeIds Card types the agent creates child cards of, with create_cards (in the initial lane of each type). Required to publish with create_cards listed.
+	CardTypeIds     *[]openapi_types.UUID `json:"card_type_ids,omitempty"`
+	DisallowedTools *[]string             `json:"disallowed_tools,omitempty"`
 
 	// Gateway The agent decides with the approve or reject tools; the node outputs become approved, rejected, max_rounds_exceeded and failed.
 	Gateway *bool `json:"gateway,omitempty"`
@@ -792,7 +796,7 @@ type CheckPropertyNodeType string
 // Example: #3b82f6
 type Color = string
 
-// CreateCardsConfig Creates a child card for each item of the "cards" list the node before hands on (an agent's structured output, with title, description and project by name).
+// CreateCardsConfig Retired: agents create child cards with the create_cards tool. Versions published with it still create a child card for each item of the "cards" list the node before hands on; drafts with it do not publish.
 type CreateCardsConfig struct {
 	// CardTypeId Type of the new cards. Required to publish.
 	CardTypeId *openapi_types.UUID `json:"card_type_id,omitempty"`
@@ -803,7 +807,7 @@ type CreateCardsConfig struct {
 
 // CreateCardsNode defines model for CreateCardsNode.
 type CreateCardsNode struct {
-	// Config Creates a child card for each item of the "cards" list the node before hands on (an agent's structured output, with title, description and project by name).
+	// Config Retired: agents create child cards with the create_cards tool. Versions published with it still create a child card for each item of the "cards" list the node before hands on; drafts with it do not publish.
 	Config   CreateCardsConfig   `json:"config"`
 	Id       string              `json:"id"`
 	Position Position            `json:"position"`

@@ -490,7 +490,7 @@ func TestWaitChildrenByProperty(t *testing.T) {
 	if err := e.childChanged(web, map[string]string{"dev": "ok"}); err != nil {
 		t.Fatal(err)
 	}
-	if wait := e.nodeRun("wait"); wait.OutputHandle != "all_done" || e.waitReport() != "Todas as 2 tasks foram concluídas." {
+	if wait := e.nodeRun("wait"); wait.OutputHandle != "all_done" || e.waitReport() != "Todos os 2 cards filhos foram concluídos." {
 		t.Fatalf("wait %+v %s", wait, wait.Output)
 	}
 }
@@ -507,7 +507,7 @@ func TestWaitChildrenFailsFast(t *testing.T) {
 		t.Fatal(err)
 	}
 	wait := e.nodeRun("wait")
-	want := "1 de 3 tasks concluídas; 1 falharam e 1 ainda não terminaram.\n\n" +
+	want := "1 de 3 cards filhos concluídos; 1 falharam e 1 ainda não terminaram.\n\n" +
 		`- "Web" (` + web.String() + ") falhou no fluxo dev: o gateway rejeitou\n  Última mensagem do agente: faltam testes"
 	if wait.OutputHandle != "some_failed" || e.waitReport() != want {
 		t.Fatalf("wait %+v\n%s", wait, e.waitReport())
@@ -538,7 +538,7 @@ func TestWaitChildrenUntilAllFinish(t *testing.T) {
 	if err := e.childChanged(api, map[string]string{"dev": "ok"}); err != nil {
 		t.Fatal(err)
 	}
-	want := "1 de 2 tasks concluídas; 1 falharam.\n\n" + `- "Web" (` + web.String() + ") falhou no fluxo dev"
+	want := "1 de 2 cards filhos concluídos; 1 falharam.\n\n" + `- "Web" (` + web.String() + ") falhou no fluxo dev"
 	if wait := e.nodeRun("wait"); wait.OutputHandle != "some_failed" || e.waitReport() != want {
 		t.Fatalf("wait %+v\n%s", wait, e.waitReport())
 	}

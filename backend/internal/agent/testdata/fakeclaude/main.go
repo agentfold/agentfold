@@ -20,8 +20,7 @@
 //	                 one repeats); rejections ask to "add tests"
 //	[write:F:T]      writes T and the run number to the file F of the
 //	                 working directory on every run without questions
-//	[cards:A,B,…]    submit_output with a card titled A, B… (the output of
-//	                 a node before CreateCards)
+//	[cards:A,B,…]    create_cards with cards titled A, B… on the first run
 package main
 
 import (
@@ -215,11 +214,14 @@ func script(prompt, dir, session string, connect func() (*sdk.ClientSession, err
 				err = call("reject", map[string]any{"feedback": "add tests"})
 			}
 		case "cards":
+			if run > 1 {
+				break
+			}
 			var cards []map[string]string
 			for _, title := range strings.Split(c[2], ",") {
 				cards = append(cards, map[string]string{"title": title, "description": "Part " + title})
 			}
-			err = call("submit_output", map[string]any{"output": map[string]any{"cards": cards}})
+			err = call("create_cards", map[string]any{"cards": cards})
 		case "write":
 			file, text, _ := strings.Cut(c[2], ":")
 			err = os.WriteFile(file, fmt.Appendf(nil, "%s\n\nrun %d\n", text, run), 0o600)

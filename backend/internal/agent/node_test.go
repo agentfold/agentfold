@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"orquestrator/internal/domain"
 )
 
@@ -56,7 +58,7 @@ func TestNodeOutcome(t *testing.T) {
 func TestSystemPrompts(t *testing.T) {
 	prompts := map[string]bool{}
 	for _, c := range []domain.AgentConfig{
-		{}, {OutputSchema: json.RawMessage(`{}`)}, {ReadOnly: true}, {Gateway: true}, {AllowedTools: []string{"mcp__orquestrator__create_tasks"}},
+		{}, {OutputSchema: json.RawMessage(`{}`)}, {ReadOnly: true}, {Gateway: true}, {AllowedTools: []string{"mcp__orquestrator__create_cards"}, CardTypeIDs: []uuid.UUID{uuid.New()}},
 	} {
 		prompts[node{config: c}.systemPrompt()] = true
 	}

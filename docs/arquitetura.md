@@ -89,8 +89,8 @@ interfaces para viabilizar 100% de cobertura com fakes.
 |---|---|
 | `lanes` | id, name, position, color (baias do fluxo — `scope`/`flow_id` — adiadas) |
 | `projects` | id, name, source_kind (`local`; futuro `git`), local_path (repo git), remote_url? e credential_id? (futuro) |
-| `card_types` | id, name, color, initial_lane_id? (onde nascem as tasks que agentes criam do tipo) |
-| `cards` | id, title, description, card_type_id, project_id?, parent_card_id?, lane_id, position, properties (jsonb chave→valor), depends_on (uuid[]; um card de que outros dependem não pode ser excluído), canceled_at? (task cancelada pelo agente), created_at |
+| `card_types` | id, name, color, initial_lane_id? (onde nascem os cards filhos que agentes criam do tipo) |
+| `cards` | id, title, description, card_type_id, project_id?, parent_card_id?, lane_id, position, properties (jsonb chave→valor), depends_on (uuid[]; um card de que outros dependem não pode ser excluído), canceled_at? (card filho cancelado pelo agente), created_at |
 | `mcp_servers` | id, name, transport (`stdio`/`http`), config jsonb, secrets (criptografados) |
 | `card_events` | id, card_id, type, payload jsonb, created_at — linha do tempo do card |
 | `agent_profiles` | id, kind (`claude`, `opencode`), name, credential (criptografada), status |
@@ -122,21 +122,20 @@ Fluxos são **versionados**: um FlowRun em andamento continua na versão em que 
 
 | Nó | Config | Saídas |
 |---|---|---|
-| **CreateCards** | baia e tipo dos cards criados; os itens vêm da lista `cards` (título, descrição, projeto pelo nome, `ref`, `depends_on`) que o nó anterior entrega | `next`, `failed` |
+| **CreateCards** (aposentado) | baia e tipo dos cards criados; os itens vêm da lista `cards` que o nó anterior entrega | `next`, `failed` |
 | **WaitChildren** | modo (`all_succeed`: sai na primeira falha; `all_finished`: espera todos terminarem) e a propriedade que conta como sucesso | `all_done`, `some_failed` |
 | **HumanReview** | nomes dos artefatos revisados (vazio: os coletados no run) | `approved`, `changes_requested` |
 | **SetProperty** | chave e valor | `next` |
 | **CheckProperty** | chave e valor; esperar (sim/não) | `satisfied`, `pending` |
 
-**CreateCards** lê a lista `cards` da saída estruturada do Agent anterior (o editor preenche o
-schema com "Usar o schema de cards filhos") e cria todos os filhos numa transação, ou nenhum:
-um projeto desconhecido, uma lista vazia, uma dependência desconhecida ou um ciclo saem por
-`failed`. `depends_on` aceita o `ref` de outro item da lista ou o id de um card existente; os
-cards são criados na ordem das dependências. Os filhos disparam os próprios fluxos pela baia em
-que nascem, e a saída do nó lista os cards criados. Para o agente decidir quantas tasks e quais,
-sem um schema fixo, há a tool `create_tasks` (seção 5), que cria os mesmos cards filhos.
+**Cards filhos** são criados pelo agente, com a tool `create_cards` (seção 5): o nó Agent
+escolhe os tipos que ele cria, e o prompt do nó diz o que criar. Todos os filhos de uma chamada
+nascem numa transação, ou nenhum, na ordem das dependências; os filhos disparam os próprios
+fluxos pela baia inicial do tipo deles. **CreateCards**, que lia a lista `cards` da saída
+estruturada do Agent anterior, foi aposentado: as versões publicadas com ele continuam rodando,
+mas um rascunho com ele não publica.
 
-**WaitChildren** olha os filhos do card que não foram cancelados (`cancel_task`). Um filho conta
+**WaitChildren** olha os filhos do card que não foram cancelados (`cancel_card`). Um filho conta
 como **concluído** quando tem a propriedade configurada (gravada por um SetProperty no fluxo
 dele), e como **falho** quando a última execução dele falha ou é cancelada antes disso. Sai por
 `all_done` quando todos estão concluídos (sem filhos, `all_done`). Sai por `some_failed` na
@@ -147,8 +146,8 @@ A saída traz um `result` em texto para o agente seguinte, com cada filho que fa
 erro e a última mensagem de agente (o feedback de um gateway, por exemplo). Também traz a lista
 `children` com o estado de cada um. Ligando `some_failed` ao planejador, ele retoma a própria
 sessão com esse relatório. De lá ele atualiza o plano e, depois da revisão, decide a nova
-rodada: `retry_task`, `cancel_task` ou novas tasks. As falhas antigas continuam contando até ele
-fazer `retry_task` ou `cancel_task`.
+rodada: `retry_card`, `cancel_card` ou novos cards. As falhas antigas continuam contando até ele
+fazer `retry_card` ou `cancel_card`.
 
 O pai é reavaliado quando um filho entra numa baia (job `flow.trigger` do filho), quando um
 filho recebe uma propriedade, quando o fluxo de um filho termina e quando a execução de um filho
@@ -176,7 +175,7 @@ Futuro: `PR`, `Fork/Join` (paralelo dentro do fluxo), `WaitSignal` (review entre
 no fluxo do pai), outros agentes.
 
 Saídas de nós ficam em `node_runs.output` e são acessíveis aos nós seguintes do mesmo FlowRun
-(ex.: `CreateCards` lê a saída estruturada do Agent).
+(ex.: o relatório do WaitChildren chega ao planejador que ele retoma).
 
 ### 4.1 Saída como entrada e reentrada (o loop do gateway)
 
@@ -249,18 +248,20 @@ segredos injetados no momento da execução. Tools do board expostas ao agente:
 | `report_done(summary)` | resumo final do trabalho |
 | `get_card()` | contexto do card (título, descrição, histórico relevante) |
 | `list_projects()` | projetos do board (id e nome, sem o caminho local): para ligar o `project_id` do card a um nome e nomear o projeto dos cards criados |
-| `list_card_types()` | tipos de card, com `can_create_tasks` (o tipo tem baia inicial) |
-| `create_tasks(tasks[])` | cria tasks: cards filhos do card, todas ou nenhuma, cada uma com tipo (pelo nome), projeto, `ref` e `depends_on` (refs da mesma chamada ou ids de cards); devolve os ids |
-| `list_tasks()` | as tasks do card: baia, propriedades, dependências, se foi cancelada e como foi a última execução (status, erro, última mensagem de agente) |
-| `retry_task(card_id, description?)` | roda de novo, do gatilho, o fluxo da última execução da task (que falhou ou foi cancelada); a descrição nova substitui a da task |
-| `cancel_task(card_id)` | cancela a task: para o fluxo dela e o WaitChildren deixa de contá-la |
+| `create_cards(cards[])` | cria cards filhos do card, todos ou nenhum, cada um com título, descrição, projeto (pelo nome), `ref`, `depends_on` (refs da mesma chamada ou ids de cards) e tipo, um dos tipos do nó (sem o parâmetro quando o nó cria um tipo só); devolve os ids |
+| `list_cards()` | os cards filhos do card: baia, propriedades, dependências, se foi cancelado e como foi a última execução (status, erro, última mensagem de agente) |
+| `retry_card(card_id, description?)` | roda de novo, do gatilho, o fluxo da última execução do card filho (que falhou ou foi cancelada); a descrição nova substitui a dele |
+| `cancel_card(card_id)` | cancela o card filho: para o fluxo dele e o WaitChildren deixa de contá-lo |
 
-As quatro tools de tasks só existem num nó Agent cujas tools liberadas as listam
-(`mcp__orquestrator__create_tasks` etc., ou `mcp__orquestrator` para todas); o editor tem uma
-caixa por tool em "Tools do board". Com `create_tasks` liberada, o prompt de sistema explica o uso:
-planejar todas as tasks, criá-las numa chamada e encerrar o turno, sem esperar por elas. A task
-nasce na **baia inicial** do tipo dela (configurada no cadastro de tipos); um tipo sem baia
-inicial não aceita tasks, e a chamada falha com uma mensagem para o agente corrigir.
+As quatro tools de cards filhos só existem num nó Agent cujas tools liberadas as listam
+(`mcp__orquestrator__create_cards` etc., ou `mcp__orquestrator` para todas); o editor tem uma
+caixa por tool em "Tools do board". `create_cards` também precisa dos **tipos dos cards criados**
+(`card_type_ids` do nó): o enum do parâmetro `type` e a descrição da tool trazem os nomes, e com
+um tipo só o parâmetro some, o que deixa o fluxo quase determinístico. Com ela liberada, o prompt
+de sistema explica o uso: planejar todos os cards, criá-los numa chamada e encerrar o turno, sem
+esperar por eles. O card nasce na **baia inicial** do tipo dele (configurada no cadastro de
+tipos); um tipo sem baia inicial não aceita cards, e a chamada falha com uma mensagem para o
+agente corrigir.
 
 O cadastro de um MCP externo pode ser testado antes de salvar (`POST /mcp-servers/test`): o board
 conecta como os agentes, lista as tools e, se pedido, chama uma tool. Alguns servidores só conferem a
@@ -289,7 +290,7 @@ O agente **não comita nem abre PR** (garantido pelas tools bloqueadas/prompt; o
 - Kinds: `flow.trigger` (enfileirado na mesma transação do evento `card.created`/`card.moved`;
   dispara os fluxos cujo gatilho combina) e `agent.run` (roda o nó Agent e, em seguida, a engine
   segue a saída dele). `flow.retry` roda de novo, do gatilho e na versão mais recente, o fluxo da
-  última execução de uma task (`retry_task`). A engine roda no worker; os nós do board (MoveCard,
+  última execução de um card filho (`retry_card`). A engine roda no worker; os nós do board (MoveCard,
   SetProperty, End…) executam dentro do job que chega até eles.
 - **Afinidade:** cada job tem `requirements` (ex.: `{"host": "x"}`, futuramente `{"runner": "docker"}`);
   cada worker anuncia suas capacidades e só pega jobs compatíveis. Projetos `local` exigem o host
@@ -461,12 +462,12 @@ um humano aprova, e cada repositório ganha um card implementado por outro agent
 Trigger → Agent planejador (MCP Sourcegraph; artefato Plano)
         → HumanReview ──changes_requested──▶ Agent planejador (retoma a sessão com o pedido)
             │approved
-        → Agent planejador (tools create_tasks, list_tasks, retry_task, cancel_task: cria as tasks
-            │              `implementação`, com projeto e depends_on, e encerra o turno)
+        → Agent planejador (tools create_cards do tipo `implementação`, list_cards, retry_card,
+            │              cancel_card: cria os cards, com projeto e depends_on, e encerra o turno)
         → WaitChildren (all_finished, desenvolvimento=concluido)
             ├─all_done──▶ MoveCard(Concluído)
             └─some_failed──▶ Agent planejador (retoma com o relatório das falhas, atualiza o plano)
-                               → HumanReview → … nova rodada de tasks
+                               → HumanReview → … nova rodada de cards
 ```
 
 **Fluxo "Implementação"**: gatilho card criado do tipo `implementação`, que nasce na baia
@@ -476,7 +477,7 @@ Trigger → CheckProperty (desenvolvimento=concluido nas dependências, esperar)
         → Agent (dev, worktree do projeto) ⇄ Agent (gateway, somente leitura)
         → SetProperty (desenvolvimento=concluido) → MoveCard(Pronto)
 ```
-Sem "esperar", o CheckProperty sai por `pending`, e o fluxo pode devolver a task para uma baia
+Sem "esperar", o CheckProperty sai por `pending`, e o fluxo pode devolver o card para uma baia
 anterior.
 
 O agente referencia repositórios pelo nome; o cadastro de projetos mapeia esse nome para a pasta

@@ -60,7 +60,9 @@ const (
 	NodeMoveCard NodeType = "move_card"
 	NodeEnd      NodeType = "end"
 	// NodeCreateCards creates child cards from the output of the node
-	// before; NodeWaitChildren waits until the children are done.
+	// before. It is retired (agents create cards with the create_cards
+	// tool): versions published with it still run, drafts do not publish.
+	// NodeWaitChildren waits until the children are done.
 	NodeCreateCards  NodeType = "create_cards"
 	NodeWaitChildren NodeType = "wait_children"
 	// NodeHumanReview waits for a human to review artifacts of the card.
@@ -165,19 +167,28 @@ type AgentConfig struct {
 	Gateway         bool            `json:"gateway,omitempty"`
 	MaxRounds       int             `json:"max_rounds,omitempty"`
 	Artifacts       []ArtifactSpec  `json:"artifacts,omitempty"`
+	// CardTypeIDs are the card types the agent creates child cards of,
+	// with the create_cards tool.
+	CardTypeIDs []uuid.UUID `json:"card_type_ids,omitempty"`
 }
 
 // BoardToolPrefix names the tools of the board MCP server in allowed_tools.
 const BoardToolPrefix = "mcp__orquestrator__"
 
-// TaskTools are the board tools an agent node only has when its allowed
+// CardTools are the board tools an agent node only has when its allowed
 // tools list them: with them the agent splits its card into child cards.
-var TaskTools = []string{"create_tasks", "list_tasks", "retry_task", "cancel_task"}
+var CardTools = []string{"create_cards", "list_cards", "retry_card", "cancel_card"}
 
 // AllowsBoardTool tells whether the allowed tools of the node list the
 // board tool name, or the whole board server.
 func (c AgentConfig) AllowsBoardTool(name string) bool {
 	return slices.Contains(c.AllowedTools, BoardToolPrefix+name) || slices.Contains(c.AllowedTools, strings.TrimSuffix(BoardToolPrefix, "__"))
+}
+
+// CreatesCards tells whether the agent has the create_cards tool: it is
+// allowed and the node names the card types to create.
+func (c AgentConfig) CreatesCards() bool {
+	return c.AllowsBoardTool("create_cards") && len(c.CardTypeIDs) > 0
 }
 
 // ArtifactSpec is a file of the card workspace an agent node collects into
@@ -239,7 +250,7 @@ type CheckPropertyConfig struct {
 }
 
 // ChildCardSpec is a card created as a child of another (by a CreateCards
-// node or the create_tasks tool). Project is the name of a project,
+// node or the create_cards tool). Project is the name of a project,
 // optional. DependsOn lists the refs of other cards of the same batch or
 // the ids of existing cards.
 type ChildCardSpec struct {
@@ -320,12 +331,6 @@ func ChildCards(parent uuid.UUID, specs []ChildCardSpec, projects []Project, pla
 	}
 	return cards, nil
 }
-
-// ChildCardsSchema is the output schema an agent node before a
-// CreateCards node declares to hand on the cards to create.
-const ChildCardsSchema = `{"type":"object","required":["cards"],"properties":{"cards":{"type":"array","minItems":1,"items":{` +
-	`"type":"object","required":["title"],"properties":{"ref":{"type":"string"},"title":{"type":"string"},"description":{"type":"string"},` +
-	`"project":{"type":"string"},"depends_on":{"type":"array","items":{"type":"string"}}}}}}}`
 
 // ChildCardsFrom reads the cards to create from what the node before
 // handed on: the cards list of an agent's structured output, or of the
@@ -527,7 +532,8 @@ func (v *validator) configProblems(n Node) []string {
 		if err := json.Unmarshal(config, &c); err != nil {
 			return []string{invalidConfig(err)}
 		}
-		return append(v.profileProblems(c.ProfileID), append(v.mcpProblems(c.McpServerIDs), agentProblems(c)...)...)
+		out := append(v.profileProblems(c.ProfileID), v.mcpProblems(c.McpServerIDs)...)
+		return append(append(out, v.cardTypeProblems(c)...), agentProblems(c)...)
 	case NodeMoveCard:
 		var c MoveCardConfig
 		if err := json.Unmarshal(config, &c); err != nil {
@@ -537,18 +543,7 @@ func (v *validator) configProblems(n Node) []string {
 			return []string{"escolha a baia de destino"}
 		}
 	case NodeCreateCards:
-		var c CreateCardsConfig
-		if err := json.Unmarshal(config, &c); err != nil {
-			return []string{invalidConfig(err)}
-		}
-		var out []string
-		if !v.refs.Lanes[c.LaneID] {
-			out = append(out, "escolha a baia dos cards criados")
-		}
-		if !v.refs.CardTypes[c.CardTypeID] {
-			out = append(out, "escolha o tipo dos cards criados")
-		}
-		return out
+		return []string{"o nó Criar cards foi aposentado: libere a tool create_cards no agente que planeja"}
 	case NodeWaitChildren:
 		var c WaitChildrenConfig
 		if err := json.Unmarshal(config, &c); err != nil {
@@ -642,6 +637,20 @@ func (v *validator) mcpProblems(ids []uuid.UUID) []string {
 	for _, id := range ids {
 		if !v.refs.McpServers[id] {
 			return []string{"um dos servidores MCP não existe mais"}
+		}
+	}
+	return nil
+}
+
+// cardTypeProblems checks the card types an agent creates: the
+// create_cards tool, listed by name, needs one at least.
+func (v *validator) cardTypeProblems(c AgentConfig) []string {
+	if len(c.CardTypeIDs) == 0 && slices.Contains(c.AllowedTools, BoardToolPrefix+"create_cards") {
+		return []string{"escolha os tipos de card que o agente cria"}
+	}
+	for _, id := range c.CardTypeIDs {
+		if !v.refs.CardTypes[id] {
+			return []string{"um dos tipos de card que o agente cria não existe mais"}
 		}
 	}
 	return nil

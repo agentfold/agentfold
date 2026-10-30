@@ -30,29 +30,3 @@ export function parseSchema(text: string): Schema | false {
     return false
   }
 }
-
-/**
- * The output schema of an agent before a "Criar cards" node: the cards to
- * create, with the project by name (as in domain.ChildCardsSchema).
- */
-export const childCardsSchema = {
-  type: 'object',
-  required: ['cards'],
-  properties: {
-    cards: {
-      type: 'array',
-      minItems: 1,
-      items: {
-        type: 'object',
-        required: ['title'],
-        properties: {
-          ref: { type: 'string' },
-          title: { type: 'string' },
-          description: { type: 'string' },
-          project: { type: 'string' },
-          depends_on: { type: 'array', items: { type: 'string' } },
-        },
-      },
-    },
-  },
-}

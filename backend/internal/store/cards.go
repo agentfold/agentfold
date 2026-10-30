@@ -229,7 +229,7 @@ func (s *Store) SetCardProperty(ctx context.Context, id uuid.UUID, key, value st
 	return card, err
 }
 
-// CancelCard marks a card canceled as a task.
+// CancelCard marks a child card canceled.
 func (s *Store) CancelCard(ctx context.Context, id uuid.UUID) (domain.Card, error) {
 	row, err := s.q.SetCardCanceled(ctx, sqlcgen.SetCardCanceledParams{ID: id, Canceled: true})
 	return mapRow(row, err, toCard)

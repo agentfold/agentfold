@@ -31,6 +31,7 @@ type fakeBoard struct {
 	card      domain.Card
 	latest    []domain.FlowRun
 	artifacts []service.ArtifactDetail
+	types     []domain.CardType
 }
 
 func newBoard() *fakeBoard {
@@ -128,28 +129,32 @@ func (b *fakeBoard) GetRunDetail(_ context.Context, id uuid.UUID) (service.RunDe
 	}, b.call("GetRunDetail", id)
 }
 
-func (b *fakeBoard) CreateTasks(_ context.Context, _ service.AgentRun, specs []service.TaskSpec) ([]domain.Card, error) {
+func (b *fakeBoard) CardTypesOf(context.Context, service.AgentRun) ([]domain.CardType, error) {
+	return b.types, b.call("CardTypesOf", nil)
+}
+
+func (b *fakeBoard) CreateCards(_ context.Context, _ service.AgentRun, specs []service.CardSpec) ([]domain.Card, error) {
 	out := make([]domain.Card, len(specs))
 	for i, spec := range specs {
 		out[i] = domain.Card{ID: uuid.New(), Title: spec.Title}
 	}
-	return out, b.call("CreateTasks", specs)
+	return out, b.call("CreateCards", specs)
 }
 
-func (b *fakeBoard) ListTasks(context.Context, service.AgentRun) ([]service.Task, error) {
+func (b *fakeBoard) ListChildren(context.Context, service.AgentRun) ([]service.Child, error) {
 	now := time.Now()
-	return []service.Task{
+	return []service.Child{
 		{Card: domain.Card{Title: "API", Properties: map[string]string{"dev": "ok"}}, TypeName: "task", LaneName: "Todo"},
-		{Card: domain.Card{Title: "Web", CanceledAt: &now}, LastRun: &service.TaskRun{FlowName: "dev", Status: domain.RunFailed, Error: "boom", Result: "fix it"}},
-	}, b.call("ListTasks", nil)
+		{Card: domain.Card{Title: "Web", CanceledAt: &now}, LastRun: &service.ChildRun{FlowName: "dev", Status: domain.RunFailed, Error: "boom", Result: "fix it"}},
+	}, b.call("ListChildren", nil)
 }
 
-func (b *fakeBoard) RetryTask(_ context.Context, _ service.AgentRun, id uuid.UUID, description string) (domain.Card, error) {
-	return b.card, b.call("RetryTask", id.String()+":"+description)
+func (b *fakeBoard) RetryChild(_ context.Context, _ service.AgentRun, id uuid.UUID, description string) (domain.Card, error) {
+	return b.card, b.call("RetryChild", id.String()+":"+description)
 }
 
-func (b *fakeBoard) CancelTask(_ context.Context, _ service.AgentRun, id uuid.UUID) (domain.Card, error) {
-	return b.card, b.call("CancelTask", id)
+func (b *fakeBoard) CancelChild(_ context.Context, _ service.AgentRun, id uuid.UUID) (domain.Card, error) {
+	return b.card, b.call("CancelChild", id)
 }
 
 // session connects an MCP client to the handler, with token when not empty.
@@ -194,6 +199,18 @@ func call(t *testing.T, cs *sdk.ClientSession, name string, args any) (string, b
 	return text.String(), res.IsError
 }
 
+// findTool returns the JSON of the tool named name.
+func findTool(t *testing.T, cs *sdk.ClientSession, name string) string {
+	t.Helper()
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(res.Tools, func(tool *sdk.Tool) bool { return tool.Name == name })
+	data, _ := json.Marshal(res.Tools[i])
+	return string(data)
+}
+
 func toolNames(t *testing.T, cs *sdk.ClientSession) []string {
 	t.Helper()
 	res, err := cs.ListTools(context.Background(), nil)
@@ -221,7 +238,7 @@ func TestAgentTools(t *testing.T) {
 	board.card = domain.Card{Title: "Login"}
 	board.runs["tok"] = agentRun(`{}`)
 	cs := session(t, board, "Bearer tok")
-	if got := toolNames(t, cs); !slices.Equal(got, []string{"ask_human", "get_card", "list_card_types", "list_projects", "report_done"}) {
+	if got := toolNames(t, cs); !slices.Equal(got, []string{"ask_human", "get_card", "list_projects", "report_done"}) {
 		t.Fatalf("tools %v", got)
 	}
 	if out, isErr := call(t, cs, "get_card", map[string]any{}); isErr || !strings.Contains(out, `"title":"Login"`) || !strings.Contains(out, `"artifacts":[]`) || strings.Contains(out, `"parent"`) {
@@ -302,7 +319,7 @@ func TestGatewayTools(t *testing.T) {
 	board := newBoard()
 	board.runs["tok"] = agentRun(`{"gateway":true}`)
 	cs := session(t, board, "Bearer tok")
-	if got := toolNames(t, cs); !slices.Equal(got, []string{"approve", "ask_human", "get_card", "list_card_types", "list_projects", "reject", "report_done"}) {
+	if got := toolNames(t, cs); !slices.Equal(got, []string{"approve", "ask_human", "get_card", "list_projects", "reject", "report_done"}) {
 		t.Fatalf("tools %v", got)
 	}
 	if out, isErr := call(t, cs, "reject", map[string]any{"feedback": "add tests"}); isErr || board.args["Decide"] != "rejected:add tests" {
@@ -407,46 +424,53 @@ func TestMustSchemaPanics(t *testing.T) {
 	mustSchema[chan int]()
 }
 
-func TestTaskTools(t *testing.T) {
+func TestChildCardTools(t *testing.T) {
 	board := newBoard()
-	board.runs["tok"] = agentRun(`{"allowed_tools":["mcp__orquestrator"]}`)
+	board.types = []domain.CardType{{Name: "task"}, {Name: "bug"}}
+	board.runs["tok"] = agentRun(`{"allowed_tools":["mcp__orquestrator"],"card_type_ids":["` + uuid.NewString() + `"]}`)
 	cs := session(t, board, "Bearer tok")
 	if got := toolNames(t, cs); !slices.Equal(got, []string{
-		"ask_human", "cancel_task", "create_tasks", "get_card", "list_card_types", "list_projects", "list_tasks", "report_done", "retry_task",
+		"ask_human", "cancel_card", "create_cards", "get_card", "list_cards", "list_projects", "report_done", "retry_card",
 	}) {
 		t.Fatalf("tools %v", got)
 	}
-	args := map[string]any{"tasks": []map[string]any{
-		{"ref": "api", "title": "API", "type": "task", "project": "web"},
-		{"title": "Web", "type": "task", "depends_on": []string{"api"}, "description": "d"},
-	}}
-	out, isErr := call(t, cs, "create_tasks", args)
-	if isErr || !strings.Contains(out, `"ref":"api"`) || !strings.Contains(out, `"title":"Web"`) {
-		t.Fatalf("create_tasks: %s", out)
+	if tool := findTool(t, cs, "create_cards"); !strings.Contains(tool, `"enum":["task","bug"]`) || !strings.Contains(tool, "of the types task, bug.") {
+		t.Fatalf("create_cards: %s", tool)
 	}
-	specs := board.args["CreateTasks"].([]service.TaskSpec)
-	if specs[0].Project != "web" || specs[1].Type != "task" || specs[1].DependsOn[0] != "api" || specs[1].Description != "d" {
+	args := map[string]any{"cards": []map[string]any{
+		{"ref": "api", "title": "API", "type": "task", "project": "web"},
+		{"title": "Web", "type": "bug", "depends_on": []string{"api"}, "description": "d"},
+	}}
+	out, isErr := call(t, cs, "create_cards", args)
+	if isErr || !strings.Contains(out, `"ref":"api"`) || !strings.Contains(out, `"title":"Web"`) {
+		t.Fatalf("create_cards: %s", out)
+	}
+	specs := board.args["CreateCards"].([]service.CardSpec)
+	if specs[0].Project != "web" || specs[1].Type != "bug" || specs[1].DependsOn[0] != "api" || specs[1].Description != "d" {
 		t.Fatalf("specs %+v", specs)
 	}
-	out, isErr = call(t, cs, "list_tasks", map[string]any{})
+	if _, isErr := call(t, cs, "create_cards", map[string]any{"cards": []map[string]any{{"title": "A", "type": "epic"}}}); !isErr {
+		t.Fatal("create_cards: a type the node does not create")
+	}
+	out, isErr = call(t, cs, "list_cards", map[string]any{})
 	if isErr || !strings.Contains(out, `"properties":{"dev":"ok"}`) || !strings.Contains(out, `"canceled":true`) ||
 		!strings.Contains(out, `"last_run":{"error":"boom","flow":"dev","result":"fix it","status":"failed"}`) {
-		t.Fatalf("list_tasks: %s", out)
+		t.Fatalf("list_cards: %s", out)
 	}
 	card := uuid.New()
-	if out, isErr := call(t, cs, "retry_task", map[string]any{"card_id": card, "description": "v2"}); isErr || board.args["RetryTask"] != card.String()+":v2" {
-		t.Fatalf("retry_task: %s", out)
+	if out, isErr := call(t, cs, "retry_card", map[string]any{"card_id": card, "description": "v2"}); isErr || board.args["RetryChild"] != card.String()+":v2" {
+		t.Fatalf("retry_card: %s", out)
 	}
-	if out, isErr := call(t, cs, "cancel_task", map[string]any{"card_id": card}); isErr || board.args["CancelTask"] != card {
-		t.Fatalf("cancel_task: %s", out)
+	if out, isErr := call(t, cs, "cancel_card", map[string]any{"card_id": card}); isErr || board.args["CancelChild"] != card {
+		t.Fatalf("cancel_card: %s", out)
 	}
-	for name, method := range map[string]string{"create_tasks": "CreateTasks", "list_tasks": "ListTasks", "retry_task": "RetryTask", "cancel_task": "CancelTask"} {
+	for name, method := range map[string]string{"create_cards": "CreateCards", "list_cards": "ListChildren", "retry_card": "RetryChild", "cancel_card": "CancelChild"} {
 		board.errs[method] = errBoard
 		in := map[string]any{"card_id": card}
 		switch name {
-		case "create_tasks":
+		case "create_cards":
 			in = args
-		case "list_tasks":
+		case "list_cards":
 			in = map[string]any{}
 		}
 		if out, isErr := call(t, cs, name, in); !isErr || !strings.Contains(out, "board failed") {
@@ -455,18 +479,26 @@ func TestTaskTools(t *testing.T) {
 	}
 }
 
-func TestListCardTypesTool(t *testing.T) {
+func TestCreateCardsOfOneType(t *testing.T) {
 	board := newBoard()
-	board.runs["tok"] = agentRun(`{"allowed_tools":["mcp__orquestrator__create_tasks"]}`)
+	board.types = []domain.CardType{{Name: "task"}}
+	board.runs["tok"] = agentRun(`{"allowed_tools":["mcp__orquestrator__create_cards"],"card_type_ids":["` + uuid.NewString() + `"]}`)
 	cs := session(t, board, "Bearer tok")
-	if got := toolNames(t, cs); !slices.Contains(got, "create_tasks") || slices.Contains(got, "list_tasks") {
+	if got := toolNames(t, cs); !slices.Contains(got, "create_cards") || slices.Contains(got, "list_cards") {
 		t.Fatalf("tools %v", got)
 	}
-	if out, isErr := call(t, cs, "list_card_types", map[string]any{}); isErr || !strings.Contains(out, `"can_create_tasks":false`) || !strings.Contains(out, `"name":"task"`) {
-		t.Fatalf("list_card_types: %s", out)
+	if tool := findTool(t, cs, "create_cards"); strings.Contains(tool, `"type":{`) || !strings.Contains(tool, "of the type task.") {
+		t.Fatalf("create_cards: %s", tool)
 	}
-	board.errs["ListCardTypes"] = errBoard
-	if _, isErr := call(t, cs, "list_card_types", map[string]any{}); !isErr {
-		t.Fatal("list_card_types: expected a tool error")
+	if out, isErr := call(t, cs, "create_cards", map[string]any{"cards": []map[string]any{{"title": "A"}}}); isErr {
+		t.Fatalf("create_cards: %s", out)
+	}
+}
+
+func TestCreateCardsNeedsCardTypes(t *testing.T) {
+	board := newBoard()
+	board.runs["tok"] = agentRun(`{"allowed_tools":["mcp__orquestrator__create_cards"]}`)
+	if got := toolNames(t, session(t, board, "Bearer tok")); slices.Contains(got, "create_cards") {
+		t.Fatalf("tools %v", got)
 	}
 }

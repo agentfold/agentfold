@@ -67,9 +67,9 @@ type Project struct {
 	CreatedAt  time.Time
 }
 
-// CardType classifies cards; flow triggers can filter by it. Tasks agents
+// CardType classifies cards; flow triggers can filter by it. Cards agents
 // create of the type start in InitialLaneID; without it they cannot create
-// tasks of the type.
+// cards of the type.
 type CardType struct {
 	ID            uuid.UUID
 	Name          string
@@ -92,7 +92,7 @@ type Card struct {
 	// them on the cards a card depends on (DependsOn).
 	Properties map[string]string
 	DependsOn  []uuid.UUID
-	// CanceledAt is when the agent that created the card as a task
+	// CanceledAt is when the agent that created the card as a child
 	// canceled it: WaitChildren no longer counts it.
 	CanceledAt *time.Time
 	CreatedAt  time.Time
