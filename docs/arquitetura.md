@@ -122,23 +122,40 @@ Fluxos são **versionados**: um FlowRun em andamento continua na versão em que 
 
 | Nó | Config | Saídas |
 |---|---|---|
-| **CreateCards** | baia e tipo dos cards criados; os itens vêm da lista `cards` (título, descrição, projeto pelo nome) que o nó anterior entrega | `next`, `failed` |
-| **WaitChildren** | baia em que um filho conta como concluído | `all_done`, `some_failed` |
+| **CreateCards** | baia e tipo dos cards criados; os itens vêm da lista `cards` (título, descrição, projeto pelo nome, `ref`, `depends_on`) que o nó anterior entrega | `next`, `failed` |
+| **WaitChildren** | modo (`all_succeed`: sai na primeira falha; `all_finished`: espera todos terminarem) e a propriedade que conta como sucesso | `all_done`, `some_failed` |
 | **HumanReview** | nomes dos artefatos revisados (vazio: os coletados no run) | `approved`, `changes_requested` |
 | **SetProperty** | chave e valor | `next` |
 | **CheckProperty** | chave e valor; esperar (sim/não) | `satisfied`, `pending` |
 
 **CreateCards** lê a lista `cards` da saída estruturada do Agent anterior (o editor preenche o
 schema com "Usar o schema de cards filhos") e cria todos os filhos numa transação, ou nenhum:
-um projeto desconhecido ou uma lista vazia saem por `failed`. Os filhos disparam os próprios
-fluxos pela baia em que nascem, e a saída do nó lista os cards criados.
+um projeto desconhecido, uma lista vazia, uma dependência desconhecida ou um ciclo saem por
+`failed`. `depends_on` aceita o `ref` de outro item da lista ou o id de um card existente; os
+cards são criados na ordem das dependências. Os filhos disparam os próprios fluxos pela baia em
+que nascem, e a saída do nó lista os cards criados. Para o agente decidir quantas tasks e quais,
+sem um schema fixo, há a tool `create_tasks` (seção 5), que cria os mesmos cards filhos.
 
-**WaitChildren** olha os filhos do card: `all_done` quando todos estão na baia configurada,
-`some_failed` assim que a última execução de algum filho falha ou é cancelada antes de chegar
-lá (sem filhos, `all_done`). Enquanto isso o nó fica `waiting` e o FlowRun do pai `waiting`. O
-pai é reavaliado quando um filho entra numa baia (job `flow.trigger` do filho), quando o fluxo
-de um filho termina e quando a execução de um filho é cancelada (job `flow.child_changed`);
-`SettleWait` garante que só uma dessas reavaliações siga a saída.
+**WaitChildren** olha os filhos do card que não foram cancelados (`cancel_task`). Um filho conta
+como **concluído** quando tem a propriedade configurada (gravada por um SetProperty no fluxo
+dele), e como **falho** quando a última execução dele falha ou é cancelada antes disso. Sai por
+`all_done` quando todos estão concluídos (sem filhos, `all_done`). Sai por `some_failed` na
+primeira falha, no modo `all_succeed` (o padrão), ou quando todos terminaram, com sucesso ou
+falha, no modo `all_finished`. Enquanto isso o nó fica `waiting` e o FlowRun do pai `waiting`.
+
+A saída traz um `result` em texto para o agente seguinte, com cada filho que falhou: o fluxo, o
+erro e a última mensagem de agente (o feedback de um gateway, por exemplo). Também traz a lista
+`children` com o estado de cada um. Ligando `some_failed` ao planejador, ele retoma a própria
+sessão com esse relatório. De lá ele atualiza o plano e, depois da revisão, decide a nova
+rodada: `retry_task`, `cancel_task` ou novas tasks. As falhas antigas continuam contando até ele
+fazer `retry_task` ou `cancel_task`.
+
+O pai é reavaliado quando um filho entra numa baia (job `flow.trigger` do filho), quando um
+filho recebe uma propriedade, quando o fluxo de um filho termina e quando a execução de um filho
+é cancelada (job `flow.child_changed`); `SettleWait` garante que só uma dessas reavaliações siga
+a saída. Versões publicadas antes das propriedades guardam a baia de concluído
+(`done_lane_id`) e continuam funcionando; um rascunho com ela só publica depois de receber a
+propriedade.
 
 **SetProperty** grava a propriedade no card (evento `property.set` na timeline) e repassa a
 entrada, como o MoveCard. Em seguida reavalia quem pode estar esperando por ela: o WaitChildren
@@ -271,8 +288,9 @@ O agente **não comita nem abre PR** (garantido pelas tools bloqueadas/prompt; o
 - `LISTEN/NOTIFY` acorda workers sem polling agressivo.
 - Kinds: `flow.trigger` (enfileirado na mesma transação do evento `card.created`/`card.moved`;
   dispara os fluxos cujo gatilho combina) e `agent.run` (roda o nó Agent e, em seguida, a engine
-  segue a saída dele). A engine roda no worker; os nós MoveCard e End executam dentro do job que
-  chega até eles.
+  segue a saída dele). `flow.retry` roda de novo, do gatilho e na versão mais recente, o fluxo da
+  última execução de uma task (`retry_task`). A engine roda no worker; os nós do board (MoveCard,
+  SetProperty, End…) executam dentro do job que chega até eles.
 - **Afinidade:** cada job tem `requirements` (ex.: `{"host": "x"}`, futuramente `{"runner": "docker"}`);
   cada worker anuncia suas capacidades e só pega jobs compatíveis. Projetos `local` exigem o host
   onde a pasta existe. No MVP o worker anuncia apenas o próprio host.
@@ -438,19 +456,28 @@ runners multi-host.
 Um agente com acesso ao Sourcegraph analisa o código, propõe mudanças em vários repositórios,
 um humano aprova, e cada repositório ganha um card implementado por outro agente.
 
-**Fluxo "Proposta"** — gatilho: card criado do tipo `proposta` (sem projeto)
+**Fluxo "Proposta"**: gatilho card criado do tipo `proposta` (sem projeto)
 ```
-Trigger → Agent (MCP Sourcegraph; submit_output: [{project, plano}])
-        → HumanReview ──changes_requested──▶ Agent (retoma sessão com o pedido)
+Trigger → Agent planejador (MCP Sourcegraph; artefato Plano)
+        → HumanReview ──changes_requested──▶ Agent planejador (retoma a sessão com o pedido)
             │approved
-        → CreateCards (um card filho `implementação` por item, com projeto)
-        → WaitChildren ──all_done──▶ MoveCard(Concluído)
+        → Agent planejador (tools create_tasks, list_tasks, retry_task, cancel_task: cria as tasks
+            │              `implementação`, com projeto e depends_on, e encerra o turno)
+        → WaitChildren (all_finished, desenvolvimento=concluido)
+            ├─all_done──▶ MoveCard(Concluído)
+            └─some_failed──▶ Agent planejador (retoma com o relatório das falhas, atualiza o plano)
+                               → HumanReview → … nova rodada de tasks
 ```
 
-**Fluxo "Implementação"** — gatilho: card criado do tipo `implementação`
+**Fluxo "Implementação"**: gatilho card criado do tipo `implementação`, que nasce na baia
+inicial do tipo
 ```
-Trigger → Agent (dev, worktree do projeto) ⇄ Agent (gateway, somente leitura) → [PR, futuro] → MoveCard(Pronto)
+Trigger → CheckProperty (desenvolvimento=concluido nas dependências, esperar)
+        → Agent (dev, worktree do projeto) ⇄ Agent (gateway, somente leitura)
+        → SetProperty (desenvolvimento=concluido) → MoveCard(Pronto)
 ```
+Sem "esperar", o CheckProperty sai por `pending`, e o fluxo pode devolver a task para uma baia
+anterior.
 
 O agente referencia repositórios pelo nome; o cadastro de projetos mapeia esse nome para a pasta
 local. Cards filhos rodam em paralelo naturalmente (um FlowRun e um worktree por card).

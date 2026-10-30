@@ -82,7 +82,9 @@ export function NodeConfigForm({
           <p className="text-sm text-slate-500">
             Cria um card filho para cada item da lista <code>cards</code> que o
             nó anterior entrega (a saída estruturada de um agente com o schema
-            de cards filhos). O projeto de cada card vai pelo nome.
+            de cards filhos). O projeto de cada card vai pelo nome, e{' '}
+            <code>depends_on</code> liga o card ao <code>ref</code> de outro da
+            lista ou ao id de um card existente.
           </p>
           <SelectField
             label="Baia dos cards criados"
@@ -106,24 +108,74 @@ export function NodeConfigForm({
         </div>
       )
     }
-    case 'wait_children':
+    case 'wait_children': {
+      const config = data.config as WaitChildrenConfig
       return (
         <div className="flex flex-col gap-3">
           <p className="text-sm text-slate-500">
-            O fluxo espera até todos os cards filhos chegarem à baia final
-            (todos concluídos), ou até a última execução de algum filho falhar
-            ou ser cancelada (algum falhou).
+            O fluxo espera os cards filhos que não foram cancelados. Um filho
+            conta como concluído quando tem a propriedade (gravada por um
+            Definir propriedade no fluxo dele) e como falho quando a última
+            execução dele falha ou é cancelada antes disso.
           </p>
           <SelectField
-            label="Baia em que o filho conta como concluído"
-            value={(data.config as WaitChildrenConfig).done_lane_id ?? ''}
-            onChange={(laneId) => {
-              onChange(laneId ? { done_lane_id: laneId } : {})
+            label="Modo"
+            value={config.mode ?? 'all_succeed'}
+            onChange={(mode) => {
+              onChange({ ...config, mode: mode as WaitChildrenConfig['mode'] })
             }}
-            options={laneOptions(lanes)}
+            options={[
+              {
+                value: 'all_succeed',
+                label: 'Todos com sucesso (sai na primeira falha)',
+              },
+              {
+                value: 'all_finished',
+                label: 'Todos terminarem (com sucesso ou falha)',
+              },
+            ]}
           />
+          <div className="grid grid-cols-2 gap-3">
+            <TextField
+              label="Chave"
+              placeholder="desenvolvimento"
+              value={config.property_key ?? ''}
+              onChange={(key) => {
+                onChange({
+                  ...config,
+                  property_key: key || undefined,
+                  done_lane_id: undefined,
+                })
+              }}
+            />
+            <TextField
+              label="Valor"
+              placeholder="concluido"
+              value={config.property_value ?? ''}
+              onChange={(value) => {
+                onChange({
+                  ...config,
+                  property_value: value || undefined,
+                  done_lane_id: undefined,
+                })
+              }}
+            />
+          </div>
+          {config.done_lane_id && (
+            <p className="text-sm text-amber-700">
+              Este nó ainda conta como concluído o filho na baia{' '}
+              {lanes.find((l) => l.id === config.done_lane_id)?.name ??
+                'removida'}
+              , como nas versões antigas: informe a propriedade para publicar.
+            </p>
+          )}
+          <p className="text-xs text-slate-500">
+            A saída algum falhou traz, para cada filho que falhou, o erro e a
+            última mensagem do agente: ligue-a ao agente que refaz o plano.
+          </p>
         </div>
       )
+    }
     case 'human_review':
       return (
         <div className="flex flex-col gap-3">

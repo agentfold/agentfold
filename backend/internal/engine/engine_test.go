@@ -44,6 +44,7 @@ type fakeStore struct {
 	projects  []domain.Project
 	children  []uuid.UUID
 	cardRuns  map[uuid.UUID][]domain.FlowRun
+	runNodes  map[uuid.UUID][]domain.NodeRun
 	unsettled bool
 	errs      map[string]error
 	failAfter map[string]int

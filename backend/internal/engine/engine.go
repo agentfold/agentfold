@@ -45,6 +45,7 @@ type Store interface {
 	ListCardsByID(ctx context.Context, ids []uuid.UUID) ([]domain.Card, error)
 	ListDependentCards(ctx context.Context, id uuid.UUID) ([]domain.Card, error)
 	ListCardFlowRuns(ctx context.Context, cardID uuid.UUID) ([]domain.FlowRun, error)
+	ListNodeRuns(ctx context.Context, flowRunID uuid.UUID) ([]domain.NodeRun, error)
 	WaitNodeRun(ctx context.Context, id uuid.UUID) (domain.NodeRun, error)
 	WaitingNodeRun(ctx context.Context, cardID uuid.UUID) (domain.NodeRun, error)
 	SettleWait(ctx context.Context, id uuid.UUID, r domain.NodeResult) (domain.NodeRun, bool, error)

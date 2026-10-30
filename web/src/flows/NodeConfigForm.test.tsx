@@ -256,13 +256,31 @@ describe('NodeConfigForm', () => {
 
   it('configures the wait for the children', async () => {
     const result = setup('wait_children', {})
-    const lane = screen.getByLabelText(
-      'Baia em que o filho conta como concluído',
-    )
-    await userEvent.selectOptions(lane, 'Todo')
-    expect(result.config).toEqual({ done_lane_id: todo.id })
-    await userEvent.selectOptions(lane, 'Escolha a baia')
-    expect(result.config).toEqual({})
+    expect(screen.getByLabelText('Modo')).toHaveValue('all_succeed')
+    await userEvent.selectOptions(screen.getByLabelText('Modo'), 'all_finished')
+    await userEvent.type(screen.getByLabelText('Chave'), 'dev')
+    await userEvent.type(screen.getByLabelText('Valor'), 'ok')
+    expect(result.config).toEqual({
+      mode: 'all_finished',
+      property_key: 'dev',
+      property_value: 'ok',
+    })
+    await userEvent.clear(screen.getByLabelText('Chave'))
+    await userEvent.clear(screen.getByLabelText('Valor'))
+    expect(result.config).toEqual({ mode: 'all_finished' })
+  })
+
+  it('tells that an old wait still uses the done lane', async () => {
+    const result = setup('wait_children', { done_lane_id: todo.id })
+    expect(screen.getByText(/filho na baia Todo/)).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('Chave'), 'd')
+    expect(result.config).toEqual({ property_key: 'd' })
+    expect(screen.queryByText(/filho na baia/)).not.toBeInTheDocument()
+  })
+
+  it('tells when the done lane of an old wait is gone', () => {
+    setup('wait_children', { done_lane_id: 'gone' })
+    expect(screen.getByText(/filho na baia removida/)).toBeInTheDocument()
   })
 
   it('names the artifacts a human reviews', async () => {

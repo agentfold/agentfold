@@ -81,7 +81,7 @@ var Outputs = map[NodeType][]string{
 	// failed: the input lists no valid cards, or names unknown projects.
 	NodeCreateCards: {"next", "failed"},
 	// some_failed: the last run of a child failed or was canceled before
-	// the child reached the done lane.
+	// the child got the done property.
 	NodeWaitChildren: {"all_done", "some_failed"},
 	// changes_requested: the human asked for changes, handed on to the
 	// agent node it leads to.
@@ -198,9 +198,23 @@ type CreateCardsConfig struct {
 	CardTypeID uuid.UUID `json:"card_type_id"`
 }
 
-// WaitChildrenConfig waits until every child card is in the done lane.
+// WaitChildren modes: all_succeed leaves by some_failed as soon as a child
+// fails; all_finished waits until every child is done or failed.
+const (
+	WaitAllSucceed  = "all_succeed"
+	WaitAllFinished = "all_finished"
+)
+
+// WaitChildrenConfig waits for the child cards (those not canceled): a
+// child is done once it has the property PropertyKey set to PropertyValue.
+// An empty Mode is WaitAllSucceed.
 type WaitChildrenConfig struct {
-	DoneLaneID uuid.UUID `json:"done_lane_id"`
+	Mode          string `json:"mode,omitempty"`
+	PropertyKey   string `json:"property_key,omitempty"`
+	PropertyValue string `json:"property_value,omitempty"`
+	// DoneLaneID is how versions published before properties tell a done
+	// child: by the lane it is in.
+	DoneLaneID *uuid.UUID `json:"done_lane_id,omitempty"`
 }
 
 // HumanReviewConfig names the artifacts the human reviews; none means
@@ -310,7 +324,8 @@ func ChildCards(parent uuid.UUID, specs []ChildCardSpec, projects []Project, pla
 // ChildCardsSchema is the output schema an agent node before a
 // CreateCards node declares to hand on the cards to create.
 const ChildCardsSchema = `{"type":"object","required":["cards"],"properties":{"cards":{"type":"array","minItems":1,"items":{` +
-	`"type":"object","required":["title"],"properties":{"title":{"type":"string"},"description":{"type":"string"},"project":{"type":"string"}}}}}}`
+	`"type":"object","required":["title"],"properties":{"ref":{"type":"string"},"title":{"type":"string"},"description":{"type":"string"},` +
+	`"project":{"type":"string"},"depends_on":{"type":"array","items":{"type":"string"}}}}}}}`
 
 // ChildCardsFrom reads the cards to create from what the node before
 // handed on: the cards list of an agent's structured output, or of the
@@ -539,9 +554,11 @@ func (v *validator) configProblems(n Node) []string {
 		if err := json.Unmarshal(config, &c); err != nil {
 			return []string{invalidConfig(err)}
 		}
-		if !v.refs.Lanes[c.DoneLaneID] {
-			return []string{"escolha a baia em que um card filho conta como concluído"}
+		out := propertyProblems(c.PropertyKey, c.PropertyValue)
+		if c.Mode != "" && c.Mode != WaitAllSucceed && c.Mode != WaitAllFinished {
+			out = append(out, fmt.Sprintf("modo de espera desconhecido: %q", c.Mode))
 		}
+		return out
 	case NodeHumanReview:
 		var c HumanReviewConfig
 		if err := json.Unmarshal(config, &c); err != nil {

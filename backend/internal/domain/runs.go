@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -187,6 +188,17 @@ func MessageFrom(output json.RawMessage) string {
 		return b.String()
 	}
 	return v.Result
+}
+
+// LastMessage is the last message a node of a run handed on (see
+// MessageFrom), given the node runs in order; empty when none did.
+func LastMessage(nodes []NodeRun) string {
+	for _, nr := range slices.Backward(nodes) {
+		if msg := MessageFrom(nr.Output); msg != "" {
+			return msg
+		}
+	}
+	return ""
 }
 
 // Question is something an agent asked a human. Its node waits until every

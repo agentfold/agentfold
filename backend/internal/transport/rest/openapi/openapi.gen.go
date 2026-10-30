@@ -528,6 +528,24 @@ func (e TriggerNodeType) Valid() bool {
 	}
 }
 
+// Defines values for WaitChildrenConfigMode.
+const (
+	AllFinished WaitChildrenConfigMode = "all_finished"
+	AllSucceed  WaitChildrenConfigMode = "all_succeed"
+)
+
+// Valid indicates whether the value is a known member of the WaitChildrenConfigMode enum.
+func (e WaitChildrenConfigMode) Valid() bool {
+	switch e {
+	case AllFinished:
+		return true
+	case AllSucceed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WaitChildrenNodeType.
 const (
 	WaitChildren WaitChildrenNodeType = "wait_children"
@@ -1254,15 +1272,21 @@ type TriggerNode struct {
 // TriggerNodeType defines model for TriggerNode.Type.
 type TriggerNodeType string
 
-// WaitChildrenConfig Waits until every child card is in the done lane.
+// WaitChildrenConfig Waits for the child cards that were not canceled: a child is done once it has the property property_key set to property_value (both required to publish), failed when its last run failed or was canceled before that. all_done when every child is done; some_failed as soon as one failed (mode all_succeed, the default) or once every child is done or failed (mode all_finished).
 type WaitChildrenConfig struct {
-	// DoneLaneId Required to publish.
-	DoneLaneId *openapi_types.UUID `json:"done_lane_id,omitempty"`
+	// DoneLaneId Versions published before properties tell a done child by this lane; no longer publishable.
+	DoneLaneId    *openapi_types.UUID     `json:"done_lane_id,omitempty"`
+	Mode          *WaitChildrenConfigMode `json:"mode,omitempty"`
+	PropertyKey   *string                 `json:"property_key,omitempty"`
+	PropertyValue *string                 `json:"property_value,omitempty"`
 }
+
+// WaitChildrenConfigMode defines model for WaitChildrenConfig.Mode.
+type WaitChildrenConfigMode string
 
 // WaitChildrenNode defines model for WaitChildrenNode.
 type WaitChildrenNode struct {
-	// Config Waits until every child card is in the done lane.
+	// Config Waits for the child cards that were not canceled: a child is done once it has the property property_key set to property_value (both required to publish), failed when its last run failed or was canceled before that. all_done when every child is done; some_failed as soon as one failed (mode all_succeed, the default) or once every child is done or failed (mode all_finished).
 	Config   WaitChildrenConfig   `json:"config"`
 	Id       string               `json:"id"`
 	Position Position             `json:"position"`

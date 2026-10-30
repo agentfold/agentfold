@@ -1412,12 +1412,23 @@ components:
           description: Type of the new cards. Required to publish.
     WaitChildrenConfig:
       type: object
-      description: Waits until every child card is in the done lane.
+      description: >
+        Waits for the child cards that were not canceled: a child is done
+        once it has the property property_key set to property_value (both
+        required to publish), failed when its last run failed or was
+        canceled before that. all_done when every child is done;
+        some_failed as soon as one failed (mode all_succeed, the default)
+        or once every child is done or failed (mode all_finished).
       properties:
+        mode:
+          type: string
+          enum: [all_succeed, all_finished]
+        property_key: { type: string }
+        property_value: { type: string }
         done_lane_id:
           type: string
           format: uuid
-          description: Required to publish.
+          description: Versions published before properties tell a done child by this lane; no longer publishable.
     SetPropertyConfig:
       type: object
       description: Sets a property of the card. key and value are required to publish.

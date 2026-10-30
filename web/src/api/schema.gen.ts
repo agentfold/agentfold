@@ -1132,11 +1132,15 @@ export interface components {
              */
             card_type_id?: string;
         };
-        /** @description Waits until every child card is in the done lane. */
+        /** @description Waits for the child cards that were not canceled: a child is done once it has the property property_key set to property_value (both required to publish), failed when its last run failed or was canceled before that. all_done when every child is done; some_failed as soon as one failed (mode all_succeed, the default) or once every child is done or failed (mode all_finished). */
         WaitChildrenConfig: {
+            /** @enum {string} */
+            mode?: "all_succeed" | "all_finished";
+            property_key?: string;
+            property_value?: string;
             /**
              * Format: uuid
-             * @description Required to publish.
+             * @description Versions published before properties tell a done child by this lane; no longer publishable.
              */
             done_lane_id?: string;
         };

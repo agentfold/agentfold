@@ -160,8 +160,10 @@ func TestConfigProblems(t *testing.T) {
 		{"create cards", NodeCreateCards, `{"lane_id":"` + laneID.String() + `","card_type_id":"` + typeID.String() + `"}`, nil},
 		{"create cards without config", NodeCreateCards, `{}`, []string{"escolha a baia dos cards criados", "escolha o tipo dos cards criados"}},
 		{"create cards with bad JSON", NodeCreateCards, `[]`, []string{"configuração inválida"}},
-		{"wait children", NodeWaitChildren, `{"done_lane_id":"` + laneID.String() + `"}`, nil},
-		{"wait children without lane", NodeWaitChildren, `{}`, []string{"escolha a baia em que um card filho conta como concluído"}},
+		{"wait children", NodeWaitChildren, `{"mode":"all_finished","property_key":"dev","property_value":"ok"}`, nil},
+		{"wait children failing fast", NodeWaitChildren, `{"mode":"all_succeed","property_key":"dev","property_value":"ok"}`, nil},
+		{"wait children by lane", NodeWaitChildren, `{"done_lane_id":"` + laneID.String() + `"}`, []string{"informe a chave da propriedade", "informe o valor da propriedade"}},
+		{"wait children with bad mode", NodeWaitChildren, `{"mode":"any","property_key":"dev","property_value":"ok"}`, []string{`modo de espera desconhecido: "any"`}},
 		{"wait children with bad JSON", NodeWaitChildren, `[]`, []string{"configuração inválida"}},
 		// n is a lone node here: its changes_requested output leads nowhere.
 		{"human review", NodeHumanReview, `{"artifacts":["Plano"]}`, []string{"ligue a saída changes_requested"}},

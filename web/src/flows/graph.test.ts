@@ -174,9 +174,17 @@ describe('summary', () => {
       { kind: 'create_cards', config: {} },
       'Cria um card filho por item da saída anterior',
     ],
+    [{ kind: 'wait_children', config: {} }, 'Espera todos os filhos com ?=?'],
     [
-      { kind: 'wait_children', config: {} },
-      'Espera os cards filhos chegarem à baia final',
+      {
+        kind: 'wait_children',
+        config: {
+          mode: 'all_finished',
+          property_key: 'dev',
+          property_value: 'ok',
+        },
+      },
+      'Espera todos os filhos terminarem (dev=ok)',
     ],
     [{ kind: 'human_review', config: {} }, 'Revisão dos artefatos do run'],
     [{ kind: 'set_property', config: {} }, 'Define ?=? no card'],

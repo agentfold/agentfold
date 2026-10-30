@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -148,14 +147,7 @@ func (s *Service) lastRun(ctx context.Context, cardID uuid.UUID) (*TaskRun, erro
 	if err != nil {
 		return nil, err
 	}
-	out := &TaskRun{FlowName: last.FlowName, Status: last.Status, Error: last.Error}
-	for _, nr := range slices.Backward(nodes) {
-		if msg := domain.MessageFrom(nr.Output); msg != "" {
-			out.Result = msg
-			break
-		}
-	}
-	return out, nil
+	return &TaskRun{FlowName: last.FlowName, Status: last.Status, Error: last.Error, Result: domain.LastMessage(nodes)}, nil
 }
 
 // task returns a child card of the card of an agent.

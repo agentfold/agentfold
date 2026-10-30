@@ -105,7 +105,17 @@ type childEnv struct {
 
 func newChildEnv(t *testing.T) *childEnv {
 	t.Helper()
+	return newChildEnvWaiting(t, nil)
+}
+
+// newChildEnvWaiting is newChildEnv with wait as the config of the
+// WaitChildren node; nil waits for the children in lane done.
+func newChildEnvWaiting(t *testing.T, wait map[string]any) *childEnv {
+	t.Helper()
 	e := &childEnv{env: newEnv(t), done: uuid.New()}
+	if wait == nil {
+		wait = map[string]any{"done_lane_id": e.done}
+	}
 	e.store.lanes[e.done] = true
 	e.store.projects = []domain.Project{{ID: uuid.New(), Name: "chat-backend"}, {ID: uuid.New(), Name: "chat-web"}}
 	e.addFlow("split", graph{
@@ -113,7 +123,7 @@ func newChildEnv(t *testing.T) *childEnv {
 		configs: map[string]any{
 			"t":      triggerCfg(domain.EventCardCreated, nil),
 			"create": map[string]any{"lane_id": e.todo, "card_type_id": uuid.New()},
-			"wait":   map[string]any{"done_lane_id": e.done},
+			"wait":   wait,
 			"move":   map[string]any{"lane_id": e.done},
 		},
 		edges: []string{"t.next>split", "split.done>create", "create.next>wait", "wait.all_done>move", "move.next>end"},
@@ -423,5 +433,139 @@ func TestFinishingTheRunOfADeletedCard(t *testing.T) {
 	}
 	if run := e.onlyRun(); run.Status != domain.RunDone {
 		t.Fatalf("run %+v", run)
+	}
+}
+
+func (f *fakeStore) ListNodeRuns(_ context.Context, flowRunID uuid.UUID) ([]domain.NodeRun, error) {
+	return f.runNodes[flowRunID], f.err("ListNodeRuns")
+}
+
+// childChanged sets the properties of a child and handles the job that
+// tells its parent.
+func (e *childEnv) childChanged(child uuid.UUID, properties map[string]string) error {
+	c := e.store.cards[child]
+	c.Properties = properties
+	e.store.cards[child] = c
+	payload, _ := json.Marshal(domain.ChildChangedJob{CardID: child})
+	return e.engine.HandleChildChanged(context.Background(), payload)
+}
+
+// failChild makes the last run of a child fail with msg, its last agent
+// having handed on result.
+func (e *childEnv) failChild(child uuid.UUID, msg, result string) {
+	run := domain.FlowRun{ID: uuid.New(), FlowName: "dev", Status: domain.RunFailed, Error: msg}
+	if e.store.cardRuns == nil {
+		e.store.cardRuns = map[uuid.UUID][]domain.FlowRun{}
+		e.store.runNodes = map[uuid.UUID][]domain.NodeRun{}
+	}
+	e.store.cardRuns[child] = []domain.FlowRun{run}
+	out, _ := json.Marshal(map[string]string{"result": result})
+	e.store.runNodes[run.ID] = []domain.NodeRun{{Output: out}, {}}
+}
+
+func (e *childEnv) waitReport() string {
+	var out struct {
+		Result string `json:"result"`
+	}
+	_ = json.Unmarshal(e.nodeRun("wait").Output, &out)
+	return out.Result
+}
+
+func TestWaitChildrenByProperty(t *testing.T) {
+	e := newChildEnvWaiting(t, map[string]any{"property_key": " dev ", "property_value": "ok"})
+	if err := e.split(`[{"title":"API"},{"title":"Web"}]`); err != nil {
+		t.Fatal(err)
+	}
+	api, web := e.store.children[0], e.store.children[1]
+	// A child in the done lane of old versions does not count anymore.
+	if err := e.childMoved(api, e.done); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.childChanged(api, map[string]string{"dev": "ok"}); err != nil {
+		t.Fatal(err)
+	}
+	if e.onlyRunOf(e.card.ID).Status != domain.RunWaiting {
+		t.Fatal("the run went on with a child on its way")
+	}
+	if err := e.childChanged(web, map[string]string{"dev": "ok"}); err != nil {
+		t.Fatal(err)
+	}
+	if wait := e.nodeRun("wait"); wait.OutputHandle != "all_done" || e.waitReport() != "Todas as 2 tasks foram concluídas." {
+		t.Fatalf("wait %+v %s", wait, wait.Output)
+	}
+}
+
+func TestWaitChildrenFailsFast(t *testing.T) {
+	e := newChildEnvWaiting(t, map[string]any{"mode": "all_succeed", "property_key": "dev", "property_value": "ok"})
+	if err := e.split(`[{"title":"API"},{"title":"Web"},{"title":"Docs"}]`); err != nil {
+		t.Fatal(err)
+	}
+	api, web := e.store.children[0], e.store.children[1]
+	e.store.cards[api] = withProperty(e.store.cards[api])
+	e.failChild(web, "o gateway rejeitou", "faltam testes")
+	if err := e.childChanged(web, nil); err != nil {
+		t.Fatal(err)
+	}
+	wait := e.nodeRun("wait")
+	want := "1 de 3 tasks concluídas; 1 falharam e 1 ainda não terminaram.\n\n" +
+		`- "Web" (` + web.String() + ") falhou no fluxo dev: o gateway rejeitou\n  Última mensagem do agente: faltam testes"
+	if wait.OutputHandle != "some_failed" || e.waitReport() != want {
+		t.Fatalf("wait %+v\n%s", wait, e.waitReport())
+	}
+	if !strings.Contains(string(wait.Output), `"error":"o gateway rejeitou","result":"faltam testes"`) {
+		t.Fatalf("output %s", wait.Output)
+	}
+}
+
+func withProperty(c domain.Card) domain.Card {
+	c.Properties = map[string]string{"dev": "ok"}
+	return c
+}
+
+func TestWaitChildrenUntilAllFinish(t *testing.T) {
+	e := newChildEnvWaiting(t, map[string]any{"mode": "all_finished", "property_key": "dev", "property_value": "ok"})
+	if err := e.split(`[{"title":"API"},{"title":"Web"}]`); err != nil {
+		t.Fatal(err)
+	}
+	api, web := e.store.children[0], e.store.children[1]
+	e.failChild(web, "", "")
+	if err := e.childChanged(web, nil); err != nil {
+		t.Fatal(err)
+	}
+	if e.onlyRunOf(e.card.ID).Status != domain.RunWaiting {
+		t.Fatal("the run went on with a child on its way")
+	}
+	if err := e.childChanged(api, map[string]string{"dev": "ok"}); err != nil {
+		t.Fatal(err)
+	}
+	want := "1 de 2 tasks concluídas; 1 falharam.\n\n" + `- "Web" (` + web.String() + ") falhou no fluxo dev"
+	if wait := e.nodeRun("wait"); wait.OutputHandle != "some_failed" || e.waitReport() != want {
+		t.Fatalf("wait %+v\n%s", wait, e.waitReport())
+	}
+}
+
+func TestWaitChildrenNodeRunsError(t *testing.T) {
+	e := newChildEnvWaiting(t, map[string]any{"property_key": "dev", "property_value": "ok"})
+	if err := e.split(`[{"title":"API"}]`); err != nil {
+		t.Fatal(err)
+	}
+	e.failChild(e.store.children[0], "boom", "")
+	e.store.errs["ListNodeRuns"] = errBoom
+	if err := e.childChanged(e.store.children[0], nil); !errors.Is(err, errBoom) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestCreateCardsWithDependencies(t *testing.T) {
+	e := newChildEnv(t)
+	if err := e.split(`[{"title":"Web","depends_on":["api"]},{"ref":"api","title":"API"}]`); err != nil {
+		t.Fatal(err)
+	}
+	web, api := e.store.cards[e.store.children[0]], e.store.cards[e.store.children[1]]
+	if !slices.Equal(web.DependsOn, []uuid.UUID{api.ID}) {
+		t.Fatalf("web %+v", web)
+	}
+	if out := string(e.nodeRun("create").Output); !strings.Contains(out, `"ref":"api","title":"API"`) {
+		t.Fatalf("create output %s", out)
 	}
 }

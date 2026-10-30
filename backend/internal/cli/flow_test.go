@@ -388,8 +388,8 @@ func TestOpencodeEndToEnd(t *testing.T) {
 }
 
 // TestChildCardsEndToEnd: a planner splits the card into two children,
-// which run their own flow from their lane; the parent waits and moves on
-// once both are done.
+// which run their own flow from their lane and mark themselves done; the
+// parent waits and moves on once both are.
 func TestChildCardsEndToEnd(t *testing.T) {
 	s := newStack(t)
 	ctx := context.Background()
@@ -397,10 +397,11 @@ func TestChildCardsEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.flowOn(t, "impl", kids.ID, []domain.Node{s.agent("Implement it [done:implemented]"), s.moveTo(s.done)})
+	mark := domain.Node{ID: "mark", Type: domain.NodeSetProperty, Config: json.RawMessage(`{"key":"dev","value":"ok"}`)}
+	s.flowOn(t, "impl", kids.ID, []domain.Node{s.agent("Implement it [done:implemented]"), mark, s.moveTo(s.done)})
 	planner := s.agentWith("plan", "Split it [cards:API,Web] [done:split]", `"output_schema":`+domain.ChildCardsSchema)
 	create := domain.Node{ID: "create", Type: domain.NodeCreateCards, Config: fmt.Appendf(nil, `{"lane_id":%q,"card_type_id":%q}`, kids.ID, s.typ)}
-	wait := domain.Node{ID: "wait", Type: domain.NodeWaitChildren, Config: fmt.Appendf(nil, `{"done_lane_id":%q}`, s.done)}
+	wait := domain.Node{ID: "wait", Type: domain.NodeWaitChildren, Config: json.RawMessage(`{"property_key":"dev","property_value":"ok"}`)}
 	s.flow(t, []domain.Node{planner, create, wait, s.moveTo(s.done)})
 	card := s.startCard(t)
 
@@ -413,7 +414,7 @@ func TestChildCardsEndToEnd(t *testing.T) {
 		t.Fatalf("children %+v, %v", children, err)
 	}
 	for _, c := range children {
-		if c.LaneID != s.done {
+		if c.LaneID != s.done || !c.HasProperty("dev", "ok") {
 			t.Fatalf("child %s is not done: %+v", c.Title, c)
 		}
 	}

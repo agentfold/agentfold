@@ -46,9 +46,11 @@ export const childCardsSchema = {
         type: 'object',
         required: ['title'],
         properties: {
+          ref: { type: 'string' },
           title: { type: 'string' },
           description: { type: 'string' },
           project: { type: 'string' },
+          depends_on: { type: 'array', items: { type: 'string' } },
         },
       },
     },

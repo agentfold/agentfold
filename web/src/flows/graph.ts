@@ -230,8 +230,13 @@ export function summary({ kind, config }: StepData): string {
       return 'Move o card de baia'
     case 'create_cards':
       return 'Cria um card filho por item da saída anterior'
-    case 'wait_children':
-      return 'Espera os cards filhos chegarem à baia final'
+    case 'wait_children': {
+      const wait = config as WaitChildrenConfig
+      const property = `${wait.property_key ?? '?'}=${wait.property_value ?? '?'}`
+      return wait.mode === 'all_finished'
+        ? `Espera todos os filhos terminarem (${property})`
+        : `Espera todos os filhos com ${property}`
+    }
     case 'human_review': {
       const names = (config as HumanReviewConfig).artifacts ?? []
       return names.length > 0
