@@ -41,7 +41,9 @@ func (s *Store) ListNodeOutput(ctx context.Context, nodeRunID uuid.UUID) ([]doma
 // ListCardFlowRuns returns the runs of a card, newest first.
 func (s *Store) ListCardFlowRuns(ctx context.Context, cardID uuid.UUID) ([]domain.FlowRun, error) {
 	rows, err := s.q.ListCardFlowRuns(ctx, cardID)
-	return mapRows(rows, err, func(r sqlcgen.ListCardFlowRunsRow) domain.FlowRun { return namedRun(r.FlowRun, r.FlowName) })
+	return mapRows(rows, err, func(r sqlcgen.ListCardFlowRunsRow) domain.FlowRun {
+		return namedRun(r.FlowRun, r.FlowName, r.AwaitingReview)
+	})
 }
 
 // CancelFlowRun ends an active run: its open nodes fail, its open questions

@@ -101,15 +101,17 @@ func (q *Queries) InsertNodeOutput(ctx context.Context, arg InsertNodeOutputPara
 }
 
 const listCardFlowRuns = `-- name: ListCardFlowRuns :many
-SELECT r.id, r.flow_version_id, r.card_id, r.trigger, r.status, r.started_at, r.finished_at, r.flow_id, r.error, f.name AS flow_name
+SELECT r.id, r.flow_version_id, r.card_id, r.trigger, r.status, r.started_at, r.finished_at, r.flow_id, r.error, f.name AS flow_name,
+    EXISTS (SELECT 1 FROM node_runs n WHERE n.flow_run_id = r.id AND n.status = 'awaiting_review') AS awaiting_review
 FROM flow_runs r JOIN flows f ON f.id = r.flow_id
 WHERE r.card_id = $1
 ORDER BY r.started_at DESC, r.id DESC
 `
 
 type ListCardFlowRunsRow struct {
-	FlowRun  FlowRun
-	FlowName string
+	FlowRun        FlowRun
+	FlowName       string
+	AwaitingReview bool
 }
 
 func (q *Queries) ListCardFlowRuns(ctx context.Context, cardID uuid.UUID) ([]ListCardFlowRunsRow, error) {
@@ -132,6 +134,7 @@ func (q *Queries) ListCardFlowRuns(ctx context.Context, cardID uuid.UUID) ([]Lis
 			&i.FlowRun.FlowID,
 			&i.FlowRun.Error,
 			&i.FlowName,
+			&i.AwaitingReview,
 		); err != nil {
 			return nil, err
 		}

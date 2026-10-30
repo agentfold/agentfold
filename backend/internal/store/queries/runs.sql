@@ -6,14 +6,16 @@ ON CONFLICT (card_id, flow_id) WHERE status IN ('running', 'waiting') DO NOTHING
 RETURNING *;
 
 -- name: GetFlowRun :one
-SELECT sqlc.embed(r), f.name AS flow_name
+SELECT sqlc.embed(r), f.name AS flow_name,
+    EXISTS (SELECT 1 FROM node_runs n WHERE n.flow_run_id = r.id AND n.status = 'awaiting_review') AS awaiting_review
 FROM flow_runs r JOIN flows f ON f.id = r.flow_id
 WHERE r.id = $1;
 
 -- ListLatestFlowRuns returns one run per card: an active one if there is
 -- any, else the last one.
 -- name: ListLatestFlowRuns :many
-SELECT DISTINCT ON (r.card_id) sqlc.embed(r), f.name AS flow_name
+SELECT DISTINCT ON (r.card_id) sqlc.embed(r), f.name AS flow_name,
+    EXISTS (SELECT 1 FROM node_runs n WHERE n.flow_run_id = r.id AND n.status = 'awaiting_review') AS awaiting_review
 FROM flow_runs r JOIN flows f ON f.id = r.flow_id
 ORDER BY r.card_id, r.status IN ('running', 'waiting') DESC, r.started_at DESC, r.id DESC;
 

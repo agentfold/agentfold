@@ -31,7 +31,8 @@ export function RunBadge({ run }: { run: FlowRun }) {
         />
       )}
       <span className="truncate">
-        {labels[run.status]} · {run.flow_name}
+        {run.awaiting_review ? 'Aguardando revisão' : labels[run.status]} ·{' '}
+        {run.flow_name}
       </span>
     </span>
   )

@@ -49,16 +49,17 @@ func toCardEvent(e domain.CardEvent) openapi.CardEvent {
 
 func toFlowRun(r domain.FlowRun) openapi.FlowRun {
 	return openapi.FlowRun{
-		Id:            r.ID,
-		FlowId:        r.FlowID,
-		FlowVersionId: r.FlowVersionID,
-		FlowName:      r.FlowName,
-		CardId:        r.CardID,
-		Trigger:       openapi.FlowRunTrigger(r.Trigger),
-		Status:        openapi.FlowRunStatus(r.Status),
-		Error:         r.Error,
-		StartedAt:     r.StartedAt,
-		FinishedAt:    r.FinishedAt,
+		Id:             r.ID,
+		FlowId:         r.FlowID,
+		FlowVersionId:  r.FlowVersionID,
+		FlowName:       r.FlowName,
+		CardId:         r.CardID,
+		Trigger:        openapi.FlowRunTrigger(r.Trigger),
+		Status:         openapi.FlowRunStatus(r.Status),
+		AwaitingReview: r.AwaitingReview,
+		Error:          r.Error,
+		StartedAt:      r.StartedAt,
+		FinishedAt:     r.FinishedAt,
 	}
 }
 
@@ -90,7 +91,7 @@ func toRunDetail(r service.RunDetail) openapi.FlowRunDetail {
 	return openapi.FlowRunDetail{
 		Id: run.Id, FlowId: run.FlowId, FlowVersionId: run.FlowVersionId, FlowName: run.FlowName, CardId: run.CardId,
 		Trigger: openapi.FlowRunDetailTrigger(run.Trigger), Status: openapi.FlowRunDetailStatus(run.Status),
-		Error: run.Error, StartedAt: run.StartedAt, FinishedAt: run.FinishedAt,
+		AwaitingReview: run.AwaitingReview, Error: run.Error, StartedAt: run.StartedAt, FinishedAt: run.FinishedAt,
 		Nodes: mapAll(r.Nodes, toNodeRun),
 	}
 }

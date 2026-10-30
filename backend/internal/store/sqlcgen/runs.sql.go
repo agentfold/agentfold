@@ -244,14 +244,16 @@ func (q *Queries) GetAgentSession(ctx context.Context, arg GetAgentSessionParams
 }
 
 const getFlowRun = `-- name: GetFlowRun :one
-SELECT r.id, r.flow_version_id, r.card_id, r.trigger, r.status, r.started_at, r.finished_at, r.flow_id, r.error, f.name AS flow_name
+SELECT r.id, r.flow_version_id, r.card_id, r.trigger, r.status, r.started_at, r.finished_at, r.flow_id, r.error, f.name AS flow_name,
+    EXISTS (SELECT 1 FROM node_runs n WHERE n.flow_run_id = r.id AND n.status = 'awaiting_review') AS awaiting_review
 FROM flow_runs r JOIN flows f ON f.id = r.flow_id
 WHERE r.id = $1
 `
 
 type GetFlowRunRow struct {
-	FlowRun  FlowRun
-	FlowName string
+	FlowRun        FlowRun
+	FlowName       string
+	AwaitingReview bool
 }
 
 func (q *Queries) GetFlowRun(ctx context.Context, id uuid.UUID) (GetFlowRunRow, error) {
@@ -268,6 +270,7 @@ func (q *Queries) GetFlowRun(ctx context.Context, id uuid.UUID) (GetFlowRunRow, 
 		&i.FlowRun.FlowID,
 		&i.FlowRun.Error,
 		&i.FlowName,
+		&i.AwaitingReview,
 	)
 	return i, err
 }
@@ -550,14 +553,16 @@ func (q *Queries) InsertNodeRun(ctx context.Context, arg InsertNodeRunParams) (N
 }
 
 const listLatestFlowRuns = `-- name: ListLatestFlowRuns :many
-SELECT DISTINCT ON (r.card_id) r.id, r.flow_version_id, r.card_id, r.trigger, r.status, r.started_at, r.finished_at, r.flow_id, r.error, f.name AS flow_name
+SELECT DISTINCT ON (r.card_id) r.id, r.flow_version_id, r.card_id, r.trigger, r.status, r.started_at, r.finished_at, r.flow_id, r.error, f.name AS flow_name,
+    EXISTS (SELECT 1 FROM node_runs n WHERE n.flow_run_id = r.id AND n.status = 'awaiting_review') AS awaiting_review
 FROM flow_runs r JOIN flows f ON f.id = r.flow_id
 ORDER BY r.card_id, r.status IN ('running', 'waiting') DESC, r.started_at DESC, r.id DESC
 `
 
 type ListLatestFlowRunsRow struct {
-	FlowRun  FlowRun
-	FlowName string
+	FlowRun        FlowRun
+	FlowName       string
+	AwaitingReview bool
 }
 
 // ListLatestFlowRuns returns one run per card: an active one if there is
@@ -582,6 +587,7 @@ func (q *Queries) ListLatestFlowRuns(ctx context.Context) ([]ListLatestFlowRunsR
 			&i.FlowRun.FlowID,
 			&i.FlowRun.Error,
 			&i.FlowName,
+			&i.AwaitingReview,
 		); err != nil {
 			return nil, err
 		}

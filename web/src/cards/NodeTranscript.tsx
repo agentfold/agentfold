@@ -1,15 +1,31 @@
 import type { NodeOutput } from '../api/client'
 import { useNodeOutput } from '../api/queries'
 import { QueryStatus } from '../components/Loading'
+import { formatTime } from './format'
 
-/** What the agent did while running a node, updated live. */
-export function NodeTranscript({ nodeRunId }: { nodeRunId: string }) {
+/**
+ * What the agent did while running a node, updated live. A step shows once
+ * it finishes, so a node running since startedAt may show none for a while.
+ */
+export function NodeTranscript({
+  nodeRunId,
+  startedAt,
+}: {
+  nodeRunId: string
+  startedAt?: string
+}) {
   const output = useNodeOutput(nodeRunId)
   if (!output.data) {
     return <QueryStatus isPending error={output.error} />
   }
   if (output.data.length === 0) {
-    return <p className="text-sm text-slate-500">Nenhuma saída ainda.</p>
+    return (
+      <p className="text-sm text-slate-500">
+        {startedAt
+          ? `O agente está trabalhando desde ${formatTime(startedAt)}. Cada passo aparece aqui quando termina.`
+          : 'Nenhuma saída ainda.'}
+      </p>
+    )
   }
   return (
     <ol

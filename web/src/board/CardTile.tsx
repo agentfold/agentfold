@@ -3,6 +3,7 @@ import { CSS } from '@dnd-kit/utilities'
 
 import type { Card } from '../api/client'
 import { CardContent, type BoardLookup } from './CardContent'
+import { pageHref } from '../route'
 import { isActive } from './runs'
 
 interface Props {
@@ -13,7 +14,8 @@ interface Props {
 
 export function CardTile({ card, lookup, onOpen }: Props) {
   // A running flow holds the card: only the flow moves it.
-  const busy = isActive(lookup.runs.get(card.id))
+  const run = lookup.runs.get(card.id)
+  const busy = isActive(run)
   const {
     attributes,
     listeners,
@@ -36,13 +38,23 @@ export function CardTile({ card, lookup, onOpen }: Props) {
       data-dragging={isDragging}
       {...listeners}
     >
-      <button
-        type="button"
-        className="min-w-0 flex-1 cursor-pointer text-left"
-        onClick={onOpen}
-      >
-        <CardContent card={card} lookup={lookup} />
-      </button>
+      <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
+        <button
+          type="button"
+          className="w-full cursor-pointer text-left"
+          onClick={onOpen}
+        >
+          <CardContent card={card} lookup={lookup} />
+        </button>
+        {run?.awaiting_review && (
+          <a
+            className="rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-500"
+            href={pageHref('review', card.id)}
+          >
+            Revisar
+          </a>
+        )}
+      </div>
       <button
         type="button"
         className="cursor-grab rounded px-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"

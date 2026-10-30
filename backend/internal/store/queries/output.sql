@@ -5,7 +5,8 @@ INSERT INTO node_run_output (node_run_id, kind, text, tool, is_error) VALUES ($1
 SELECT * FROM node_run_output WHERE node_run_id = $1 ORDER BY id;
 
 -- name: ListCardFlowRuns :many
-SELECT sqlc.embed(r), f.name AS flow_name
+SELECT sqlc.embed(r), f.name AS flow_name,
+    EXISTS (SELECT 1 FROM node_runs n WHERE n.flow_run_id = r.id AND n.status = 'awaiting_review') AS awaiting_review
 FROM flow_runs r JOIN flows f ON f.id = r.flow_id
 WHERE r.card_id = $1
 ORDER BY r.started_at DESC, r.id DESC;

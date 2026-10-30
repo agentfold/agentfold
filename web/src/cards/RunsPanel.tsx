@@ -9,6 +9,7 @@ import { kindLabels, outputLabels } from '../flows/graph'
 import { outcomes } from './timeline'
 import { formatTime, runLabel } from './format'
 import { NodeTranscript } from './NodeTranscript'
+import { pageHref } from '../route'
 
 const runStatus: Record<FlowRunDetail['status'], string> = {
   running: 'rodando',
@@ -79,8 +80,10 @@ export function RunsPanel({ runs }: { runs: FlowRunDetail[] }) {
 }
 
 function NodeRunItem({ node, cardId }: { node: NodeRun; cardId: string }) {
-  // The output of the node running now shows from the start.
-  const [showOutput, setShowOutput] = useState(node.status === 'running')
+  // The output of the node running now shows unless hidden.
+  const [toggled, setToggled] = useState<boolean>()
+  const running = node.status === 'running'
+  const showOutput = toggled ?? running
   const label = (kindLabels as Record<string, string | undefined>)[
     node.node_type
   ]
@@ -143,19 +146,24 @@ function NodeRunItem({ node, cardId }: { node: NodeRun; cardId: string }) {
             className="self-start"
             aria-expanded={showOutput}
             onClick={() => {
-              setShowOutput(!showOutput)
+              setToggled(!showOutput)
             }}
           >
             {showOutput ? 'Ocultar saída do agente' : 'Ver saída do agente'}
           </Button>
-          {showOutput && <NodeTranscript nodeRunId={node.id} />}
+          {showOutput && (
+            <NodeTranscript
+              nodeRunId={node.id}
+              startedAt={running ? (node.started_at ?? undefined) : undefined}
+            />
+          )}
         </>
       )}
     </article>
   )
 }
 
-/** A human review awaiting: approve here, or ask for changes in Artefatos. */
+/** A human review awaiting: approve here, or open the review screen. */
 function ReviewPending({ cardId }: { cardId: string }) {
   const artifacts = useCardArtifacts(cardId)
   const approve = useApproveArtifact()
@@ -167,9 +175,15 @@ function ReviewPending({ cardId }: { cardId: string }) {
     <div className="flex flex-col gap-2 text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <span className="flex-1 text-slate-700">
-          Revise {open.map((a) => a.name).join(', ')} na aba Artefatos para
-          pedir ajustes, ou aprove para seguir o fluxo.
+          {open.map((a) => a.name).join(', ')} aguarda sua revisão: peça ajustes
+          ao agente ou aprove para seguir o fluxo.
         </span>
+        <a
+          className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500"
+          href={pageHref('review', cardId)}
+        >
+          Revisar
+        </a>
         <Button
           variant="secondary"
           disabled={approve.isPending}

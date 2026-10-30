@@ -146,7 +146,7 @@ const (
 		`"kind":"tool_use","text":"{}","tool":"Read","is_error":false,"created_at":"2026-10-25T12:00:00Z"}`
 	runJSON = `{"id":"00000000-0000-7000-8000-000000000001","flow_id":"00000000-0000-7000-8000-000000000002",` +
 		`"flow_version_id":"00000000-0000-7000-8000-000000000002","flow_name":"dev",` +
-		`"card_id":"00000000-0000-7000-8000-000000000002","trigger":"card_created","status":"failed","error":"boom",` +
+		`"card_id":"00000000-0000-7000-8000-000000000002","trigger":"card_created","status":"failed","awaiting_review":false,"error":"boom",` +
 		`"started_at":"2026-10-25T12:00:00Z","finished_at":"2026-10-25T12:00:00Z"}`
 	cardEventJSON = `{"id":"00000000-0000-7000-8000-000000000001","card_id":"00000000-0000-7000-8000-000000000002",` +
 		`"type":"card.moved","payload":{"position":1},"created_at":"2026-10-25T12:00:00Z"}`

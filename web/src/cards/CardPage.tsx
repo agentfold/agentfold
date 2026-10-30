@@ -82,6 +82,14 @@ export function CardPage({ cardId }: { cardId: string }) {
           </p>
         </div>
         {latest && <RunBadge run={latest} />}
+        {latest?.awaiting_review && (
+          <a
+            className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500"
+            href={pageHref('review', card.id)}
+          >
+            Revisar
+          </a>
+        )}
         {latest && isActive(latest) && (
           <Button
             variant="danger"
@@ -137,7 +145,9 @@ export function CardPage({ cardId }: { cardId: string }) {
             }}
           />
         )}
-        {tab === 'artifacts' && <ArtifactsPanel cardId={card.id} />}
+        {tab === 'artifacts' && (
+          <ArtifactsPanel cardId={card.id} className="h-[75vh]" />
+        )}
         {tab === 'timeline' && <CardTimeline cardId={card.id} />}
         {tab === 'usage' && <UsagePanel runs={runs.data} />}
       </div>

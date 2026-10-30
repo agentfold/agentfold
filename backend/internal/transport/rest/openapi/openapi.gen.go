@@ -807,7 +807,9 @@ type FlowNode struct {
 
 // FlowRun A run of a flow for a card.
 type FlowRun struct {
-	CardId openapi_types.UUID `json:"card_id"`
+	// AwaitingReview A human_review node of the run awaits the human (the run is waiting).
+	AwaitingReview bool               `json:"awaiting_review"`
+	CardId         openapi_types.UUID `json:"card_id"`
 
 	// Error Why the run failed; empty otherwise.
 	Error         string             `json:"error"`
@@ -833,7 +835,9 @@ type FlowRunTrigger string
 
 // FlowRunDetail defines model for FlowRunDetail.
 type FlowRunDetail struct {
-	CardId openapi_types.UUID `json:"card_id"`
+	// AwaitingReview A human_review node of the run awaits the human (the run is waiting).
+	AwaitingReview bool               `json:"awaiting_review"`
+	CardId         openapi_types.UUID `json:"card_id"`
 
 	// Error Why the run failed; empty otherwise.
 	Error         string             `json:"error"`

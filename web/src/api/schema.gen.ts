@@ -828,6 +828,8 @@ export interface components {
             /** Format: uuid */
             flow_version_id: string;
             flow_name: string;
+            /** @description A human_review node of the run awaits the human (the run is waiting). */
+            awaiting_review: boolean;
             /** Format: uuid */
             card_id: string;
             /**

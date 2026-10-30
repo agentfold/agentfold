@@ -33,13 +33,16 @@ type FlowRun struct {
 	FlowID        uuid.UUID
 	FlowVersionID uuid.UUID
 	// FlowName is filled in when reading runs, not when changing them.
-	FlowName   string
-	CardID     uuid.UUID
-	Trigger    string
-	Status     RunStatus
-	Error      string
-	StartedAt  time.Time
-	FinishedAt *time.Time
+	FlowName string
+	// AwaitingReview tells a human_review node of the run awaits the
+	// human; filled in when reading runs, like FlowName.
+	AwaitingReview bool
+	CardID         uuid.UUID
+	Trigger        string
+	Status         RunStatus
+	Error          string
+	StartedAt      time.Time
+	FinishedAt     *time.Time
 }
 
 // EntityID returns the run id.

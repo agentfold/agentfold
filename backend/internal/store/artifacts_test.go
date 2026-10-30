@@ -124,8 +124,14 @@ func TestReviewRequestChanges(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
 	r := review(t, s)
-	if got, _ := s.GetFlowRun(ctx, r.run.ID); got.Status != domain.RunWaiting {
-		t.Fatalf("the run waits for the review: %s", got.Status)
+	if got, _ := s.GetFlowRun(ctx, r.run.ID); got.Status != domain.RunWaiting || !got.AwaitingReview {
+		t.Fatalf("the run waits for the review: %+v", got)
+	}
+	if latest, _ := s.ListLatestFlowRuns(ctx); len(latest) != 1 || !latest[0].AwaitingReview {
+		t.Fatalf("latest runs %+v", latest)
+	}
+	if runs, _ := s.ListCardFlowRuns(ctx, r.run.CardID); len(runs) != 1 || !runs[0].AwaitingReview {
+		t.Fatalf("card runs %+v", runs)
 	}
 	if state := reviewState(t, s, r.artifact.ID); state != domain.ReviewOpen {
 		t.Fatalf("state %s", state)
@@ -141,8 +147,8 @@ func TestReviewRequestChanges(t *testing.T) {
 	if nr.Status != domain.NodeDone || nr.OutputHandle != "changes_requested" || domain.MessageFrom(nr.Output) != domain.ReviewPrompt("Plano", "plan.md", "more detail") {
 		t.Fatalf("decided node %+v %s", nr, nr.Output)
 	}
-	if got, _ := s.GetFlowRun(ctx, r.run.ID); got.Status != domain.RunRunning {
-		t.Fatalf("the run goes on: %s", got.Status)
+	if got, _ := s.GetFlowRun(ctx, r.run.ID); got.Status != domain.RunRunning || got.AwaitingReview {
+		t.Fatalf("the run goes on: %+v", got)
 	}
 	var job string
 	if err := pool.QueryRow(ctx, `SELECT payload->>'node_run_id' FROM jobs WHERE kind = 'flow.continue'`).Scan(&job); err != nil || job != r.review.ID.String() {

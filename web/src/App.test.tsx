@@ -62,6 +62,18 @@ describe('App', () => {
       'page',
     )
 
+    goTo('#/review/some-id')
+    expect(await screen.findByText(/Card não encontrado/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Board' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+
+    goTo('#/review')
+    expect(
+      await screen.findByText('O board ainda não tem baias.'),
+    ).toBeInTheDocument()
+
     goTo('#/cards')
     expect(
       await screen.findByText('O board ainda não tem baias.'),

@@ -1,11 +1,12 @@
 import { useSyncExternalStore } from 'react'
 
 export type Page =
-  'board' | 'cards' | 'projects' | 'card-types' | 'flows' | 'agents'
+  'board' | 'cards' | 'review' | 'projects' | 'card-types' | 'flows' | 'agents'
 
 const pages: Page[] = [
   'board',
   'cards',
+  'review',
   'projects',
   'card-types',
   'flows',

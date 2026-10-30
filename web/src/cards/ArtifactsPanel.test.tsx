@@ -1,12 +1,16 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   artifact,
   artifactMessage,
   createFakeBackend,
+  nodeRun,
+  runDetail,
 } from '../test/fakeBackend'
+
+const stamp = '2026-10-30T16:39:18Z'
 import { renderWithApi } from '../test/render'
 import { ArtifactsPanel } from './ArtifactsPanel'
 
@@ -15,6 +19,11 @@ function setup(artifacts: ReturnType<typeof artifact>[]) {
   renderWithApi(<ArtifactsPanel cardId="c" />, backend)
   return backend
 }
+
+// jsdom lays nothing out: a selection sits at a fixed place.
+beforeEach(() => {
+  Range.prototype.getBoundingClientRect = () => new DOMRect(30, 20, 100, 16)
+})
 
 /** Selects the text of node, as a reader dragging over it would. */
 function select(node: Node) {
@@ -62,9 +71,28 @@ describe('ArtifactsPanel', () => {
       screen.getByRole('heading', { name: 'Plano v1' }),
     ).toBeInTheDocument()
 
-    await userEvent.selectOptions(screen.getByLabelText('Artefato'), 'Riscos')
-    expect(screen.getByRole('listitem')).toHaveTextContent('um')
+    await userEvent.click(screen.getByRole('tab', { name: 'Riscos' }))
+    expect(screen.getByRole('tab', { name: 'Riscos' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    expect(screen.getByText('um')).toBeInTheDocument()
     expect(screen.queryByLabelText('Versão')).not.toBeInTheDocument()
+  })
+
+  it('opens on the artifact awaiting review', async () => {
+    setup([
+      artifact('c', 'Riscos', ['# Riscos'], { review: 'approved' }),
+      artifact('c', 'Plano', ['# Plano']),
+    ])
+    expect(
+      await screen.findByRole('heading', { name: 'Plano' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Plano' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    expect(screen.getByTitle('Aguardando revisão')).toBeInTheDocument()
   })
 
   it('quotes a selected passage and sends the message', async () => {
@@ -72,23 +100,28 @@ describe('ArtifactsPanel', () => {
     const backend = setup([plan])
     const passage = await screen.findByText('Usar Postgres.')
     expect(
-      screen.queryByRole('button', { name: 'Revisar' }),
+      screen.queryByRole('button', { name: 'Citar' }),
     ).not.toBeInTheDocument()
 
     act(() => {
       select(passage)
     })
-    await userEvent.click(screen.getByRole('button', { name: 'Revisar' }))
+    const cite = screen.getByRole('button', { name: 'Citar' })
+    expect(cite).toHaveStyle({ top: '8px', left: '30px' })
+    expect(fireEvent.mouseDown(cite)).toBe(false)
+    await userEvent.click(cite)
     const message = screen.getByLabelText('Mensagem para o agente')
-    expect(message).toHaveValue('Citação sobre "Usar Postgres.":\n')
+    expect(message).toHaveValue('> Usar Postgres.\n\n')
+    expect(message).toHaveFocus()
+    expect(window.getSelection()?.toString()).toBe('')
     await userEvent.type(message, 'troque por SQLite')
 
     act(() => {
       select(screen.getByRole('heading', { name: 'Plano' }))
     })
-    await userEvent.click(screen.getByRole('button', { name: 'Revisar' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Citar' }))
     expect(message).toHaveValue(
-      'Citação sobre "Usar Postgres.":\ntroque por SQLite\n\nCitação sobre "Plano":\n',
+      '> Usar Postgres.\n\ntroque por SQLite\n\n> Plano\n\n',
     )
 
     await userEvent.click(screen.getByRole('button', { name: 'Pedir ajustes' }))
@@ -100,11 +133,70 @@ describe('ArtifactsPanel', () => {
       version: 1,
     })
     expect(
-      await screen.findByText('O agente está revisando…'),
+      await screen.findByText('Agente · ajustando o artefato…'),
     ).toBeInTheDocument()
     expect(message).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Pedir ajustes' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Aprovar' })).toBeDisabled()
+  })
+
+  it('quotes passages of several lines and drops the offer on scroll', async () => {
+    setup([artifact('c', 'Plano', ['```\nlinha 1\nlinha 2\n```'])])
+    const code = await screen.findByText(/linha 1/)
+    act(() => {
+      select(code)
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Citar' }))
+    expect(screen.getByLabelText('Mensagem para o agente')).toHaveValue(
+      '> linha 1\n> linha 2\n\n',
+    )
+
+    act(() => {
+      select(code)
+    })
+    fireEvent.scroll(screen.getByTestId('artifact-content'))
+    expect(
+      screen.queryByRole('button', { name: 'Citar' }),
+    ).not.toBeInTheDocument()
+
+    act(() => {
+      select(code)
+    })
+    window.getSelection()?.removeAllRanges()
+    fireEvent.mouseUp(screen.getByTestId('artifact-content'))
+    expect(
+      screen.queryByRole('button', { name: 'Citar' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it.each([
+    [
+      'running',
+      [nodeRun('planner', 'agent', { status: 'running', started_at: stamp })],
+      /O agente está trabalhando desde/,
+    ],
+    [
+      'queued',
+      [nodeRun('planner', 'agent', { status: 'queued', started_at: null })],
+      'Nenhuma saída ainda.',
+    ],
+  ] as const)('shows the %s agent while it revises', async (_, nodes, text) => {
+    const plan = artifact('c', 'Plano', ['x'], { review: 'revising' })
+    const backend = createFakeBackend({
+      artifacts: [plan],
+      cardRuns: [
+        runDetail('c', 'running', [
+          nodeRun('review', 'human_review'),
+          ...nodes,
+        ]),
+      ],
+    })
+    renderWithApi(<ArtifactsPanel cardId="c" />, backend)
+    expect(await screen.findByText(text)).toBeInTheDocument()
+    expect(
+      screen.getByText('Agente · ajustando o artefato…'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Nenhuma mensagem.')).not.toBeInTheDocument()
   })
 
   it('approves the review', async () => {
@@ -142,7 +234,7 @@ describe('ArtifactsPanel', () => {
       select(screen.getByRole('heading', { name: 'Velho' }))
     })
     expect(
-      screen.queryByRole('button', { name: 'Revisar' }),
+      screen.queryByRole('button', { name: 'Citar' }),
     ).not.toBeInTheDocument()
     expect(screen.getByLabelText('Mensagem para o agente')).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Aprovar' })).toBeDisabled()
@@ -155,12 +247,12 @@ describe('ArtifactsPanel', () => {
       select(screen.getByText(/Selecione um trecho/))
     })
     expect(
-      screen.queryByRole('button', { name: 'Revisar' }),
+      screen.queryByRole('button', { name: 'Citar' }),
     ).not.toBeInTheDocument()
     vi.spyOn(window, 'getSelection').mockReturnValue(null)
     fireEvent.mouseUp(passage)
     expect(
-      screen.queryByRole('button', { name: 'Revisar' }),
+      screen.queryByRole('button', { name: 'Citar' }),
     ).not.toBeInTheDocument()
     vi.restoreAllMocks()
   })
@@ -203,7 +295,7 @@ describe('ArtifactsPanel', () => {
       select(passage)
     })
     expect(
-      screen.queryByRole('button', { name: 'Revisar' }),
+      screen.queryByRole('button', { name: 'Citar' }),
     ).not.toBeInTheDocument()
     expect(
       screen.queryByLabelText('Mensagem para o agente'),

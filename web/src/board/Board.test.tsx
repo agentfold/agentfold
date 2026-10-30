@@ -69,14 +69,22 @@ describe('Board', () => {
       cards: [d.parent, d.child, d.orphan],
       runs: [
         flowRun(d.parent.id, 'running'),
-        flowRun(d.child.id, 'waiting', { flow_name: 'review' }),
+        flowRun(d.child.id, 'waiting', {
+          flow_name: 'review',
+          awaiting_review: true,
+        }),
         flowRun(d.orphan.id, 'failed', { error: 'sem resultado' }),
       ],
     })
     renderWithApi(<Board />, backend)
     const running = await screen.findByText('Rodando · dev')
     expect(running.parentElement).toHaveAttribute('title', 'dev')
-    expect(screen.getByText('Aguardando · review')).toBeInTheDocument()
+    expect(screen.getByText('Aguardando revisão · review')).toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: 'Revisar' })).toHaveLength(1)
+    expect(screen.getByRole('link', { name: 'Revisar' })).toHaveAttribute(
+      'href',
+      `#/review/${d.child.id}`,
+    )
     expect(screen.getByText('Falhou · dev').parentElement).toHaveAttribute(
       'title',
       'dev: sem resultado',

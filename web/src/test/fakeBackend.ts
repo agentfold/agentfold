@@ -153,6 +153,7 @@ export function flowRun(
     card_id: cardId,
     trigger: 'card_entered_lane',
     status,
+    awaiting_review: false,
     error: '',
     started_at: stamp,
     finished_at: null,

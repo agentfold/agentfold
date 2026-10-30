@@ -309,7 +309,7 @@ describe('RunsPanel', () => {
       output_handle: '',
     })
     const { backend, card: c } = setup((id) => [
-      runDetail(id, 'waiting', [review]),
+      runDetail(id, 'waiting', [review], { awaiting_review: true }),
     ])
     backend.state.artifacts = [
       artifact(c.id, 'Plano', ['x']),
@@ -318,8 +318,15 @@ describe('RunsPanel', () => {
     const node = await screen.findByRole('article', { name: 'review 1' })
     expect(node).toHaveTextContent('Aguardando revisão')
     expect(
-      await within(node).findByText(/Revise Plano na aba Artefatos/),
+      await within(node).findByText(/Plano aguarda sua revisão/),
     ).toBeInTheDocument()
+    for (const link of [
+      within(node).getByRole('link', { name: 'Revisar' }),
+      screen.getAllByRole('link', { name: 'Revisar' })[0],
+    ]) {
+      expect(link).toHaveAttribute('href', `#/review/${c.id}`)
+    }
+    expect(screen.getByText('Aguardando revisão · dev')).toBeInTheDocument()
 
     backend.failNext('POST /artifacts', 500)
     await userEvent.click(within(node).getByRole('button', { name: 'Aprovar' }))
@@ -333,6 +340,21 @@ describe('RunsPanel', () => {
     })
     expect(backend.state.artifacts[0].review).toBe('approved')
   })
+
+  it.each([
+    ['2026-10-30T16:39:18Z', /O agente está trabalhando desde/],
+    [null, 'Nenhuma saída ainda.'],
+  ])(
+    'says the agent works before its first step (%s)',
+    async (started, text) => {
+      setup((id) => [
+        runDetail(id, 'running', [
+          nodeRun('dev', 'agent', { status: 'running', started_at: started }),
+        ]),
+      ])
+      expect(await screen.findByText(text)).toBeInTheDocument()
+    },
+  )
 
   it('shows output load failures', async () => {
     const dev = nodeRun('dev', 'agent', { status: 'running' })

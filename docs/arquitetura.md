@@ -177,12 +177,15 @@ Agent (planner) ──done──▶ HumanReview ──approved──▶ MoveCard
 1. Ao entrar no nó, a engine põe sob revisão os artefatos configurados (por nome; sem nomes, os
    coletados neste run) e o NodeRun fica `awaiting_review`, com o FlowRun `waiting`. Sem
    artefatos para revisar, o nó falha o run.
-2. Na aba Artefatos o humano lê a última versão (Markdown) e escreve o que ajustar. A mensagem
+2. Na tela de revisão (`#/review/<card>`, aberta pelo botão "Revisar" do card no board, que o
+   `FlowRun.awaiting_review` acende) ou na aba Artefatos, o humano lê a última versão (Markdown)
+   à esquerda e, no chat à direita, escreve o que ajustar; selecionar um trecho oferece citá-lo
+   (vira uma citação Markdown na mensagem). A mensagem
    fica no chat do artefato e o nó sai por `changes_requested`; a saída leva ao agente o pedido
    (`ReviewPrompt`), e ele o recebe **na mesma sessão do run**, como o feedback de um gateway.
 3. O agente atualiza o arquivo e termina; o board recoleta a versão nova e o run volta ao nó de
    revisão. A entrada que chega (a resposta do agente) vai para o chat como mensagem do agente.
-4. "Aprovar" (na aba Artefatos ou no nó, na aba Execução) sai por `approved`, repassando o que o
+4. "Aprovar" (na tela de revisão, na aba Artefatos ou no nó, na aba Execução) sai por `approved`, repassando o que o
    nó recebeu; o fluxo segue, por exemplo movendo o card para a baia que dispara o próximo fluxo.
 
 Só a última versão aceita comentários e aprovação; as anteriores ficam para leitura. O chat só

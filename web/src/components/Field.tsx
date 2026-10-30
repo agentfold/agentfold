@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react'
+import { useId, type ReactNode, type Ref } from 'react'
 
 import { palette } from './palette'
 
@@ -70,6 +70,7 @@ interface TextAreaProps {
   rows?: number
   mono?: boolean
   disabled?: boolean
+  ref?: Ref<HTMLTextAreaElement>
 }
 
 export function TextArea({
@@ -80,11 +81,13 @@ export function TextArea({
   rows = 4,
   mono = false,
   disabled = false,
+  ref,
 }: TextAreaProps) {
   return (
     <Field label={label} hint={hint}>
       {(id) => (
         <textarea
+          ref={ref}
           id={id}
           rows={rows}
           className={`${inputClass} ${mono ? 'font-mono text-xs' : ''} disabled:bg-slate-50`}

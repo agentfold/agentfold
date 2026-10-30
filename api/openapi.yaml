@@ -1028,12 +1028,15 @@ components:
     FlowRun:
       type: object
       description: A run of a flow for a card.
-      required: [id, flow_id, flow_version_id, flow_name, card_id, trigger, status, error, started_at, finished_at]
+      required: [id, flow_id, flow_version_id, flow_name, card_id, trigger, status, awaiting_review, error, started_at, finished_at]
       properties:
         id: { type: string, format: uuid }
         flow_id: { type: string, format: uuid }
         flow_version_id: { type: string, format: uuid }
         flow_name: { type: string }
+        awaiting_review:
+          type: boolean
+          description: A human_review node of the run awaits the human (the run is waiting).
         card_id: { type: string, format: uuid }
         trigger:
           type: string

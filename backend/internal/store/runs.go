@@ -29,10 +29,12 @@ func toFlowRun(r sqlcgen.FlowRun) domain.FlowRun {
 	return run
 }
 
-// namedRun converts a run read with the name of its flow.
-func namedRun(r sqlcgen.FlowRun, flowName string) domain.FlowRun {
+// namedRun converts a run read with the name of its flow and whether a
+// human_review node of it awaits review.
+func namedRun(r sqlcgen.FlowRun, flowName string, awaitingReview bool) domain.FlowRun {
 	run := toFlowRun(r)
 	run.FlowName = flowName
+	run.AwaitingReview = awaitingReview
 	return run
 }
 
@@ -101,14 +103,16 @@ func (s *Store) StartFlowRun(ctx context.Context, version domain.FlowVersion, ca
 // GetFlowRun returns one flow run.
 func (s *Store) GetFlowRun(ctx context.Context, id uuid.UUID) (domain.FlowRun, error) {
 	row, err := s.q.GetFlowRun(ctx, id)
-	return mapRow(row, err, func(r sqlcgen.GetFlowRunRow) domain.FlowRun { return namedRun(r.FlowRun, r.FlowName) })
+	return mapRow(row, err, func(r sqlcgen.GetFlowRunRow) domain.FlowRun { return namedRun(r.FlowRun, r.FlowName, r.AwaitingReview) })
 }
 
 // ListLatestFlowRuns returns one run per card that ever ran a flow: an
 // active one if there is any, else the last one.
 func (s *Store) ListLatestFlowRuns(ctx context.Context) ([]domain.FlowRun, error) {
 	rows, err := s.q.ListLatestFlowRuns(ctx)
-	return mapRows(rows, err, func(r sqlcgen.ListLatestFlowRunsRow) domain.FlowRun { return namedRun(r.FlowRun, r.FlowName) })
+	return mapRows(rows, err, func(r sqlcgen.ListLatestFlowRunsRow) domain.FlowRun {
+		return namedRun(r.FlowRun, r.FlowName, r.AwaitingReview)
+	})
 }
 
 // FinishFlowRun ends an active run; ErrNotFound when it is not active.
