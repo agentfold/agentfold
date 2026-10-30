@@ -24,7 +24,7 @@ func (q *Queries) DeleteCardType(ctx context.Context, id uuid.UUID) (int64, erro
 }
 
 const getCardType = `-- name: GetCardType :one
-SELECT id, name, color, created_at FROM card_types WHERE id = $1
+SELECT id, name, color, created_at, initial_lane_id FROM card_types WHERE id = $1
 `
 
 func (q *Queries) GetCardType(ctx context.Context, id uuid.UUID) (CardType, error) {
@@ -35,33 +35,36 @@ func (q *Queries) GetCardType(ctx context.Context, id uuid.UUID) (CardType, erro
 		&i.Name,
 		&i.Color,
 		&i.CreatedAt,
+		&i.InitialLaneID,
 	)
 	return i, err
 }
 
 const insertCardType = `-- name: InsertCardType :one
-INSERT INTO card_types (name, color) VALUES ($1, $2) RETURNING id, name, color, created_at
+INSERT INTO card_types (name, color, initial_lane_id) VALUES ($1, $2, $3) RETURNING id, name, color, created_at, initial_lane_id
 `
 
 type InsertCardTypeParams struct {
-	Name  string
-	Color string
+	Name          string
+	Color         string
+	InitialLaneID *uuid.UUID
 }
 
 func (q *Queries) InsertCardType(ctx context.Context, arg InsertCardTypeParams) (CardType, error) {
-	row := q.db.QueryRow(ctx, insertCardType, arg.Name, arg.Color)
+	row := q.db.QueryRow(ctx, insertCardType, arg.Name, arg.Color, arg.InitialLaneID)
 	var i CardType
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Color,
 		&i.CreatedAt,
+		&i.InitialLaneID,
 	)
 	return i, err
 }
 
 const listCardTypes = `-- name: ListCardTypes :many
-SELECT id, name, color, created_at FROM card_types ORDER BY name
+SELECT id, name, color, created_at, initial_lane_id FROM card_types ORDER BY name
 `
 
 func (q *Queries) ListCardTypes(ctx context.Context) ([]CardType, error) {
@@ -78,6 +81,7 @@ func (q *Queries) ListCardTypes(ctx context.Context) ([]CardType, error) {
 			&i.Name,
 			&i.Color,
 			&i.CreatedAt,
+			&i.InitialLaneID,
 		); err != nil {
 			return nil, err
 		}
@@ -90,23 +94,30 @@ func (q *Queries) ListCardTypes(ctx context.Context) ([]CardType, error) {
 }
 
 const updateCardType = `-- name: UpdateCardType :one
-UPDATE card_types SET name = $2, color = $3 WHERE id = $1 RETURNING id, name, color, created_at
+UPDATE card_types SET name = $2, color = $3, initial_lane_id = $4 WHERE id = $1 RETURNING id, name, color, created_at, initial_lane_id
 `
 
 type UpdateCardTypeParams struct {
-	ID    uuid.UUID
-	Name  string
-	Color string
+	ID            uuid.UUID
+	Name          string
+	Color         string
+	InitialLaneID *uuid.UUID
 }
 
 func (q *Queries) UpdateCardType(ctx context.Context, arg UpdateCardTypeParams) (CardType, error) {
-	row := q.db.QueryRow(ctx, updateCardType, arg.ID, arg.Name, arg.Color)
+	row := q.db.QueryRow(ctx, updateCardType,
+		arg.ID,
+		arg.Name,
+		arg.Color,
+		arg.InitialLaneID,
+	)
 	var i CardType
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Color,
 		&i.CreatedAt,
+		&i.InitialLaneID,
 	)
 	return i, err
 }

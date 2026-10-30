@@ -89,8 +89,8 @@ interfaces para viabilizar 100% de cobertura com fakes.
 |---|---|
 | `lanes` | id, name, position, color (baias do fluxo — `scope`/`flow_id` — adiadas) |
 | `projects` | id, name, source_kind (`local`; futuro `git`), local_path (repo git), remote_url? e credential_id? (futuro) |
-| `card_types` | id, name, color |
-| `cards` | id, title, description, card_type_id, project_id?, parent_card_id?, lane_id, position, properties (jsonb chave→valor), depends_on (uuid[]; um card de que outros dependem não pode ser excluído), created_at |
+| `card_types` | id, name, color, initial_lane_id? (onde nascem as tasks que agentes criam do tipo) |
+| `cards` | id, title, description, card_type_id, project_id?, parent_card_id?, lane_id, position, properties (jsonb chave→valor), depends_on (uuid[]; um card de que outros dependem não pode ser excluído), canceled_at? (task cancelada pelo agente), created_at |
 | `mcp_servers` | id, name, transport (`stdio`/`http`), config jsonb, secrets (criptografados) |
 | `card_events` | id, card_id, type, payload jsonb, created_at — linha do tempo do card |
 | `agent_profiles` | id, kind (`claude`, `opencode`), name, credential (criptografada), status |
@@ -232,6 +232,18 @@ segredos injetados no momento da execução. Tools do board expostas ao agente:
 | `report_done(summary)` | resumo final do trabalho |
 | `get_card()` | contexto do card (título, descrição, histórico relevante) |
 | `list_projects()` | projetos do board (id e nome, sem o caminho local): para ligar o `project_id` do card a um nome e nomear o projeto dos cards criados |
+| `list_card_types()` | tipos de card, com `can_create_tasks` (o tipo tem baia inicial) |
+| `create_tasks(tasks[])` | cria tasks: cards filhos do card, todas ou nenhuma, cada uma com tipo (pelo nome), projeto, `ref` e `depends_on` (refs da mesma chamada ou ids de cards); devolve os ids |
+| `list_tasks()` | as tasks do card: baia, propriedades, dependências, se foi cancelada e como foi a última execução (status, erro, última mensagem de agente) |
+| `retry_task(card_id, description?)` | roda de novo, do gatilho, o fluxo da última execução da task (que falhou ou foi cancelada); a descrição nova substitui a da task |
+| `cancel_task(card_id)` | cancela a task: para o fluxo dela e o WaitChildren deixa de contá-la |
+
+As quatro tools de tasks só existem num nó Agent cujas tools liberadas as listam
+(`mcp__orquestrator__create_tasks` etc., ou `mcp__orquestrator` para todas); o editor tem uma
+caixa por tool em "Tools do board". Com `create_tasks` liberada, o prompt de sistema explica o uso:
+planejar todas as tasks, criá-las numa chamada e encerrar o turno, sem esperar por elas. A task
+nasce na **baia inicial** do tipo dela (configurada no cadastro de tipos); um tipo sem baia
+inicial não aceita tasks, e a chamada falha com uma mensagem para o agente corrigir.
 
 O cadastro de um MCP externo pode ser testado antes de salvar (`POST /mcp-servers/test`): o board
 conecta como os agentes, lista as tools e, se pedido, chama uma tool. Alguns servidores só conferem a

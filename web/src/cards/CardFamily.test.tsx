@@ -43,6 +43,23 @@ describe('CardFamily', () => {
     )
   })
 
+  it('marks canceled children', () => {
+    const parent = card('Chat', 'todo', 'task', 0)
+    const child = card('API', 'todo', 'task', 1, {
+      parent_card_id: parent.id,
+      canceled_at: '2026-10-30T12:00:00Z',
+    })
+    render(
+      <CardFamily
+        card={parent}
+        cards={[parent, child]}
+        laneName={() => 'Todo'}
+        latestRuns={undefined}
+      />,
+    )
+    expect(screen.getByText('Cancelada')).toBeInTheDocument()
+  })
+
   it('shows nothing for a card on its own', () => {
     const lone = card('Lone', 'todo', 'task', 0)
     const { container } = render(

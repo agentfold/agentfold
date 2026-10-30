@@ -72,6 +72,7 @@ type Card struct {
 	UpdatedAt    time.Time
 	Properties   []byte
 	DependsOn    []uuid.UUID
+	CanceledAt   *time.Time
 }
 
 type CardEvent struct {
@@ -83,10 +84,11 @@ type CardEvent struct {
 }
 
 type CardType struct {
-	ID        uuid.UUID
-	Name      string
-	Color     string
-	CreatedAt time.Time
+	ID            uuid.UUID
+	Name          string
+	Color         string
+	CreatedAt     time.Time
+	InitialLaneID *uuid.UUID
 }
 
 type Flow struct {

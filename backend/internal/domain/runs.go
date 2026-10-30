@@ -74,6 +74,15 @@ type ChildChangedJob struct {
 	CardID uuid.UUID `json:"card_id"`
 }
 
+// JobFlowRetry is the queue job that runs again, from its trigger, the
+// flow whose last run of a card failed or was canceled.
+const JobFlowRetry = "flow.retry"
+
+// RetryJob is the payload of a flow.retry job.
+type RetryJob struct {
+	CardID uuid.UUID `json:"card_id"`
+}
+
 // JobFlowContinue is the queue job that follows the output of a node run
 // the board ended outside the engine: a human review decided.
 const JobFlowContinue = "flow.continue"

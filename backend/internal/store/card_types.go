@@ -10,7 +10,7 @@ import (
 )
 
 func toCardType(r sqlcgen.CardType) domain.CardType {
-	return domain.CardType{ID: r.ID, Name: r.Name, Color: r.Color, CreatedAt: r.CreatedAt}
+	return domain.CardType{ID: r.ID, Name: r.Name, Color: r.Color, InitialLaneID: r.InitialLaneID, CreatedAt: r.CreatedAt}
 }
 
 // ListCardTypes returns the card types ordered by name.
@@ -27,13 +27,13 @@ func (s *Store) GetCardType(ctx context.Context, id uuid.UUID) (domain.CardType,
 
 // CreateCardType stores a card type.
 func (s *Store) CreateCardType(ctx context.Context, in domain.CardTypeInput) (domain.CardType, error) {
-	row, err := s.q.InsertCardType(ctx, sqlcgen.InsertCardTypeParams{Name: in.Name, Color: in.Color})
+	row, err := s.q.InsertCardType(ctx, sqlcgen.InsertCardTypeParams{Name: in.Name, Color: in.Color, InitialLaneID: in.InitialLaneID})
 	return mapRow(row, err, toCardType)
 }
 
-// UpdateCardType changes the name and color of a card type.
+// UpdateCardType changes the name, color and initial lane of a card type.
 func (s *Store) UpdateCardType(ctx context.Context, id uuid.UUID, in domain.CardTypeInput) (domain.CardType, error) {
-	row, err := s.q.UpdateCardType(ctx, sqlcgen.UpdateCardTypeParams{ID: id, Name: in.Name, Color: in.Color})
+	row, err := s.q.UpdateCardType(ctx, sqlcgen.UpdateCardTypeParams{ID: id, Name: in.Name, Color: in.Color, InitialLaneID: in.InitialLaneID})
 	return mapRow(row, err, toCardType)
 }
 

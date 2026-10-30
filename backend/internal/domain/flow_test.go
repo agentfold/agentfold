@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -261,8 +262,8 @@ func TestNormalized(t *testing.T) {
 }
 
 func TestChildCardsFrom(t *testing.T) {
-	cards, err := ChildCardsFrom(json.RawMessage(`{"result":"r","output":{"cards":[{"title":" API ","description":" d ","project":" chat-backend "},{"title":"Web"}]}}`))
-	want := []ChildCardSpec{{Title: "API", Description: "d", Project: "chat-backend"}, {Title: "Web"}}
+	cards, err := ChildCardsFrom(json.RawMessage(`{"result":"r","output":{"cards":[{"title":"API","project":"chat-backend","ref":"api"},{"title":"Web","depends_on":["api"]}]}}`))
+	want := []ChildCardSpec{{Title: "API", Project: "chat-backend", Ref: "api"}, {Title: "Web", DependsOn: []string{"api"}}}
 	if err != nil || !reflect.DeepEqual(cards, want) {
 		t.Fatalf("agent output: %+v, %v", cards, err)
 	}
@@ -273,7 +274,6 @@ func TestChildCardsFrom(t *testing.T) {
 		``:                        "a entrada não é um JSON",
 		`{"result":"r"}`:          "a entrada não tem cards",
 		`{"output":{"cards":[]}}`: "a entrada não tem cards",
-		`{"cards":[{"title":"A"},{"title":" "}]}`: "o card 2 da lista não tem título",
 	} {
 		if _, err := ChildCardsFrom(json.RawMessage(in)); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: %v", in, err)
@@ -285,5 +285,59 @@ func TestChildCardsFrom(t *testing.T) {
 	}
 	if _, err := compileSchema(json.RawMessage(ChildCardsSchema)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestChildCards(t *testing.T) {
+	parent, existing := uuid.New(), uuid.New()
+	projects := []Project{{ID: uuid.New(), Name: "web"}, {ID: uuid.New(), Name: "api"}}
+	at := func(i int) (Placement, error) {
+		return Placement{LaneID: uuid.Nil, CardTypeID: uuid.UUID{byte(i)}}, nil
+	}
+	specs := []ChildCardSpec{
+		{Ref: " ui ", Title: " UI ", Description: " d ", Project: " web ", DependsOn: []string{" be ", existing.String()}},
+		{Ref: "be", Title: "Backend", Project: "api"},
+		{Title: "Docs"},
+	}
+	cards, err := ChildCards(parent, specs, projects, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ui := cards[0]
+	if ui.Title != "UI" || ui.Description != "d" || *ui.ProjectID != projects[0].ID || *ui.ParentCardID != parent ||
+		!reflect.DeepEqual(ui.After, []int{1}) || !reflect.DeepEqual(ui.DependsOn, []uuid.UUID{existing}) || ui.CardTypeID != (uuid.UUID{0}) {
+		t.Fatalf("ui %+v", ui)
+	}
+	if cards[2].ProjectID != nil || cards[1].CardTypeID != (uuid.UUID{1}) {
+		t.Fatalf("cards %+v", cards)
+	}
+
+	for _, tc := range []struct {
+		specs []ChildCardSpec
+		want  string
+	}{
+		{[]ChildCardSpec{{Title: "A"}, {Title: " "}}, "o card 2 da lista não tem título"},
+		{[]ChildCardSpec{{Ref: "a", Title: "A"}, {Ref: "a", Title: "B"}}, `o ref "a" aparece em mais de um card`},
+		{[]ChildCardSpec{{Title: "A", Project: "app"}}, `o card "A" usa o projeto "app", que não existe (projetos: api, web)`},
+		{[]ChildCardSpec{{Title: "A", DependsOn: []string{"b"}}}, `o card "A" depende de "b", que não é o ref de um card da lista nem o id de um card`},
+		{[]ChildCardSpec{{Ref: "a", Title: "A", DependsOn: []string{"b"}}, {Ref: "b", Title: "B", DependsOn: []string{"a"}}}, "os cards formam um ciclo"},
+	} {
+		if _, err := ChildCards(parent, tc.specs, projects, at); err == nil || !strings.HasPrefix(err.Error(), tc.want) {
+			t.Errorf("%+v: %v", tc.specs, err)
+		}
+	}
+	_, err = ChildCards(parent, []ChildCardSpec{{Title: "A"}}, nil, func(int) (Placement, error) { return Placement{}, errors.New("no lane") })
+	if err == nil || err.Error() != "no lane" {
+		t.Fatalf("placement: %v", err)
+	}
+}
+
+func TestAllowsBoardTool(t *testing.T) {
+	c := AgentConfig{AllowedTools: []string{"Read", "mcp__orquestrator__create_tasks"}}
+	if !c.AllowsBoardTool("create_tasks") || c.AllowsBoardTool("list_tasks") {
+		t.Fatal("a listed tool")
+	}
+	if c := (AgentConfig{AllowedTools: []string{"mcp__orquestrator"}}); !c.AllowsBoardTool("list_tasks") {
+		t.Fatal("the whole server")
 	}
 }

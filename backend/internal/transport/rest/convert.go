@@ -26,7 +26,7 @@ func toProject(p domain.Project) openapi.Project {
 }
 
 func toCardType(c domain.CardType) openapi.CardType {
-	return openapi.CardType{Id: c.ID, Name: c.Name, Color: c.Color, CreatedAt: c.CreatedAt}
+	return openapi.CardType{Id: c.ID, Name: c.Name, Color: c.Color, InitialLaneId: c.InitialLaneID, CreatedAt: c.CreatedAt}
 }
 
 func toCard(c domain.Card) openapi.Card {
@@ -43,6 +43,7 @@ func toCard(c domain.Card) openapi.Card {
 		Position:     c.Position,
 		Properties:   properties,
 		DependsOn:    append([]uuid.UUID{}, c.DependsOn...),
+		CanceledAt:   c.CanceledAt,
 		CreatedAt:    c.CreatedAt,
 		UpdatedAt:    c.UpdatedAt,
 	}

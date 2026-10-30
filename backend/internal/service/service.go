@@ -40,6 +40,9 @@ type Repository interface {
 	UpdateCard(ctx context.Context, id uuid.UUID, in domain.CardInput) (domain.Card, error)
 	MoveCard(ctx context.Context, id, laneID uuid.UUID, position int) (domain.Card, error)
 	DeleteCard(ctx context.Context, id uuid.UUID) error
+	CreateChildCards(ctx context.Context, cards []domain.ChildCard) ([]domain.Card, error)
+	CancelCard(ctx context.Context, id uuid.UUID) (domain.Card, error)
+	RetryCard(ctx context.Context, id uuid.UUID) (domain.Card, error)
 	ListCardEvents(ctx context.Context, cardID uuid.UUID) ([]domain.CardEvent, error)
 	GetCardEvent(ctx context.Context, id uuid.UUID) (domain.CardEvent, error)
 

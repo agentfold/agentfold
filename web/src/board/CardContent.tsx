@@ -53,6 +53,7 @@ export function CardContent({ card, lookup }: Props) {
         {project && (
           <span className="font-mono text-slate-500">{project.name}</span>
         )}
+        {card.canceled_at && <span className="text-red-600">Cancelada</span>}
         {card.depends_on.length > 0 && (
           <span
             title={card.depends_on

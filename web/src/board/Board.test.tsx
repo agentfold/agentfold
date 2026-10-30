@@ -63,7 +63,11 @@ describe('Board', () => {
 
   it('shows what a card depends on', async () => {
     const d = boardData()
-    const child = { ...d.child, depends_on: [d.orphan.id, 'gone'] }
+    const child = {
+      ...d.child,
+      depends_on: [d.orphan.id, 'gone'],
+      canceled_at: '2026-10-30T12:00:00Z',
+    }
     renderWithApi(
       <Board />,
       createFakeBackend({
@@ -77,6 +81,7 @@ describe('Board', () => {
       'title',
       'Orphan, gone',
     )
+    expect(within(todo).getByText('Cancelada')).toBeInTheDocument()
   })
 
   it('shows the latest flow run of each card and holds busy cards', async () => {

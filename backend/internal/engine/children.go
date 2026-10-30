@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
-	"strings"
 
 	"github.com/google/uuid"
 
@@ -29,31 +27,15 @@ func (e *Engine) createCards(ctx context.Context, r *run, node domain.Node, inpu
 	if err != nil {
 		return domain.NodeResult{}, err
 	}
-	byName := map[string]uuid.UUID{}
-	names := make([]string, 0, len(projects))
-	for _, p := range projects {
-		byName[p.Name] = p.ID
-		names = append(names, p.Name)
-	}
-	parent := r.CardID
-	cards := make([]domain.ChildCard, len(specs))
-	for i, spec := range specs {
-		cards[i].NewCard = domain.NewCard{
-			CardInput:    domain.CardInput{Title: spec.Title, Description: spec.Description, CardTypeID: cfg.CardTypeID},
-			LaneID:       cfg.LaneID,
-			ParentCardID: &parent,
-		}
-		if spec.Project == "" {
-			continue
-		}
-		id, ok := byName[spec.Project]
-		if !ok {
-			slices.Sort(names)
-			return failed(fmt.Sprintf("o card %q usa o projeto %q, que não existe (projetos: %s)", spec.Title, spec.Project, strings.Join(names, ", "))), nil
-		}
-		cards[i].ProjectID = &id
+	at := domain.Placement(cfg)
+	cards, err := domain.ChildCards(r.CardID, specs, projects, func(int) (domain.Placement, error) { return at, nil })
+	if err != nil {
+		return failed(err.Error()), nil
 	}
 	created, err := e.Store.CreateChildCards(ctx, cards)
+	if errors.Is(err, domain.ErrUnknownDependency) {
+		return failed("um card da lista depende de um card que não existe"), nil
+	}
 	if errors.Is(err, domain.ErrInvalidReference) {
 		return failed("a baia ou o tipo dos cards criados não existe mais"), nil
 	}
@@ -103,9 +85,12 @@ func (e *Engine) childrenResult(ctx context.Context, cardID uuid.UUID, node doma
 	if err != nil {
 		return nil, err
 	}
-	states := make([]childCard, len(children))
+	states := make([]childCard, 0, len(children))
 	count := map[string]int{}
-	for i, c := range children {
+	for _, c := range children {
+		if c.CanceledAt != nil {
+			continue // canceled tasks no longer count
+		}
 		state := childPending
 		if c.LaneID == cfg.DoneLaneID {
 			state = childDone
@@ -119,7 +104,7 @@ func (e *Engine) childrenResult(ctx context.Context, cardID uuid.UUID, node doma
 			}
 		}
 		count[state]++
-		states[i] = childCard{ID: c.ID, Title: c.Title, State: state}
+		states = append(states, childCard{ID: c.ID, Title: c.Title, State: state})
 	}
 	output, _ := json.Marshal(map[string]any{"children": states}) // plain values
 	switch {

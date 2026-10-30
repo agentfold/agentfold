@@ -26,6 +26,10 @@ type Board interface {
 	ReportDone(ctx context.Context, run service.AgentRun, summary string) error
 	SubmitOutput(ctx context.Context, run service.AgentRun, output json.RawMessage) error
 	Decide(ctx context.Context, run service.AgentRun, decision, feedback string) error
+	CreateTasks(ctx context.Context, run service.AgentRun, specs []service.TaskSpec) ([]domain.Card, error)
+	ListTasks(ctx context.Context, run service.AgentRun) ([]service.Task, error)
+	RetryTask(ctx context.Context, run service.AgentRun, id uuid.UUID, description string) (domain.Card, error)
+	CancelTask(ctx context.Context, run service.AgentRun, id uuid.UUID) (domain.Card, error)
 
 	ListLanes(ctx context.Context) ([]domain.Lane, error)
 	ListCardTypes(ctx context.Context) ([]domain.CardType, error)

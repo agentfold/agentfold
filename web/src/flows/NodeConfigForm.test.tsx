@@ -289,6 +289,35 @@ describe('NodeConfigForm', () => {
     })
   })
 
+  it('grants the board task tools', async () => {
+    const result = setup('agent', { prompt: 'p', allowed_tools: ['Read'] })
+    await userEvent.click(screen.getByLabelText('Criar tasks (cards filhos)'))
+    await userEvent.click(screen.getByLabelText('Ver as tasks'))
+    expect(result.config).toMatchObject({
+      allowed_tools: [
+        'Read',
+        'mcp__orquestrator__create_tasks',
+        'mcp__orquestrator__list_tasks',
+      ],
+    })
+    // The text field lists the other tools and keeps the granted ones.
+    const tools = screen.getByLabelText('Tools liberadas')
+    expect(tools).toHaveValue('Read')
+    await userEvent.type(tools, ', Edit')
+    expect(result.config).toMatchObject({
+      allowed_tools: [
+        'Read',
+        'Edit',
+        'mcp__orquestrator__create_tasks',
+        'mcp__orquestrator__list_tasks',
+      ],
+    })
+    await userEvent.click(screen.getByLabelText('Criar tasks (cards filhos)'))
+    expect(result.config).toMatchObject({
+      allowed_tools: ['Read', 'Edit', 'mcp__orquestrator__list_tasks'],
+    })
+  })
+
   it('sets a property', async () => {
     const result = setup('set_property', {})
     await userEvent.type(screen.getByLabelText('Chave'), 'dev')

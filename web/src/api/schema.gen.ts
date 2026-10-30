@@ -647,12 +647,19 @@ export interface components {
             id: string;
             name: string;
             color: components["schemas"]["Color"];
+            /**
+             * Format: uuid
+             * @description The lane the tasks agents create of this type start in; without it agents cannot create tasks of the type.
+             */
+            initial_lane_id: string | null;
             /** Format: date-time */
             created_at: string;
         };
         CardTypeInput: {
             name: string;
             color?: components["schemas"]["Color"];
+            /** Format: uuid */
+            initial_lane_id?: string | null;
         };
         Card: {
             /** Format: uuid */
@@ -674,6 +681,11 @@ export interface components {
             };
             /** @description The cards this card depends on. */
             depends_on: string[];
+            /**
+             * Format: date-time
+             * @description When the agent that created the card as a task canceled it; wait_children no longer counts it.
+             */
+            canceled_at: string | null;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */

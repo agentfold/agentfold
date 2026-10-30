@@ -108,11 +108,11 @@ func decode(t *testing.T, data []byte) any {
 const (
 	laneJSON     = `{"id":"00000000-0000-7000-8000-000000000001","name":"Todo","color":"#000000","position":0,"created_at":"2026-10-25T12:00:00Z"}`
 	projectJSON  = `{"id":"00000000-0000-7000-8000-000000000001","name":"web","source_kind":"local","local_path":"/src/web","created_at":"2026-10-25T12:00:00Z"}`
-	cardTypeJSON = `{"id":"00000000-0000-7000-8000-000000000001","name":"bug","color":"","created_at":"2026-10-25T12:00:00Z"}`
+	cardTypeJSON = `{"id":"00000000-0000-7000-8000-000000000001","name":"bug","color":"","initial_lane_id":null,"created_at":"2026-10-25T12:00:00Z"}`
 	cardJSON     = `{"id":"00000000-0000-7000-8000-000000000001","title":"t","description":"",` +
 		`"card_type_id":"00000000-0000-7000-8000-000000000002","project_id":null,` +
 		`"parent_card_id":"00000000-0000-7000-8000-000000000002","lane_id":"00000000-0000-7000-8000-000000000002",` +
-		`"position":0,"properties":{},"depends_on":[],"created_at":"2026-10-25T12:00:00Z","updated_at":"2026-10-25T12:00:00Z"}`
+		`"position":0,"properties":{},"depends_on":[],"canceled_at":null,"created_at":"2026-10-25T12:00:00Z","updated_at":"2026-10-25T12:00:00Z"}`
 	graphJSON = `{"nodes":[{"id":"t","type":"trigger","position":{"x":1,"y":2},"config":{"event":"card_created"}},` +
 		`{"id":"x","type":"end","position":{"x":0,"y":0},"config":{}}],` +
 		`"edges":[{"id":"e","source":"t","source_handle":"next","target":"x"}]}`

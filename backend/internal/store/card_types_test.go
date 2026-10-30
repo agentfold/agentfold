@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"orquestrator/internal/domain"
 )
 
@@ -50,5 +52,30 @@ func TestCardTypeErrors(t *testing.T) {
 	}
 	if err := s.DeleteCardType(ctx, f.cardType.ID); !errors.Is(err, domain.ErrInUse) {
 		t.Fatalf("DeleteCardType in use: %v", err)
+	}
+}
+
+func TestCardTypeInitialLane(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	lanes := createLanes(t, s, "Todo", "Doing")
+	task, err := s.CreateCardType(ctx, domain.CardTypeInput{Name: "task", InitialLaneID: &lanes[0].ID})
+	if err != nil || *task.InitialLaneID != lanes[0].ID {
+		t.Fatalf("CreateCardType = %+v, %v", task, err)
+	}
+	task, err = s.UpdateCardType(ctx, task.ID, domain.CardTypeInput{Name: "task", InitialLaneID: &lanes[1].ID})
+	if err != nil || *task.InitialLaneID != lanes[1].ID {
+		t.Fatalf("UpdateCardType = %+v, %v", task, err)
+	}
+	// Deleting the lane leaves the type without an initial lane.
+	if err := s.DeleteLane(ctx, lanes[1].ID); err != nil {
+		t.Fatal(err)
+	}
+	if task, _ = s.GetCardType(ctx, task.ID); task.InitialLaneID != nil {
+		t.Fatalf("type %+v", task)
+	}
+	gone := uuid.New()
+	if _, err := s.CreateCardType(ctx, domain.CardTypeInput{Name: "bug", InitialLaneID: &gone}); !errors.Is(err, domain.ErrInvalidReference) {
+		t.Fatalf("unknown lane: %v", err)
 	}
 }

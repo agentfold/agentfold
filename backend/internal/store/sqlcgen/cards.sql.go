@@ -35,7 +35,7 @@ func (q *Queries) DeleteCard(ctx context.Context, id uuid.UUID) (int64, error) {
 }
 
 const getCard = `-- name: GetCard :one
-SELECT id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on FROM cards WHERE id = $1
+SELECT id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on, canceled_at FROM cards WHERE id = $1
 `
 
 func (q *Queries) GetCard(ctx context.Context, id uuid.UUID) (Card, error) {
@@ -54,6 +54,7 @@ func (q *Queries) GetCard(ctx context.Context, id uuid.UUID) (Card, error) {
 		&i.UpdatedAt,
 		&i.Properties,
 		&i.DependsOn,
+		&i.CanceledAt,
 	)
 	return i, err
 }
@@ -76,7 +77,7 @@ func (q *Queries) GetCardEvent(ctx context.Context, id uuid.UUID) (CardEvent, er
 }
 
 const getCardForUpdate = `-- name: GetCardForUpdate :one
-SELECT id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on FROM cards WHERE id = $1 FOR UPDATE
+SELECT id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on, canceled_at FROM cards WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetCardForUpdate(ctx context.Context, id uuid.UUID) (Card, error) {
@@ -95,6 +96,7 @@ func (q *Queries) GetCardForUpdate(ctx context.Context, id uuid.UUID) (Card, err
 		&i.UpdatedAt,
 		&i.Properties,
 		&i.DependsOn,
+		&i.CanceledAt,
 	)
 	return i, err
 }
@@ -102,7 +104,7 @@ func (q *Queries) GetCardForUpdate(ctx context.Context, id uuid.UUID) (Card, err
 const insertCard = `-- name: InsertCard :one
 INSERT INTO cards (title, description, card_type_id, project_id, parent_card_id, lane_id, position, depends_on)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on
+RETURNING id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on, canceled_at
 `
 
 type InsertCardParams struct {
@@ -141,6 +143,7 @@ func (q *Queries) InsertCard(ctx context.Context, arg InsertCardParams) (Card, e
 		&i.UpdatedAt,
 		&i.Properties,
 		&i.DependsOn,
+		&i.CanceledAt,
 	)
 	return i, err
 }
@@ -199,7 +202,7 @@ func (q *Queries) ListCardEvents(ctx context.Context, cardID uuid.UUID) ([]CardE
 }
 
 const listCards = `-- name: ListCards :many
-SELECT id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on FROM cards ORDER BY lane_id, position, created_at
+SELECT id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on, canceled_at FROM cards ORDER BY lane_id, position, created_at
 `
 
 func (q *Queries) ListCards(ctx context.Context) ([]Card, error) {
@@ -224,6 +227,7 @@ func (q *Queries) ListCards(ctx context.Context) ([]Card, error) {
 			&i.UpdatedAt,
 			&i.Properties,
 			&i.DependsOn,
+			&i.CanceledAt,
 		); err != nil {
 			return nil, err
 		}
@@ -236,7 +240,7 @@ func (q *Queries) ListCards(ctx context.Context) ([]Card, error) {
 }
 
 const listCardsByID = `-- name: ListCardsByID :many
-SELECT id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on FROM cards WHERE id = ANY($1::uuid[]) ORDER BY created_at, id
+SELECT id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on, canceled_at FROM cards WHERE id = ANY($1::uuid[]) ORDER BY created_at, id
 `
 
 func (q *Queries) ListCardsByID(ctx context.Context, ids []uuid.UUID) ([]Card, error) {
@@ -261,6 +265,7 @@ func (q *Queries) ListCardsByID(ctx context.Context, ids []uuid.UUID) ([]Card, e
 			&i.UpdatedAt,
 			&i.Properties,
 			&i.DependsOn,
+			&i.CanceledAt,
 		); err != nil {
 			return nil, err
 		}
@@ -273,7 +278,7 @@ func (q *Queries) ListCardsByID(ctx context.Context, ids []uuid.UUID) ([]Card, e
 }
 
 const listChildCards = `-- name: ListChildCards :many
-SELECT id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on FROM cards WHERE parent_card_id = $1 ORDER BY created_at
+SELECT id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on, canceled_at FROM cards WHERE parent_card_id = $1 ORDER BY created_at
 `
 
 func (q *Queries) ListChildCards(ctx context.Context, parentCardID *uuid.UUID) ([]Card, error) {
@@ -298,6 +303,7 @@ func (q *Queries) ListChildCards(ctx context.Context, parentCardID *uuid.UUID) (
 			&i.UpdatedAt,
 			&i.Properties,
 			&i.DependsOn,
+			&i.CanceledAt,
 		); err != nil {
 			return nil, err
 		}
@@ -310,7 +316,7 @@ func (q *Queries) ListChildCards(ctx context.Context, parentCardID *uuid.UUID) (
 }
 
 const listDependentCards = `-- name: ListDependentCards :many
-SELECT id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on FROM cards WHERE $1::uuid = ANY(depends_on) ORDER BY created_at, id
+SELECT id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on, canceled_at FROM cards WHERE $1::uuid = ANY(depends_on) ORDER BY created_at, id
 `
 
 func (q *Queries) ListDependentCards(ctx context.Context, id uuid.UUID) ([]Card, error) {
@@ -335,6 +341,7 @@ func (q *Queries) ListDependentCards(ctx context.Context, id uuid.UUID) ([]Card,
 			&i.UpdatedAt,
 			&i.Properties,
 			&i.DependsOn,
+			&i.CanceledAt,
 		); err != nil {
 			return nil, err
 		}
@@ -347,7 +354,7 @@ func (q *Queries) ListDependentCards(ctx context.Context, id uuid.UUID) ([]Card,
 }
 
 const placeCard = `-- name: PlaceCard :one
-UPDATE cards SET lane_id = $2, position = $3, updated_at = now() WHERE id = $1 RETURNING id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on
+UPDATE cards SET lane_id = $2, position = $3, updated_at = now() WHERE id = $1 RETURNING id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on, canceled_at
 `
 
 type PlaceCardParams struct {
@@ -372,6 +379,41 @@ func (q *Queries) PlaceCard(ctx context.Context, arg PlaceCardParams) (Card, err
 		&i.UpdatedAt,
 		&i.Properties,
 		&i.DependsOn,
+		&i.CanceledAt,
+	)
+	return i, err
+}
+
+const setCardCanceled = `-- name: SetCardCanceled :one
+UPDATE cards SET canceled_at = CASE WHEN $1::boolean THEN now() END, updated_at = now()
+WHERE id = $2
+RETURNING id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on, canceled_at
+`
+
+type SetCardCanceledParams struct {
+	Canceled bool
+	ID       uuid.UUID
+}
+
+// SetCardCanceled marks a card canceled as a task, or (canceled false)
+// not anymore.
+func (q *Queries) SetCardCanceled(ctx context.Context, arg SetCardCanceledParams) (Card, error) {
+	row := q.db.QueryRow(ctx, setCardCanceled, arg.Canceled, arg.ID)
+	var i Card
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Description,
+		&i.CardTypeID,
+		&i.ProjectID,
+		&i.ParentCardID,
+		&i.LaneID,
+		&i.Position,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Properties,
+		&i.DependsOn,
+		&i.CanceledAt,
 	)
 	return i, err
 }
@@ -379,7 +421,7 @@ func (q *Queries) PlaceCard(ctx context.Context, arg PlaceCardParams) (Card, err
 const setCardProperty = `-- name: SetCardProperty :one
 UPDATE cards SET properties = properties || jsonb_build_object($1::text, $2::text), updated_at = now()
 WHERE id = $3
-RETURNING id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on
+RETURNING id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on, canceled_at
 `
 
 type SetCardPropertyParams struct {
@@ -404,6 +446,7 @@ func (q *Queries) SetCardProperty(ctx context.Context, arg SetCardPropertyParams
 		&i.UpdatedAt,
 		&i.Properties,
 		&i.DependsOn,
+		&i.CanceledAt,
 	)
 	return i, err
 }
@@ -435,7 +478,7 @@ const updateCard = `-- name: UpdateCard :one
 UPDATE cards
 SET title = $2, description = $3, card_type_id = $4, project_id = $5, updated_at = now()
 WHERE id = $1
-RETURNING id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on
+RETURNING id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on, canceled_at
 `
 
 type UpdateCardParams struct {
@@ -468,6 +511,7 @@ func (q *Queries) UpdateCard(ctx context.Context, arg UpdateCardParams) (Card, e
 		&i.UpdatedAt,
 		&i.Properties,
 		&i.DependsOn,
+		&i.CanceledAt,
 	)
 	return i, err
 }

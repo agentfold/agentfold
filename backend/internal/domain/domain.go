@@ -21,6 +21,9 @@ var (
 	ErrConflict = errors.New("conflict")
 	// ErrInvalidReference means the change points to an entity that does not exist.
 	ErrInvalidReference = errors.New("invalid reference")
+	// ErrUnknownDependency means a card would depend on a card that does
+	// not exist; it comes with ErrInvalidReference.
+	ErrUnknownDependency = errors.New("a dependency is not a card")
 	// ErrCardBusy means a flow is running for the card, which holds it in place.
 	ErrCardBusy = errors.New("a flow is running for the card")
 	// ErrQuestionClosed means the answer already reached the agent.
@@ -64,12 +67,15 @@ type Project struct {
 	CreatedAt  time.Time
 }
 
-// CardType classifies cards; flow triggers can filter by it.
+// CardType classifies cards; flow triggers can filter by it. Tasks agents
+// create of the type start in InitialLaneID; without it they cannot create
+// tasks of the type.
 type CardType struct {
-	ID        uuid.UUID
-	Name      string
-	Color     string
-	CreatedAt time.Time
+	ID            uuid.UUID
+	Name          string
+	Color         string
+	InitialLaneID *uuid.UUID
+	CreatedAt     time.Time
 }
 
 // Card is a unit of work on the board.
@@ -86,6 +92,9 @@ type Card struct {
 	// them on the cards a card depends on (DependsOn).
 	Properties map[string]string
 	DependsOn  []uuid.UUID
+	// CanceledAt is when the agent that created the card as a task
+	// canceled it: WaitChildren no longer counts it.
+	CanceledAt *time.Time
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 }
@@ -151,14 +160,16 @@ func (in LaneInput) Normalize() (LaneInput, error) {
 
 // CardTypeInput holds the editable fields of a card type.
 type CardTypeInput struct {
-	Name  string
-	Color string
+	Name          string
+	Color         string
+	InitialLaneID *uuid.UUID
 }
 
 // Normalize trims the fields and validates them.
 func (in CardTypeInput) Normalize() (CardTypeInput, error) {
-	lane, err := LaneInput(in).Normalize()
-	return CardTypeInput(lane), err
+	lane, err := LaneInput{Name: in.Name, Color: in.Color}.Normalize()
+	in.Name, in.Color = lane.Name, lane.Color
+	return in, err
 }
 
 // ProjectInput holds the editable fields of a project.

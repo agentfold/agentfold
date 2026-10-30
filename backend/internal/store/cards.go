@@ -26,6 +26,7 @@ func toCard(r sqlcgen.Card) domain.Card {
 		Position:     int(r.Position),
 		Properties:   properties,
 		DependsOn:    r.DependsOn,
+		CanceledAt:   r.CanceledAt,
 		CreatedAt:    r.CreatedAt,
 		UpdatedAt:    r.UpdatedAt,
 	}
@@ -197,7 +198,7 @@ func requireCards(ctx context.Context, q sqlcgen.Querier, ids []uuid.UUID) error
 		return err
 	}
 	if len(rows) != len(ids) {
-		return fmt.Errorf("%w: dependency", domain.ErrInvalidReference)
+		return fmt.Errorf("%w: %w", domain.ErrInvalidReference, domain.ErrUnknownDependency)
 	}
 	return nil
 }
@@ -223,6 +224,27 @@ func (s *Store) SetCardProperty(ctx context.Context, id uuid.UUID, key, value st
 			return err
 		}
 		_, err = addEvent(ctx, q, id, domain.PropertySet, propertySetPayload{Key: key, Value: value})
+		return err
+	})
+	return card, err
+}
+
+// CancelCard marks a card canceled as a task.
+func (s *Store) CancelCard(ctx context.Context, id uuid.UUID) (domain.Card, error) {
+	row, err := s.q.SetCardCanceled(ctx, sqlcgen.SetCardCanceledParams{ID: id, Canceled: true})
+	return mapRow(row, err, toCard)
+}
+
+// RetryCard takes back the cancel of a card and enqueues the job that runs
+// its last flow again.
+func (s *Store) RetryCard(ctx context.Context, id uuid.UUID) (domain.Card, error) {
+	var card domain.Card
+	err := s.inTx(ctx, func(q sqlcgen.Querier) error {
+		row, err := q.SetCardCanceled(ctx, sqlcgen.SetCardCanceledParams{ID: id, Canceled: false})
+		if card, err = mapRow(row, err, toCard); err != nil {
+			return err
+		}
+		_, err = insertJob(ctx, q, NewJob{Kind: domain.JobFlowRetry, Payload: domain.RetryJob{CardID: id}})
 		return err
 	})
 	return card, err

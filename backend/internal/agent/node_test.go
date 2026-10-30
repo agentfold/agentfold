@@ -55,10 +55,12 @@ func TestNodeOutcome(t *testing.T) {
 
 func TestSystemPrompts(t *testing.T) {
 	prompts := map[string]bool{}
-	for _, c := range []domain.AgentConfig{{}, {OutputSchema: json.RawMessage(`{}`)}, {ReadOnly: true}, {Gateway: true}} {
+	for _, c := range []domain.AgentConfig{
+		{}, {OutputSchema: json.RawMessage(`{}`)}, {ReadOnly: true}, {Gateway: true}, {AllowedTools: []string{"mcp__orquestrator__create_tasks"}},
+	} {
 		prompts[node{config: c}.systemPrompt()] = true
 	}
-	if len(prompts) != 4 {
+	if len(prompts) != 5 {
 		t.Fatal("each option adds its own instructions")
 	}
 }

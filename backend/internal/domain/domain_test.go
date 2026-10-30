@@ -38,8 +38,9 @@ func TestLaneInput(t *testing.T) {
 }
 
 func TestCardTypeInput(t *testing.T) {
-	got, err := CardTypeInput{Name: " bug ", Color: ""}.Normalize()
-	if err != nil || got != (CardTypeInput{Name: "bug"}) {
+	lane := uuid.New()
+	got, err := CardTypeInput{Name: " bug ", Color: "", InitialLaneID: &lane}.Normalize()
+	if err != nil || got != (CardTypeInput{Name: "bug", InitialLaneID: &lane}) {
 		t.Fatalf("got %+v, %v", got, err)
 	}
 	if _, err := (CardTypeInput{}).Normalize(); fieldOf(t, err) != "name" {

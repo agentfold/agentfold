@@ -167,6 +167,19 @@ type AgentConfig struct {
 	Artifacts       []ArtifactSpec  `json:"artifacts,omitempty"`
 }
 
+// BoardToolPrefix names the tools of the board MCP server in allowed_tools.
+const BoardToolPrefix = "mcp__orquestrator__"
+
+// TaskTools are the board tools an agent node only has when its allowed
+// tools list them: with them the agent splits its card into child cards.
+var TaskTools = []string{"create_tasks", "list_tasks", "retry_task", "cancel_task"}
+
+// AllowsBoardTool tells whether the allowed tools of the node list the
+// board tool name, or the whole board server.
+func (c AgentConfig) AllowsBoardTool(name string) bool {
+	return slices.Contains(c.AllowedTools, BoardToolPrefix+name) || slices.Contains(c.AllowedTools, strings.TrimSuffix(BoardToolPrefix, "__"))
+}
+
 // ArtifactSpec is a file of the card workspace an agent node collects into
 // the card when it finishes. Path is relative to the workspace.
 type ArtifactSpec struct {
@@ -211,12 +224,87 @@ type CheckPropertyConfig struct {
 	Wait  bool   `json:"wait,omitempty"`
 }
 
-// ChildCardSpec is a card a CreateCards node creates. Project is the name
-// of a project, optional.
+// ChildCardSpec is a card created as a child of another (by a CreateCards
+// node or the create_tasks tool). Project is the name of a project,
+// optional. DependsOn lists the refs of other cards of the same batch or
+// the ids of existing cards.
 type ChildCardSpec struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Project     string `json:"project"`
+	Ref         string   `json:"ref,omitempty"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Project     string   `json:"project"`
+	DependsOn   []string `json:"depends_on,omitempty"`
+}
+
+func (c ChildCardSpec) normalized() ChildCardSpec {
+	c.Ref, c.Title, c.Description, c.Project = strings.TrimSpace(c.Ref), strings.TrimSpace(c.Title), strings.TrimSpace(c.Description), strings.TrimSpace(c.Project)
+	return c
+}
+
+// Placement is the lane and card type of a child card.
+type Placement struct {
+	LaneID     uuid.UUID
+	CardTypeID uuid.UUID
+}
+
+// ChildCards turns specs into the child cards of parent: projects by name,
+// dependencies by ref or id, and the lane and type place gives each one.
+// The messages of its errors are meant for the agent that wrote the specs.
+func ChildCards(parent uuid.UUID, specs []ChildCardSpec, projects []Project, place func(i int) (Placement, error)) ([]ChildCard, error) {
+	byName := map[string]uuid.UUID{}
+	names := make([]string, 0, len(projects))
+	for _, p := range projects {
+		byName[p.Name] = p.ID
+		names = append(names, p.Name)
+	}
+	slices.Sort(names)
+	refs := map[string]int{}
+	for i := range specs {
+		specs[i] = specs[i].normalized()
+		spec := specs[i]
+		if spec.Title == "" {
+			return nil, fmt.Errorf("o card %d da lista não tem título", i+1)
+		}
+		if _, dup := refs[spec.Ref]; dup && spec.Ref != "" {
+			return nil, fmt.Errorf("o ref %q aparece em mais de um card", spec.Ref)
+		}
+		if spec.Ref != "" {
+			refs[spec.Ref] = i
+		}
+	}
+	cards := make([]ChildCard, len(specs))
+	for i, spec := range specs {
+		at, err := place(i)
+		if err != nil {
+			return nil, err
+		}
+		cards[i].NewCard = NewCard{
+			CardInput:    CardInput{Title: spec.Title, Description: spec.Description, CardTypeID: at.CardTypeID},
+			LaneID:       at.LaneID,
+			ParentCardID: &parent,
+		}
+		if spec.Project != "" {
+			id, ok := byName[spec.Project]
+			if !ok {
+				return nil, fmt.Errorf("o card %q usa o projeto %q, que não existe (projetos: %s)", spec.Title, spec.Project, strings.Join(names, ", "))
+			}
+			cards[i].ProjectID = &id
+		}
+		for _, dep := range spec.DependsOn {
+			dep = strings.TrimSpace(dep)
+			if j, ok := refs[dep]; ok {
+				cards[i].After = append(cards[i].After, j)
+			} else if id, err := uuid.Parse(dep); err == nil {
+				cards[i].DependsOn = append(cards[i].DependsOn, id)
+			} else {
+				return nil, fmt.Errorf("o card %q depende de %q, que não é o ref de um card da lista nem o id de um card", spec.Title, dep)
+			}
+		}
+	}
+	if _, err := CreationOrder(cards); err != nil {
+		return nil, err
+	}
+	return cards, nil
 }
 
 // ChildCardsSchema is the output schema an agent node before a
@@ -243,13 +331,6 @@ func ChildCardsFrom(input json.RawMessage) ([]ChildCardSpec, error) {
 	}
 	if len(cards) == 0 {
 		return nil, errors.New("a entrada não tem cards para criar: o nó anterior precisa entregar a lista cards na saída estruturada")
-	}
-	for i := range cards {
-		c := &cards[i]
-		c.Title, c.Description, c.Project = strings.TrimSpace(c.Title), strings.TrimSpace(c.Description), strings.TrimSpace(c.Project)
-		if c.Title == "" {
-			return nil, fmt.Errorf("o card %d da lista não tem título", i+1)
-		}
 	}
 	return cards, nil
 }

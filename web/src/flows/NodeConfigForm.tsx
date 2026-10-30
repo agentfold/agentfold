@@ -530,19 +530,56 @@ interface ToolFieldsProps<C extends AgentConfig> {
   onChange: (config: C) => void
 }
 
+/** The board tools a node only has when its allowed tools list them. */
+const boardTools = [
+  { name: 'create_tasks', label: 'Criar tasks (cards filhos)' },
+  { name: 'list_tasks', label: 'Ver as tasks' },
+  { name: 'retry_task', label: 'Rodar uma task de novo' },
+  { name: 'cancel_task', label: 'Cancelar uma task' },
+].map((t) => ({ ...t, tool: `mcp__orquestrator__${t.name}` }))
+
+const isBoardTool = (tool: string) => boardTools.some((t) => t.tool === tool)
+
 function ToolFields<C extends AgentConfig>({
   config,
   onChange,
 }: ToolFieldsProps<C>) {
+  const allowed = config.allowed_tools ?? []
+  const granted = allowed.filter(isBoardTool)
+  const others = allowed.filter((tool) => !isBoardTool(tool))
   return (
     <>
+      <fieldset className="flex flex-col gap-1">
+        <legend className="text-xs font-medium text-slate-600">
+          Tools do board
+        </legend>
+        <p className="text-xs text-slate-500">
+          Com elas o agente divide o card em tasks, cards filhos que seguem os
+          fluxos do tipo delas.
+        </p>
+        {boardTools.map((t) => (
+          <label key={t.name} className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={granted.includes(t.tool)}
+              onChange={(e) => {
+                const tools = e.target.checked
+                  ? [...allowed, t.tool]
+                  : allowed.filter((tool) => tool !== t.tool)
+                onChange({ ...config, allowed_tools: tools })
+              }}
+            />
+            {t.label}
+          </label>
+        ))}
+      </fieldset>
       <ListField
         label="Tools liberadas"
         placeholder="Read, Edit, Bash(go test:*)"
         hint="Separadas por vírgula. Vazio: o padrão do agente."
-        items={config.allowed_tools}
-        onChange={(allowed_tools) => {
-          onChange({ ...config, allowed_tools })
+        items={others}
+        onChange={(items) => {
+          onChange({ ...config, allowed_tools: [...items, ...granted] })
         }}
       />
       <ListField

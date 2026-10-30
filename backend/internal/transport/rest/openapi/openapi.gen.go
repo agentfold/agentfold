@@ -681,6 +681,8 @@ type ArtifactVersion struct {
 
 // Card defines model for Card.
 type Card struct {
+	// CanceledAt When the agent that created the card as a task canceled it; wait_children no longer counts it.
+	CanceledAt *time.Time         `json:"canceled_at"`
 	CardTypeId openapi_types.UUID `json:"card_type_id"`
 	CreatedAt  time.Time          `json:"created_at"`
 
@@ -732,7 +734,10 @@ type CardType struct {
 	Color     Color              `json:"color"`
 	CreatedAt time.Time          `json:"created_at"`
 	Id        openapi_types.UUID `json:"id"`
-	Name      string             `json:"name"`
+
+	// InitialLaneId The lane the tasks agents create of this type start in; without it agents cannot create tasks of the type.
+	InitialLaneId *openapi_types.UUID `json:"initial_lane_id"`
+	Name          string              `json:"name"`
 }
 
 // CardTypeInput defines model for CardTypeInput.
@@ -740,8 +745,9 @@ type CardTypeInput struct {
 	// Color Empty or "#rrggbb".
 	//
 	// Example: #3b82f6
-	Color *Color `json:"color,omitempty"`
-	Name  string `json:"name"`
+	Color         *Color              `json:"color,omitempty"`
+	InitialLaneId *openapi_types.UUID `json:"initial_lane_id,omitempty"`
+	Name          string              `json:"name"`
 }
 
 // CheckPropertyConfig Checks that every card the card depends on has the property key set to value: satisfied if so (or without dependencies), else pending. With wait on, the node waits until they do instead of leaving by pending. key and value are required to publish.

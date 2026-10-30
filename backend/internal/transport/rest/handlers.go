@@ -19,7 +19,7 @@ func laneInput(b *openapi.LaneInput) domain.LaneInput {
 }
 
 func cardTypeInput(b *openapi.CardTypeInput) domain.CardTypeInput {
-	return domain.CardTypeInput{Name: b.Name, Color: deref(b.Color)}
+	return domain.CardTypeInput{Name: b.Name, Color: deref(b.Color), InitialLaneID: b.InitialLaneId}
 }
 
 func cardInput(b *openapi.CardInput) domain.CardInput {

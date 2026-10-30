@@ -264,3 +264,34 @@ func TestCancelingAChildRunWakesTheParent(t *testing.T) {
 		t.Fatalf("job %s", payload)
 	}
 }
+
+func TestCancelAndRetryCard(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	f := newFixture(t, s)
+	card, err := s.CancelCard(ctx, f.card.ID)
+	if err != nil || card.CanceledAt == nil {
+		t.Fatalf("CancelCard = %+v, %v", card, err)
+	}
+	if got, _ := s.GetCard(ctx, f.card.ID); got.CanceledAt == nil {
+		t.Fatal("the cancel was not stored")
+	}
+	if card, err = s.RetryCard(ctx, f.card.ID); err != nil || card.CanceledAt != nil {
+		t.Fatalf("RetryCard = %+v, %v", card, err)
+	}
+	var payload json.RawMessage
+	if err := pool.QueryRow(ctx, "SELECT payload FROM jobs WHERE kind = 'flow.retry'").Scan(&payload); err != nil {
+		t.Fatal(err)
+	}
+	var job domain.RetryJob
+	if json.Unmarshal(payload, &job) != nil || job.CardID != f.card.ID {
+		t.Fatalf("job %s", payload)
+	}
+	if _, err := s.RetryCard(ctx, uuid.New()); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("unknown card: %v", err)
+	}
+	failOn(s, "InsertJob", 1)
+	if _, err := s.RetryCard(ctx, f.card.ID); !errors.Is(err, errInjected) {
+		t.Fatalf("got %v", err)
+	}
+}

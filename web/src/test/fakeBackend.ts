@@ -74,7 +74,14 @@ export function cardType(
   name: string,
   extra: Partial<CardType> = {},
 ): CardType {
-  return { id: newId(), name, color: '', created_at: stamp, ...extra }
+  return {
+    id: newId(),
+    name,
+    color: '',
+    initial_lane_id: null,
+    created_at: stamp,
+    ...extra,
+  }
 }
 
 export function card(
@@ -95,6 +102,7 @@ export function card(
     position,
     properties: {},
     depends_on: [],
+    canceled_at: null,
     created_at: stamp,
     updated_at: stamp,
     ...extra,
@@ -413,7 +421,11 @@ export function createFakeBackend(initial: Partial<State> = {}): FakeBackend {
         return [200, state.cardTypes]
       case 'POST /card-types': {
         if (!body.name) return invalid('name')
-        const t = cardType(str(body.name), { color: str(body.color) })
+        const t = cardType(str(body.name), {
+          color: str(body.color),
+          initial_lane_id:
+            (body.initial_lane_id as string | null | undefined) ?? null,
+        })
         state.cardTypes.push(t)
         return [201, t]
       }

@@ -102,6 +102,9 @@ export function CardFamily({ card, cards, laneName, latestRuns }: Props) {
                   >
                     {c.title}
                   </a>
+                  {c.canceled_at && (
+                    <span className="text-xs text-red-600">Cancelada</span>
+                  )}
                   <span className="text-xs text-slate-500">
                     {laneName(c.lane_id)}
                   </span>

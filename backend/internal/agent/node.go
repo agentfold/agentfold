@@ -43,11 +43,14 @@ func findNode(g domain.Graph, key string) (node, error) {
 const (
 	basePrompt = "You are working on a card of the Orquestrator board. " +
 		"Never commit, push or open pull requests: leave your changes in the working tree; the board takes it from there. " +
-		"The orquestrator MCP server connects you to the board: get_card shows the card, with its artifacts and its parent card, and list_projects the projects of the board. " +
+		"The orquestrator MCP server connects you to the board: get_card shows the card, with its artifacts and its parent card, list_projects the projects of the board and list_card_types its card types. " +
 		"When you need a decision or information only a human has, call ask_human with your questions and then end your turn right away, " +
 		"without going on: you will be resumed with the answers. "
-	agentPrompt    = "When you finish, call report_done with a short summary of what you did."
-	outputPrompt   = " Before finishing, call submit_output with your result; it must match the schema the tool shows."
+	agentPrompt  = "When you finish, call report_done with a short summary of what you did."
+	outputPrompt = " Before finishing, call submit_output with your result; it must match the schema the tool shows."
+	tasksPrompt  = " You can split this card into tasks, child cards that the flows of their type carry out: first plan every task, " +
+		"each one standing on its own, then create them all with one create_tasks call, linking with depends_on the tasks that must be done first. " +
+		"Creating tasks does not wait for them: finish with a summary and end your turn; the flow resumes you with how they went."
 	readOnlyPrompt = " Do not edit files: this step only reads the working tree (see git status and git diff)."
 	gatewayPrompt  = " This step is a gate: you decide whether the work can move forward. Before you finish, call exactly one board tool: " +
 		"approve when the work meets the requirements, or reject with feedback the next agent can act on — what is wrong, " +
@@ -59,6 +62,9 @@ func (n node) systemPrompt() string {
 	prompt := basePrompt + agentPrompt
 	if n.config.HasOutputSchema() {
 		prompt += outputPrompt
+	}
+	if n.config.AllowsBoardTool("create_tasks") {
+		prompt += tasksPrompt
 	}
 	if n.config.ReadOnly {
 		prompt += readOnlyPrompt

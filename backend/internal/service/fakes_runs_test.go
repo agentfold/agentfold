@@ -106,3 +106,15 @@ func (f *fakeRepo) ListCardFlowRuns(_ context.Context, cardID uuid.UUID) ([]doma
 func (f *fakeRepo) CancelFlowRun(_ context.Context, id uuid.UUID) (domain.FlowRun, error) {
 	return domain.FlowRun{ID: id, Status: domain.RunCanceled, Error: "cancelado"}, f.call("CancelFlowRun", id)
 }
+
+func (f *fakeRepo) CreateChildCards(_ context.Context, cards []domain.ChildCard) ([]domain.Card, error) {
+	return nil, f.call("CreateChildCards", cards)
+}
+
+func (f *fakeRepo) CancelCard(_ context.Context, id uuid.UUID) (domain.Card, error) {
+	return domain.Card{ID: id}, f.call("CancelCard", id)
+}
+
+func (f *fakeRepo) RetryCard(_ context.Context, id uuid.UUID) (domain.Card, error) {
+	return domain.Card{ID: id}, f.call("RetryCard", id)
+}

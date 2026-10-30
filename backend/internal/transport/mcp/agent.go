@@ -103,8 +103,10 @@ func agentServer(board Board, run service.AgentRun) *sdk.Server {
 			}
 			return text("Summary recorded."), nil, nil
 		})
+	addCardTypes(s, board)
 	var cfg domain.AgentConfig
 	_ = json.Unmarshal(run.Node.Config, &cfg) // published configs are valid
+	addTasks(s, board, run, cfg)
 	if cfg.HasOutputSchema() {
 		addSubmitOutput(s, board, run, cfg.OutputSchema)
 	}

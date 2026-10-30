@@ -290,6 +290,9 @@ func TestCreateCardsFailures(t *testing.T) {
 		{"no cards", `[]`, nil, "a entrada não tem cards para criar"},
 		{"unknown project", `[{"title":"A","project":"chat-app"}]`, nil, `o card "A" usa o projeto "chat-app", que não existe (projetos: chat-backend, chat-web)`},
 		{"lane gone", `[{"title":"A"}]`, func(e *childEnv) { delete(e.store.lanes, e.todo) }, "a baia ou o tipo dos cards criados não existe mais"},
+		{"unknown dependency", `[{"title":"A"}]`, func(e *childEnv) {
+			e.store.errs["CreateChildCards"] = fmt.Errorf("%w: %w", domain.ErrInvalidReference, domain.ErrUnknownDependency)
+		}, "um card da lista depende de um card que não existe"},
 		{"bad config", `[{"title":"A"}]`, func(e *childEnv) {
 			e.store.flows[0].Version.Graph.Nodes[2].Config = json.RawMessage(`[]`)
 		}, "configuração inválida"},
