@@ -94,7 +94,9 @@ type Querier interface {
 	ListCardQuestions(ctx context.Context, cardID uuid.UUID) ([]Question, error)
 	ListCardTypes(ctx context.Context) ([]CardType, error)
 	ListCards(ctx context.Context) ([]Card, error)
+	ListCardsByID(ctx context.Context, ids []uuid.UUID) ([]Card, error)
 	ListChildCards(ctx context.Context, parentCardID *uuid.UUID) ([]Card, error)
+	ListDependentCards(ctx context.Context, id uuid.UUID) ([]Card, error)
 	ListFlowVersions(ctx context.Context, flowID uuid.UUID) ([]FlowVersion, error)
 	ListFlows(ctx context.Context) ([]ListFlowsRow, error)
 	ListLanes(ctx context.Context) ([]Lane, error)
@@ -120,6 +122,7 @@ type Querier interface {
 	// back to the agent.
 	ReviewRequest(ctx context.Context, nodeRunID *uuid.UUID) (ArtifactMessage, error)
 	SetAgentCredential(ctx context.Context, arg SetAgentCredentialParams) (AgentProfile, error)
+	SetCardProperty(ctx context.Context, arg SetCardPropertyParams) (Card, error)
 	SetFlowRunStatus(ctx context.Context, arg SetFlowRunStatusParams) (FlowRun, error)
 	SetLanePosition(ctx context.Context, arg SetLanePositionParams) (Lane, error)
 	SetNodeRunDecision(ctx context.Context, arg SetNodeRunDecisionParams) (NodeRun, error)
@@ -137,9 +140,9 @@ type Querier interface {
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) (Project, error)
 	UpsertArtifact(ctx context.Context, arg UpsertArtifactParams) (Artifact, error)
 	WaitNodeRun(ctx context.Context, id uuid.UUID) (NodeRun, error)
-	// WaitingChildrenNodeRun finds the WaitChildren node run a card's flow
-	// is waiting at, if any.
-	WaitingChildrenNodeRun(ctx context.Context, cardID uuid.UUID) (NodeRun, error)
+	// WaitingNodeRun finds the node run (WaitChildren or CheckProperty) a
+	// card's flow is waiting at, if any.
+	WaitingNodeRun(ctx context.Context, cardID uuid.UUID) (NodeRun, error)
 }
 
 var _ Querier = (*Queries)(nil)

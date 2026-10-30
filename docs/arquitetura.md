@@ -25,6 +25,7 @@ Expõe **API REST** e **servidor MCP** para integrações.
 | Portabilidade | `WorkspaceProvider` plugável, caminhos fixos no sandbox (`/workspace`, `/claude`) e `jobs.requirements` para afinidade de worker — prepara Docker e multi-host sem mudar engine/contrato |
 | Tipos de card | Cadastro dinâmico de tipos; gatilhos podem filtrar por tipo |
 | Hierarquia | Card pode ter card pai (`parent_card_id`); eventos dos filhos acordam o fluxo do pai |
+| Propriedades e dependências | Card tem propriedades chave=valor (gravadas por fluxos) e pode depender de outros cards; o board não bloqueia o movimento manual, quem decide é o fluxo (`CheckProperty`) |
 | MCPs externos | Servidores MCP cadastrados (ex.: Sourcegraph) e selecionados por nó Agent |
 | Workspace do agente | `git worktree` por card, a partir do `project_path` |
 | Runner do MVP | `local` (dev/testes) + `bwrap` (isolamento padrão). Docker na fase multi-host |
@@ -89,7 +90,7 @@ interfaces para viabilizar 100% de cobertura com fakes.
 | `lanes` | id, name, position, color (baias do fluxo — `scope`/`flow_id` — adiadas) |
 | `projects` | id, name, source_kind (`local`; futuro `git`), local_path (repo git), remote_url? e credential_id? (futuro) |
 | `card_types` | id, name, color |
-| `cards` | id, title, description, card_type_id, project_id?, parent_card_id?, lane_id, position, created_at |
+| `cards` | id, title, description, card_type_id, project_id?, parent_card_id?, lane_id, position, properties (jsonb chave→valor), depends_on (uuid[]; um card de que outros dependem não pode ser excluído), created_at |
 | `mcp_servers` | id, name, transport (`stdio`/`http`), config jsonb, secrets (criptografados) |
 | `card_events` | id, card_id, type, payload jsonb, created_at — linha do tempo do card |
 | `agent_profiles` | id, kind (`claude`, `opencode`), name, credential (criptografada), status |
@@ -124,6 +125,8 @@ Fluxos são **versionados**: um FlowRun em andamento continua na versão em que 
 | **CreateCards** | baia e tipo dos cards criados; os itens vêm da lista `cards` (título, descrição, projeto pelo nome) que o nó anterior entrega | `next`, `failed` |
 | **WaitChildren** | baia em que um filho conta como concluído | `all_done`, `some_failed` |
 | **HumanReview** | nomes dos artefatos revisados (vazio: os coletados no run) | `approved`, `changes_requested` |
+| **SetProperty** | chave e valor | `next` |
+| **CheckProperty** | chave e valor; esperar (sim/não) | `satisfied`, `pending` |
 
 **CreateCards** lê a lista `cards` da saída estruturada do Agent anterior (o editor preenche o
 schema com "Usar o schema de cards filhos") e cria todos os filhos numa transação, ou nenhum:
@@ -136,6 +139,17 @@ lá (sem filhos, `all_done`). Enquanto isso o nó fica `waiting` e o FlowRun do 
 pai é reavaliado quando um filho entra numa baia (job `flow.trigger` do filho), quando o fluxo
 de um filho termina e quando a execução de um filho é cancelada (job `flow.child_changed`);
 `SettleWait` garante que só uma dessas reavaliações siga a saída.
+
+**SetProperty** grava a propriedade no card (evento `property.set` na timeline) e repassa a
+entrada, como o MoveCard. Em seguida reavalia quem pode estar esperando por ela: o WaitChildren
+do card pai e o CheckProperty dos cards que dependem deste.
+
+**CheckProperty** confere a propriedade nos cards de que o card depende (`depends_on`): sai por
+`satisfied` quando todos a têm (ou sem dependências) e por `pending` caso contrário. Com
+"esperar", em vez de sair por `pending` o nó fica `waiting` (FlowRun `waiting`) até a última
+dependência receber a propriedade. Um desvio para trás quando uma dependência não está pronta
+é só ligar `pending` no fluxo. A saída traz a lista das dependências e se cada uma está
+satisfeita.
 
 O `get_card` do MCP devolve os artefatos do card (última versão e o estado da revisão, `approved` depois da aprovação) e, num
 card filho, o card pai com os artefatos dele: o agente que divide o trabalho e os que

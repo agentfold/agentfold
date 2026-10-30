@@ -53,6 +53,15 @@ export function CardContent({ card, lookup }: Props) {
         {project && (
           <span className="font-mono text-slate-500">{project.name}</span>
         )}
+        {card.depends_on.length > 0 && (
+          <span
+            title={card.depends_on
+              .map((id) => lookup.cards.get(id)?.title ?? id)
+              .join(', ')}
+          >
+            Depende de {card.depends_on.length}
+          </span>
+        )}
         {children.length > 0 && (
           <span title="Filhos com o fluxo concluído">
             Filhos {done}/{children.length}

@@ -668,6 +668,12 @@ export interface components {
             /** Format: uuid */
             lane_id: string;
             position: number;
+            /** @description Set by set_property nodes; check_property nodes check them on the cards in depends_on. */
+            properties: {
+                [key: string]: string;
+            };
+            /** @description The cards this card depends on. */
+            depends_on: string[];
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -737,7 +743,7 @@ export interface components {
             /** @description How many times the run entered the node (gateway rejections re-enter agents). */
             iteration: number;
             /**
-             * @description waiting is a wait_children node; awaiting_review a human_review node.
+             * @description waiting is a wait_children or check_property node; awaiting_review a human_review node.
              * @enum {string}
              */
             status: "queued" | "running" | "awaiting_input" | "waiting" | "awaiting_review" | "done" | "failed";
@@ -897,7 +903,7 @@ export interface components {
         FlowEdge: {
             id: string;
             source: string;
-            /** @description Output of the source node: trigger and move_card have "next"; agent has "done" and "failed", or with the gateway on "approved", "rejected", "max_rounds_exceeded" and "failed"; create_cards has "next" and "failed"; wait_children has "all_done" and "some_failed"; human_review has "approved" and "changes_requested"; end has none. */
+            /** @description Output of the source node: trigger and move_card have "next"; agent has "done" and "failed", or with the gateway on "approved", "rejected", "max_rounds_exceeded" and "failed"; create_cards has "next" and "failed"; wait_children has "all_done" and "some_failed"; human_review has "approved" and "changes_requested"; set_property has "next"; check_property has "satisfied" and "pending"; end has none. */
             source_handle: string;
             target: string;
         };
@@ -906,7 +912,7 @@ export interface components {
             y: number;
         };
         /** @description A step of the flow. Configs may be incomplete in drafts; publishing reports what is missing. */
-        FlowNode: components["schemas"]["TriggerNode"] | components["schemas"]["AgentNode"] | components["schemas"]["MoveCardNode"] | components["schemas"]["CreateCardsNode"] | components["schemas"]["WaitChildrenNode"] | components["schemas"]["HumanReviewNode"] | components["schemas"]["EndNode"];
+        FlowNode: components["schemas"]["TriggerNode"] | components["schemas"]["AgentNode"] | components["schemas"]["MoveCardNode"] | components["schemas"]["CreateCardsNode"] | components["schemas"]["WaitChildrenNode"] | components["schemas"]["HumanReviewNode"] | components["schemas"]["SetPropertyNode"] | components["schemas"]["CheckPropertyNode"] | components["schemas"]["EndNode"];
         TriggerNode: {
             id: string;
             /**
@@ -966,6 +972,26 @@ export interface components {
             type: "human_review";
             position: components["schemas"]["Position"];
             config: components["schemas"]["HumanReviewConfig"];
+        };
+        SetPropertyNode: {
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_property";
+            position: components["schemas"]["Position"];
+            config: components["schemas"]["SetPropertyConfig"];
+        };
+        CheckPropertyNode: {
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "check_property";
+            position: components["schemas"]["Position"];
+            config: components["schemas"]["CheckPropertyConfig"];
         };
         EndNode: {
             id: string;
@@ -1101,6 +1127,17 @@ export interface components {
              * @description Required to publish.
              */
             done_lane_id?: string;
+        };
+        /** @description Sets a property of the card. key and value are required to publish. */
+        SetPropertyConfig: {
+            key?: string;
+            value?: string;
+        };
+        /** @description Checks that every card the card depends on has the property key set to value: satisfied if so (or without dependencies), else pending. With wait on, the node waits until they do instead of leaving by pending. key and value are required to publish. */
+        CheckPropertyConfig: {
+            key?: string;
+            value?: string;
+            wait?: boolean;
         };
         /** @description Waits for a human to review artifacts of the card: they ask for changes in the review chat or approve. changes_requested must lead to the node that redoes the work. */
         HumanReviewConfig: {

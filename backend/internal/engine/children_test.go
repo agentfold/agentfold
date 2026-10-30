@@ -18,7 +18,7 @@ func (f *fakeStore) ListProjects(context.Context) ([]domain.Project, error) {
 	return f.projects, f.err("ListProjects")
 }
 
-func (f *fakeStore) CreateChildCards(_ context.Context, cards []domain.NewCard) ([]domain.Card, error) {
+func (f *fakeStore) CreateChildCards(_ context.Context, cards []domain.ChildCard) ([]domain.Card, error) {
 	if err := f.err("CreateChildCards"); err != nil {
 		return nil, err
 	}
@@ -29,7 +29,12 @@ func (f *fakeStore) CreateChildCards(_ context.Context, cards []domain.NewCard) 
 		}
 		out[i] = domain.Card{
 			ID: uuid.New(), Title: in.Title, Description: in.Description, CardTypeID: in.CardTypeID,
-			ProjectID: in.ProjectID, ParentCardID: in.ParentCardID, LaneID: in.LaneID,
+			ProjectID: in.ProjectID, ParentCardID: in.ParentCardID, LaneID: in.LaneID, DependsOn: in.DependsOn,
+		}
+	}
+	for i, in := range cards {
+		for _, j := range in.After {
+			out[i].DependsOn = append(out[i].DependsOn, out[j].ID)
 		}
 	}
 	for _, c := range out {
@@ -63,8 +68,8 @@ func (f *fakeStore) WaitNodeRun(_ context.Context, id uuid.UUID) (domain.NodeRun
 	return nr, nil
 }
 
-func (f *fakeStore) WaitingChildrenNodeRun(_ context.Context, cardID uuid.UUID) (domain.NodeRun, error) {
-	if err := f.err("WaitingChildrenNodeRun"); err != nil {
+func (f *fakeStore) WaitingNodeRun(_ context.Context, cardID uuid.UUID) (domain.NodeRun, error) {
+	if err := f.err("WaitingNodeRun"); err != nil {
 		return domain.NodeRun{}, err
 	}
 	for _, id := range f.order {
@@ -332,7 +337,7 @@ func TestChildStoreErrors(t *testing.T) {
 		{method: "ListCardFlowRuns"},
 		{method: "WaitNodeRun"},
 		{method: "WaitFlowRun"},
-		{method: "WaitingChildrenNodeRun"},
+		{method: "WaitingNodeRun"},
 		{method: "GetFlowRun", after: 1},
 		{method: "GetFlowVersion", after: 1},
 		{method: "ListChildCards", late: true},

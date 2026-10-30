@@ -135,6 +135,21 @@ func (e ArtifactMessageRole) Valid() bool {
 	}
 }
 
+// Defines values for CheckPropertyNodeType.
+const (
+	CheckProperty CheckPropertyNodeType = "check_property"
+)
+
+// Valid indicates whether the value is a known member of the CheckPropertyNodeType enum.
+func (e CheckPropertyNodeType) Valid() bool {
+	switch e {
+	case CheckProperty:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreateCardsNodeType.
 const (
 	CreateCards CreateCardsNodeType = "create_cards"
@@ -465,6 +480,21 @@ func (e ProjectSourceKind) Valid() bool {
 	}
 }
 
+// Defines values for SetPropertyNodeType.
+const (
+	SetProperty SetPropertyNodeType = "set_property"
+)
+
+// Valid indicates whether the value is a known member of the SetPropertyNodeType enum.
+func (e SetPropertyNodeType) Valid() bool {
+	switch e {
+	case SetProperty:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TriggerConfigEvent.
 const (
 	TriggerConfigEventCardCreated     TriggerConfigEvent = "card_created"
@@ -651,16 +681,22 @@ type ArtifactVersion struct {
 
 // Card defines model for Card.
 type Card struct {
-	CardTypeId   openapi_types.UUID  `json:"card_type_id"`
-	CreatedAt    time.Time           `json:"created_at"`
-	Description  string              `json:"description"`
-	Id           openapi_types.UUID  `json:"id"`
-	LaneId       openapi_types.UUID  `json:"lane_id"`
-	ParentCardId *openapi_types.UUID `json:"parent_card_id"`
-	Position     int                 `json:"position"`
-	ProjectId    *openapi_types.UUID `json:"project_id"`
-	Title        string              `json:"title"`
-	UpdatedAt    time.Time           `json:"updated_at"`
+	CardTypeId openapi_types.UUID `json:"card_type_id"`
+	CreatedAt  time.Time          `json:"created_at"`
+
+	// DependsOn The cards this card depends on.
+	DependsOn    []openapi_types.UUID `json:"depends_on"`
+	Description  string               `json:"description"`
+	Id           openapi_types.UUID   `json:"id"`
+	LaneId       openapi_types.UUID   `json:"lane_id"`
+	ParentCardId *openapi_types.UUID  `json:"parent_card_id"`
+	Position     int                  `json:"position"`
+	ProjectId    *openapi_types.UUID  `json:"project_id"`
+
+	// Properties Set by set_property nodes; check_property nodes check them on the cards in depends_on.
+	Properties map[string]string `json:"properties"`
+	Title      string            `json:"title"`
+	UpdatedAt  time.Time         `json:"updated_at"`
 }
 
 // CardEvent defines model for CardEvent.
@@ -707,6 +743,25 @@ type CardTypeInput struct {
 	Color *Color `json:"color,omitempty"`
 	Name  string `json:"name"`
 }
+
+// CheckPropertyConfig Checks that every card the card depends on has the property key set to value: satisfied if so (or without dependencies), else pending. With wait on, the node waits until they do instead of leaving by pending. key and value are required to publish.
+type CheckPropertyConfig struct {
+	Key   *string `json:"key,omitempty"`
+	Value *string `json:"value,omitempty"`
+	Wait  *bool   `json:"wait,omitempty"`
+}
+
+// CheckPropertyNode defines model for CheckPropertyNode.
+type CheckPropertyNode struct {
+	// Config Checks that every card the card depends on has the property key set to value: satisfied if so (or without dependencies), else pending. With wait on, the node waits until they do instead of leaving by pending. key and value are required to publish.
+	Config   CheckPropertyConfig   `json:"config"`
+	Id       string                `json:"id"`
+	Position Position              `json:"position"`
+	Type     CheckPropertyNodeType `json:"type"`
+}
+
+// CheckPropertyNodeType defines model for CheckPropertyNode.Type.
+type CheckPropertyNodeType string
 
 // Color Empty or "#rrggbb".
 //
@@ -783,7 +838,7 @@ type FlowEdge struct {
 	Id     string `json:"id"`
 	Source string `json:"source"`
 
-	// SourceHandle Output of the source node: trigger and move_card have "next"; agent has "done" and "failed", or with the gateway on "approved", "rejected", "max_rounds_exceeded" and "failed"; create_cards has "next" and "failed"; wait_children has "all_done" and "some_failed"; human_review has "approved" and "changes_requested"; end has none.
+	// SourceHandle Output of the source node: trigger and move_card have "next"; agent has "done" and "failed", or with the gateway on "approved", "rejected", "max_rounds_exceeded" and "failed"; create_cards has "next" and "failed"; wait_children has "all_done" and "some_failed"; human_review has "approved" and "changes_requested"; set_property has "next"; check_property has "satisfied" and "pending"; end has none.
 	SourceHandle string `json:"source_handle"`
 	Target       string `json:"target"`
 }
@@ -1088,7 +1143,7 @@ type NodeRun struct {
 	OutputHandle string     `json:"output_handle"`
 	StartedAt    *time.Time `json:"started_at"`
 
-	// Status waiting is a wait_children node; awaiting_review a human_review node.
+	// Status waiting is a wait_children or check_property node; awaiting_review a human_review node.
 	Status NodeRunStatus `json:"status"`
 
 	// Summary What the agent reported with report_done.
@@ -1101,7 +1156,7 @@ type NodeRun struct {
 // NodeRunDecision How a gateway node decided; empty for other nodes and while it runs.
 type NodeRunDecision string
 
-// NodeRunStatus waiting is a wait_children node; awaiting_review a human_review node.
+// NodeRunStatus waiting is a wait_children or check_property node; awaiting_review a human_review node.
 type NodeRunStatus string
 
 // Position defines model for Position.
@@ -1149,6 +1204,24 @@ type Question struct {
 type QuestionAnswer struct {
 	Answer string `json:"answer"`
 }
+
+// SetPropertyConfig Sets a property of the card. key and value are required to publish.
+type SetPropertyConfig struct {
+	Key   *string `json:"key,omitempty"`
+	Value *string `json:"value,omitempty"`
+}
+
+// SetPropertyNode defines model for SetPropertyNode.
+type SetPropertyNode struct {
+	// Config Sets a property of the card. key and value are required to publish.
+	Config   SetPropertyConfig   `json:"config"`
+	Id       string              `json:"id"`
+	Position Position            `json:"position"`
+	Type     SetPropertyNodeType `json:"type"`
+}
+
+// SetPropertyNodeType defines model for SetPropertyNode.Type.
+type SetPropertyNodeType string
 
 // TriggerConfig Starts the flow when a card is created or enters a lane, optionally only for some card types.
 type TriggerConfig struct {
@@ -1460,6 +1533,74 @@ func (t *FlowNode) MergeHumanReviewNode(v HumanReviewNode) error {
 	return err
 }
 
+// AsSetPropertyNode returns the union data inside the FlowNode as a SetPropertyNode
+func (t FlowNode) AsSetPropertyNode() (SetPropertyNode, error) {
+	var body SetPropertyNode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSetPropertyNode overwrites any union data inside the FlowNode as the provided SetPropertyNode
+func (t *FlowNode) FromSetPropertyNode(v SetPropertyNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"set_property"}`))
+	t.union = b
+	return err
+}
+
+// MergeSetPropertyNode performs a merge with any union data inside the FlowNode, using the provided SetPropertyNode
+func (t *FlowNode) MergeSetPropertyNode(v SetPropertyNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"set_property"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCheckPropertyNode returns the union data inside the FlowNode as a CheckPropertyNode
+func (t FlowNode) AsCheckPropertyNode() (CheckPropertyNode, error) {
+	var body CheckPropertyNode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCheckPropertyNode overwrites any union data inside the FlowNode as the provided CheckPropertyNode
+func (t *FlowNode) FromCheckPropertyNode(v CheckPropertyNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"check_property"}`))
+	t.union = b
+	return err
+}
+
+// MergeCheckPropertyNode performs a merge with any union data inside the FlowNode, using the provided CheckPropertyNode
+func (t *FlowNode) MergeCheckPropertyNode(v CheckPropertyNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"check_property"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 // AsEndNode returns the union data inside the FlowNode as a EndNode
 func (t FlowNode) AsEndNode() (EndNode, error) {
 	var body EndNode
@@ -1510,6 +1651,8 @@ func (t FlowNode) ValueByDiscriminator() (interface{}, error) {
 	switch discriminator {
 	case "agent":
 		return t.AsAgentNode()
+	case "check_property":
+		return t.AsCheckPropertyNode()
 	case "create_cards":
 		return t.AsCreateCardsNode()
 	case "end":
@@ -1518,6 +1661,8 @@ func (t FlowNode) ValueByDiscriminator() (interface{}, error) {
 		return t.AsHumanReviewNode()
 	case "move_card":
 		return t.AsMoveCardNode()
+	case "set_property":
+		return t.AsSetPropertyNode()
 	case "trigger":
 		return t.AsTriggerNode()
 	case "wait_children":

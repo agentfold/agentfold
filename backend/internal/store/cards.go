@@ -13,6 +13,8 @@ import (
 )
 
 func toCard(r sqlcgen.Card) domain.Card {
+	properties := map[string]string{}
+	_ = json.Unmarshal(r.Properties, &properties) // the column holds a JSON object of strings
 	return domain.Card{
 		ID:           r.ID,
 		Title:        r.Title,
@@ -22,6 +24,8 @@ func toCard(r sqlcgen.Card) domain.Card {
 		ParentCardID: r.ParentCardID,
 		LaneID:       r.LaneID,
 		Position:     int(r.Position),
+		Properties:   properties,
+		DependsOn:    r.DependsOn,
 		CreatedAt:    r.CreatedAt,
 		UpdatedAt:    r.UpdatedAt,
 	}
@@ -43,7 +47,11 @@ type (
 		LaneID uuid.UUID `json:"lane_id"`
 	}
 	cardUpdatedPayload struct{}
-	cardMovedPayload   struct {
+	propertySetPayload struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}
+	cardMovedPayload struct {
 		FromLaneID uuid.UUID `json:"from_lane_id"`
 		ToLaneID   uuid.UUID `json:"to_lane_id"`
 		Position   int       `json:"position"`
@@ -110,11 +118,21 @@ func (s *Store) CreateCard(ctx context.Context, in domain.NewCard) (domain.Card,
 	return card, err
 }
 
-// CreateChildCards creates the cards of a CreateCards node, all or none.
-func (s *Store) CreateChildCards(ctx context.Context, cards []domain.NewCard) ([]domain.Card, error) {
+// CreateChildCards creates a batch of child cards, all or none, each after
+// the cards of the batch it depends on. It returns them in batch order.
+func (s *Store) CreateChildCards(ctx context.Context, cards []domain.ChildCard) ([]domain.Card, error) {
+	order, err := domain.CreationOrder(cards)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]domain.Card, len(cards))
-	err := s.inTx(ctx, func(q sqlcgen.Querier) error {
-		for i, in := range cards {
+	err = s.inTx(ctx, func(q sqlcgen.Querier) error {
+		for _, i := range order {
+			in := cards[i].NewCard
+			in.DependsOn = append([]uuid.UUID{}, in.DependsOn...)
+			for _, j := range cards[i].After {
+				in.DependsOn = append(in.DependsOn, out[j].ID)
+			}
 			card, err := createCard(ctx, q, in)
 			if err != nil {
 				return err
@@ -130,6 +148,10 @@ func createCard(ctx context.Context, q sqlcgen.Querier, in domain.NewCard) (doma
 	if err := lockLane(ctx, q, in.LaneID); err != nil {
 		return domain.Card{}, err
 	}
+	in.DependsOn = unique(in.DependsOn)
+	if err := requireCards(ctx, q, in.DependsOn); err != nil {
+		return domain.Card{}, err
+	}
 	count, err := q.CountCardsInLane(ctx, in.LaneID)
 	if err != nil {
 		return domain.Card{}, err
@@ -142,12 +164,68 @@ func createCard(ctx context.Context, q sqlcgen.Querier, in domain.NewCard) (doma
 		ParentCardID: in.ParentCardID,
 		LaneID:       in.LaneID,
 		Position:     count,
+		DependsOn:    in.DependsOn,
 	})
 	card, err := mapRow(row, err, toCard)
 	if err != nil {
 		return card, err
 	}
 	return card, addTriggerEvent(ctx, q, card.ID, domain.CardCreated, cardCreatedPayload{LaneID: card.LaneID})
+}
+
+// unique returns ids without repetitions, in order, never nil.
+func unique(ids []uuid.UUID) []uuid.UUID {
+	out := []uuid.UUID{}
+	seen := map[uuid.UUID]bool{}
+	for _, id := range ids {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// requireCards fails with ErrInvalidReference unless every card of ids
+// (without repetitions) exists.
+func requireCards(ctx context.Context, q sqlcgen.Querier, ids []uuid.UUID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := q.ListCardsByID(ctx, ids)
+	if err != nil {
+		return err
+	}
+	if len(rows) != len(ids) {
+		return fmt.Errorf("%w: dependency", domain.ErrInvalidReference)
+	}
+	return nil
+}
+
+// ListCardsByID returns the cards of ids that exist, oldest first.
+func (s *Store) ListCardsByID(ctx context.Context, ids []uuid.UUID) ([]domain.Card, error) {
+	rows, err := s.q.ListCardsByID(ctx, unique(ids))
+	return mapRows(rows, err, toCard)
+}
+
+// ListDependentCards returns the cards that depend on a card.
+func (s *Store) ListDependentCards(ctx context.Context, id uuid.UUID) ([]domain.Card, error) {
+	rows, err := s.q.ListDependentCards(ctx, id)
+	return mapRows(rows, err, toCard)
+}
+
+// SetCardProperty sets a property of a card and records the event.
+func (s *Store) SetCardProperty(ctx context.Context, id uuid.UUID, key, value string) (domain.Card, error) {
+	var card domain.Card
+	err := s.inTx(ctx, func(q sqlcgen.Querier) error {
+		row, err := q.SetCardProperty(ctx, sqlcgen.SetCardPropertyParams{ID: id, Key: key, Value: value})
+		if card, err = mapRow(row, err, toCard); err != nil {
+			return err
+		}
+		_, err = addEvent(ctx, q, id, domain.PropertySet, propertySetPayload{Key: key, Value: value})
+		return err
+	})
+	return card, err
 }
 
 // UpdateCard changes the editable fields of a card and records the event.
@@ -228,12 +306,20 @@ func makeRoom(ctx context.Context, q sqlcgen.Querier, card sqlcgen.Card, laneID 
 	return q.ShiftCards(ctx, sqlcgen.ShiftCardsParams{LaneID: laneID, Delta: 1, FromPos: to, ToPos: last})
 }
 
-// DeleteCard removes a card without children and closes the gap in its lane.
+// DeleteCard removes a card without children and that no card depends
+// on, and closes the gap in its lane.
 func (s *Store) DeleteCard(ctx context.Context, id uuid.UUID) error {
 	return s.inTx(ctx, func(q sqlcgen.Querier) error {
 		row, err := q.GetCardForUpdate(ctx, id)
 		if err != nil {
 			return mapErr(err)
+		}
+		dependents, err := q.ListDependentCards(ctx, id)
+		if err != nil {
+			return err
+		}
+		if len(dependents) > 0 {
+			return fmt.Errorf("%w: other cards depend on it", domain.ErrInUse)
 		}
 		if err := requireDeleted(q.DeleteCard(ctx, id)); err != nil {
 			return err

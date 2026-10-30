@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/google/uuid"
@@ -16,10 +17,13 @@ func TestCreateChildCards(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t, s)
 	parent := f.card.ID
-	child := func(title string) domain.NewCard {
-		return domain.NewCard{CardInput: domain.CardInput{Title: title, CardTypeID: f.cardType.ID, ProjectID: &f.project.ID}, LaneID: f.lanes[1].ID, ParentCardID: &parent}
+	child := func(title string, after ...int) domain.ChildCard {
+		return domain.ChildCard{
+			NewCard: domain.NewCard{CardInput: domain.CardInput{Title: title, CardTypeID: f.cardType.ID, ProjectID: &f.project.ID}, LaneID: f.lanes[1].ID, ParentCardID: &parent},
+			After:   after,
+		}
 	}
-	cards, err := s.CreateChildCards(ctx, []domain.NewCard{child("API"), child("Web")})
+	cards, err := s.CreateChildCards(ctx, []domain.ChildCard{child("API"), child("Web")})
 	if err != nil || len(cards) != 2 || cards[1].Position != 1 || *cards[0].ParentCardID != parent {
 		t.Fatalf("CreateChildCards = %+v, %v", cards, err)
 	}
@@ -34,7 +38,7 @@ func TestCreateChildCards(t *testing.T) {
 
 	// The second card failing leaves none.
 	failOn(s, "CountCardsInLane", 2)
-	if _, err := s.CreateChildCards(ctx, []domain.NewCard{child("A"), child("B")}); !errors.Is(err, errInjected) {
+	if _, err := s.CreateChildCards(ctx, []domain.ChildCard{child("A"), child("B")}); !errors.Is(err, errInjected) {
 		t.Fatalf("got %v", err)
 	}
 	if children, _ := s.ListChildCards(ctx, parent); len(children) != 2 {
@@ -42,25 +46,122 @@ func TestCreateChildCards(t *testing.T) {
 	}
 }
 
+func TestChildCardDependencies(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	f := newFixture(t, s)
+	parent := f.card.ID
+	child := func(title string, deps []uuid.UUID, after ...int) domain.ChildCard {
+		return domain.ChildCard{
+			NewCard: domain.NewCard{CardInput: domain.CardInput{Title: title, CardTypeID: f.cardType.ID}, LaneID: f.lanes[1].ID, ParentCardID: &parent, DependsOn: deps},
+			After:   after,
+		}
+	}
+	// Web depends on API, created after it, and on the parent twice.
+	cards, err := s.CreateChildCards(ctx, []domain.ChildCard{child("Web", []uuid.UUID{parent, parent}, 1), child("API", nil)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	web, api := cards[0], cards[1]
+	if !slices.Equal(web.DependsOn, []uuid.UUID{parent, api.ID}) || len(api.DependsOn) != 0 || api.Position != 0 {
+		t.Fatalf("web %+v, api %+v", web, api)
+	}
+	if got, err := s.GetCard(ctx, web.ID); err != nil || !slices.Equal(got.DependsOn, web.DependsOn) {
+		t.Fatalf("GetCard = %+v, %v", got, err)
+	}
+	dependents, err := s.ListDependentCards(ctx, api.ID)
+	if err != nil || len(dependents) != 1 || dependents[0].ID != web.ID {
+		t.Fatalf("ListDependentCards = %+v, %v", dependents, err)
+	}
+	byID, err := s.ListCardsByID(ctx, []uuid.UUID{web.ID, api.ID, web.ID, uuid.New()})
+	if err != nil || len(byID) != 2 || byID[0].ID != api.ID {
+		t.Fatalf("ListCardsByID = %+v, %v", byID, err)
+	}
+
+	// A card others depend on cannot be deleted.
+	if err := s.DeleteCard(ctx, api.ID); !errors.Is(err, domain.ErrInUse) {
+		t.Fatalf("deleting a dependency: %v", err)
+	}
+	if err := s.DeleteCard(ctx, web.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteCard(ctx, api.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, batch := range map[string][]domain.ChildCard{
+		"cycle":        {child("A", nil, 1), child("B", nil, 0)},
+		"unknown card": {child("A", []uuid.UUID{uuid.New()})},
+	} {
+		if _, err := s.CreateChildCards(ctx, batch); err == nil {
+			t.Fatalf("%s accepted", name)
+		}
+	}
+	if _, err := s.CreateChildCards(ctx, []domain.ChildCard{child("A", []uuid.UUID{uuid.New()})}); !errors.Is(err, domain.ErrInvalidReference) {
+		t.Fatalf("unknown dependency: %v", err)
+	}
+	if _, err := s.CreateChildCards(cancelled(), []domain.ChildCard{child("A", []uuid.UUID{parent})}); err == nil {
+		t.Fatal("cancelled context accepted")
+	}
+	failOn(s, "ListCardsByID", 1)
+	if _, err := s.CreateChildCards(ctx, []domain.ChildCard{child("A", []uuid.UUID{parent})}); !errors.Is(err, errInjected) {
+		t.Fatalf("got %v", err)
+	}
+	failOn(s, "ListDependentCards", 1)
+	if err := s.DeleteCard(ctx, parent); !errors.Is(err, errInjected) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestSetCardProperty(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	f := newFixture(t, s)
+	if len(f.card.Properties) != 0 || f.card.Properties == nil {
+		t.Fatalf("new card properties %v", f.card.Properties)
+	}
+	if _, err := s.SetCardProperty(ctx, f.card.ID, "dev", "doing"); err != nil {
+		t.Fatal(err)
+	}
+	card, err := s.SetCardProperty(ctx, f.card.ID, "dev", "ok")
+	if err != nil || card.Properties["dev"] != "ok" || len(card.Properties) != 1 {
+		t.Fatalf("SetCardProperty = %+v, %v", card, err)
+	}
+	if card, _ = s.SetCardProperty(ctx, f.card.ID, "qa", "ok"); !card.HasProperty("dev", "ok") || !card.HasProperty("qa", "ok") {
+		t.Fatalf("properties %v", card.Properties)
+	}
+	events, _ := s.ListCardEvents(ctx, f.card.ID)
+	if last := events[len(events)-1]; last.Type != domain.PropertySet || string(last.Payload) != `{"key": "qa", "value": "ok"}` {
+		t.Fatalf("event %+v %s", last, last.Payload)
+	}
+	if _, err := s.SetCardProperty(ctx, uuid.New(), "dev", "ok"); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("unknown card: %v", err)
+	}
+	failOn(s, "InsertCardEvent", 1)
+	if _, err := s.SetCardProperty(ctx, f.card.ID, "dev", "ok"); !errors.Is(err, errInjected) {
+		t.Fatalf("got %v", err)
+	}
+}
+
 func TestWaitingForChildren(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
 	run, nr := runningNode(t, s)
-	if _, err := s.WaitingChildrenNodeRun(ctx, run.CardID); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := s.WaitingNodeRun(ctx, run.CardID); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("nothing waits yet: %v", err)
 	}
 	held, err := s.WaitNodeRun(ctx, nr.ID)
 	if err != nil || held.Status != domain.NodeWaiting {
 		t.Fatalf("WaitNodeRun = %+v, %v", held, err)
 	}
-	if _, err := s.WaitingChildrenNodeRun(ctx, run.CardID); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := s.WaitingNodeRun(ctx, run.CardID); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("the run is not waiting yet: %v", err)
 	}
 	if _, err := s.WaitFlowRun(ctx, run.ID); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := s.WaitingChildrenNodeRun(ctx, run.CardID); err != nil || got.ID != nr.ID {
-		t.Fatalf("WaitingChildrenNodeRun = %+v, %v", got, err)
+	if got, err := s.WaitingNodeRun(ctx, run.CardID); err != nil || got.ID != nr.ID {
+		t.Fatalf("WaitingNodeRun = %+v, %v", got, err)
 	}
 
 	result := domain.NodeResult{Status: domain.NodeDone, OutputHandle: "all_done", Output: json.RawMessage(`{"children":[]}`)}
@@ -132,7 +233,7 @@ func TestCancelingAChildRunWakesTheParent(t *testing.T) {
 	s = newStore(t)
 	run, _ = runningNode(t, s)
 	card, _ := s.GetCard(ctx, run.CardID)
-	child, err := s.CreateChildCards(ctx, []domain.NewCard{{CardInput: domain.CardInput{Title: "c", CardTypeID: card.CardTypeID}, LaneID: card.LaneID, ParentCardID: &card.ID}})
+	child, err := s.CreateChildCards(ctx, []domain.ChildCard{{NewCard: domain.NewCard{CardInput: domain.CardInput{Title: "c", CardTypeID: card.CardTypeID}, LaneID: card.LaneID, ParentCardID: &card.ID}}})
 	if err != nil {
 		t.Fatal(err)
 	}

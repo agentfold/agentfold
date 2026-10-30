@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -366,7 +367,7 @@ func TestDelegation(t *testing.T) {
 			if len(repo.calls) != 1 || repo.calls[0] != tt.name {
 				t.Fatalf("calls = %v", repo.calls)
 			}
-			if repo.in != tt.wantIn {
+			if !reflect.DeepEqual(repo.in, tt.wantIn) {
 				t.Fatalf("repository got %+v, want %+v", repo.in, tt.wantIn)
 			}
 			if len(pub.events) != 0 {

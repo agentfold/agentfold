@@ -938,16 +938,16 @@ func (q *Queries) WaitNodeRun(ctx context.Context, id uuid.UUID) (NodeRun, error
 	return i, err
 }
 
-const waitingChildrenNodeRun = `-- name: WaitingChildrenNodeRun :one
+const waitingNodeRun = `-- name: WaitingNodeRun :one
 SELECT n.id, n.flow_run_id, n.node_key, n.iteration, n.status, n.input, n.output, n.output_handle, n.session_id, n.tokens_in, n.tokens_out, n.cache_read, n.cache_write, n.cost_usd, n.turns, n.duration_ms, n.error, n.created_at, n.started_at, n.finished_at, n.continued_at, n.token_hash, n.summary, n.structured_output, n.decision, n.feedback FROM node_runs n JOIN flow_runs r ON r.id = n.flow_run_id
 WHERE r.card_id = $1 AND r.status = 'waiting' AND n.status = 'waiting'
 ORDER BY n.created_at DESC LIMIT 1
 `
 
-// WaitingChildrenNodeRun finds the WaitChildren node run a card's flow
-// is waiting at, if any.
-func (q *Queries) WaitingChildrenNodeRun(ctx context.Context, cardID uuid.UUID) (NodeRun, error) {
-	row := q.db.QueryRow(ctx, waitingChildrenNodeRun, cardID)
+// WaitingNodeRun finds the node run (WaitChildren or CheckProperty) a
+// card's flow is waiting at, if any.
+func (q *Queries) WaitingNodeRun(ctx context.Context, cardID uuid.UUID) (NodeRun, error) {
+	row := q.db.QueryRow(ctx, waitingNodeRun, cardID)
 	var i NodeRun
 	err := row.Scan(
 		&i.ID,

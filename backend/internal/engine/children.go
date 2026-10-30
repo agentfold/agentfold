@@ -36,9 +36,9 @@ func (e *Engine) createCards(ctx context.Context, r *run, node domain.Node, inpu
 		names = append(names, p.Name)
 	}
 	parent := r.CardID
-	cards := make([]domain.NewCard, len(specs))
+	cards := make([]domain.ChildCard, len(specs))
 	for i, spec := range specs {
-		cards[i] = domain.NewCard{
+		cards[i].NewCard = domain.NewCard{
 			CardInput:    domain.CardInput{Title: spec.Title, Description: spec.Description, CardTypeID: cfg.CardTypeID},
 			LaneID:       cfg.LaneID,
 			ParentCardID: &parent,
@@ -70,6 +70,15 @@ func (e *Engine) createCards(ctx context.Context, r *run, node domain.Node, inpu
 	}
 	output, _ := json.Marshal(map[string]any{"cards": out.Cards}) // plain values
 	return domain.NodeResult{Status: domain.NodeDone, OutputHandle: "next", Output: output}, nil
+}
+
+// waitResult settles a WaitChildren or CheckProperty node, or returns nil
+// while it waits.
+func (e *Engine) waitResult(ctx context.Context, cardID uuid.UUID, node domain.Node) (*domain.NodeResult, error) {
+	if node.Type == domain.NodeCheckProperty {
+		return e.propertyResult(ctx, cardID, node)
+	}
+	return e.childrenResult(ctx, cardID, node)
 }
 
 // Child card states, as WaitChildren sees them.
@@ -122,10 +131,10 @@ func (e *Engine) childrenResult(ctx context.Context, cardID uuid.UUID, node doma
 	return nil, nil
 }
 
-// waitChildren holds the run at a WaitChildren node until its children
-// settle it. A child may have settled while the node was being held, so
-// it looks once more afterwards.
-func (e *Engine) waitChildren(ctx context.Context, r *run, nr domain.NodeRun) error {
+// wait holds the run at a WaitChildren or CheckProperty node until the
+// cards it waits for settle it. They may have settled while the node was
+// being held, so it looks once more afterwards.
+func (e *Engine) wait(ctx context.Context, r *run, nr domain.NodeRun) error {
 	held, err := e.Store.WaitNodeRun(ctx, nr.ID)
 	if err != nil {
 		return err
@@ -169,10 +178,10 @@ func (e *Engine) wakeParent(ctx context.Context, card domain.Card) error {
 	return e.settle(ctx, *card.ParentCardID)
 }
 
-// settle ends the WaitChildren node the flow of card waits at once its
-// children settle it, and follows its output.
+// settle ends the WaitChildren or CheckProperty node the flow of card
+// waits at once the cards it waits for settle it, and follows its output.
 func (e *Engine) settle(ctx context.Context, cardID uuid.UUID) error {
-	nr, err := e.Store.WaitingChildrenNodeRun(ctx, cardID)
+	nr, err := e.Store.WaitingNodeRun(ctx, cardID)
 	if errors.Is(err, domain.ErrNotFound) {
 		return nil
 	}
@@ -188,7 +197,7 @@ func (e *Engine) settle(ctx context.Context, cardID uuid.UUID) error {
 		return err
 	}
 	node, _ := findNode(version.Graph, nr.NodeKey) // waiting node runs come from the graph
-	result, err := e.childrenResult(ctx, cardID, node)
+	result, err := e.waitResult(ctx, cardID, node)
 	if err != nil || result == nil {
 		return err
 	}

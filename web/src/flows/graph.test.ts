@@ -179,6 +179,19 @@ describe('summary', () => {
       'Espera os cards filhos chegarem à baia final',
     ],
     [{ kind: 'human_review', config: {} }, 'Revisão dos artefatos do run'],
+    [{ kind: 'set_property', config: {} }, 'Define ?=? no card'],
+    [
+      { kind: 'set_property', config: { key: 'dev', value: 'ok' } },
+      'Define dev=ok no card',
+    ],
+    [{ kind: 'check_property', config: {} }, 'Confere ?=? nas dependências'],
+    [
+      {
+        kind: 'check_property',
+        config: { key: 'dev', value: 'ok', wait: true },
+      },
+      'Espera dev=ok nas dependências',
+    ],
     [{ kind: 'end', config: {} }, 'Encerra o fluxo'],
   ] as const)('describes %j', (data, want) => {
     expect(summary(data)).toBe(want)
@@ -202,6 +215,7 @@ describe('nodeOutputs', () => {
       { kind: 'agent', config: { gateway: true } },
       ['approved', 'rejected', 'max_rounds_exceeded', 'failed'],
     ],
+    [{ kind: 'check_property', config: {} }, ['satisfied', 'pending']],
     [{ kind: 'end', config: {} }, []],
   ] as const)('lists the outputs of %j', (data, want) => {
     expect(nodeOutputs(data)).toEqual(want)

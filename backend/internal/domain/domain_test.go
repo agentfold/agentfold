@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
@@ -120,5 +121,31 @@ func TestRunStatusActive(t *testing.T) {
 		if status.Active() != want {
 			t.Errorf("%s: Active() = %v", status, !want)
 		}
+	}
+}
+
+func TestHasProperty(t *testing.T) {
+	c := Card{Properties: map[string]string{"dev": "ok", "empty": ""}}
+	if !c.HasProperty("dev", "ok") || c.HasProperty("dev", "no") || c.HasProperty("other", "") || !c.HasProperty("empty", "") {
+		t.Fatal("wrong property checks")
+	}
+}
+
+func TestCreationOrder(t *testing.T) {
+	card := func(title string, after ...int) ChildCard {
+		return ChildCard{NewCard: NewCard{CardInput: CardInput{Title: title}}, After: after}
+	}
+	order, err := CreationOrder([]ChildCard{card("web", 1, 2), card("api", 2), card("db"), card("docs", 0)})
+	if err != nil || fmt.Sprint(order) != "[2 1 0 3]" {
+		t.Fatalf("got %v, %v", order, err)
+	}
+	if _, err := CreationOrder([]ChildCard{card("a", 1), card("b", 0)}); err == nil || err.Error() != `os cards formam um ciclo de dependências (passando por "a")` {
+		t.Fatalf("cycle: %v", err)
+	}
+	if _, err := CreationOrder([]ChildCard{card("a", 0)}); err == nil {
+		t.Fatal("self dependency accepted")
+	}
+	if _, err := CreationOrder([]ChildCard{card("a", 3)}); err == nil || err.Error() != `o card "a" depende de um card que não está na lista` {
+		t.Fatalf("out of range: %v", err)
 	}
 }

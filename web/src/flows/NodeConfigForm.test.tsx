@@ -289,6 +289,24 @@ describe('NodeConfigForm', () => {
     })
   })
 
+  it('sets a property', async () => {
+    const result = setup('set_property', {})
+    await userEvent.type(screen.getByLabelText('Chave'), 'dev')
+    await userEvent.type(screen.getByLabelText('Valor'), 'ok')
+    expect(result.config).toEqual({ key: 'dev', value: 'ok' })
+    await userEvent.clear(screen.getByLabelText('Chave'))
+    await userEvent.clear(screen.getByLabelText('Valor'))
+    expect(result.config).toEqual({ key: undefined, value: undefined })
+  })
+
+  it('checks a property, optionally waiting', async () => {
+    const result = setup('check_property', { key: 'dev', value: 'ok' })
+    await userEvent.click(screen.getByLabelText(/Esperar/))
+    expect(result.config).toEqual({ key: 'dev', value: 'ok', wait: true })
+    await userEvent.click(screen.getByLabelText(/Esperar/))
+    expect(result.config).toEqual({ key: 'dev', value: 'ok', wait: undefined })
+  })
+
   it('has nothing to configure on the end', () => {
     setup('end', {})
     expect(screen.getByText(/Não tem configuração/)).toBeInTheDocument()

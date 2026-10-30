@@ -2,6 +2,9 @@ package rest
 
 import (
 	"encoding/json"
+	"maps"
+
+	"github.com/google/uuid"
 
 	"orquestrator/internal/domain"
 	"orquestrator/internal/service"
@@ -27,6 +30,8 @@ func toCardType(c domain.CardType) openapi.CardType {
 }
 
 func toCard(c domain.Card) openapi.Card {
+	properties := map[string]string{}
+	maps.Copy(properties, c.Properties)
 	return openapi.Card{
 		Id:           c.ID,
 		Title:        c.Title,
@@ -36,6 +41,8 @@ func toCard(c domain.Card) openapi.Card {
 		ParentCardId: c.ParentCardID,
 		LaneId:       c.LaneID,
 		Position:     c.Position,
+		Properties:   properties,
+		DependsOn:    append([]uuid.UUID{}, c.DependsOn...),
 		CreatedAt:    c.CreatedAt,
 		UpdatedAt:    c.UpdatedAt,
 	}

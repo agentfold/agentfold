@@ -61,6 +61,24 @@ describe('Board', () => {
     ).toBeInTheDocument()
   })
 
+  it('shows what a card depends on', async () => {
+    const d = boardData()
+    const child = { ...d.child, depends_on: [d.orphan.id, 'gone'] }
+    renderWithApi(
+      <Board />,
+      createFakeBackend({
+        lanes: [d.todo, d.done],
+        cardTypes: [d.bug],
+        cards: [d.parent, child, d.orphan],
+      }),
+    )
+    const todo = await laneSection('Todo')
+    expect(within(todo).getByText('Depende de 2')).toHaveAttribute(
+      'title',
+      'Orphan, gone',
+    )
+  })
+
   it('shows the latest flow run of each card and holds busy cards', async () => {
     const d = boardData()
     const backend = createFakeBackend({

@@ -65,6 +65,10 @@ const (
 	NodeWaitChildren NodeType = "wait_children"
 	// NodeHumanReview waits for a human to review artifacts of the card.
 	NodeHumanReview NodeType = "human_review"
+	// NodeSetProperty sets a property of the card; NodeCheckProperty
+	// checks it on the cards the card depends on.
+	NodeSetProperty   NodeType = "set_property"
+	NodeCheckProperty NodeType = "check_property"
 )
 
 // Outputs lists the outputs (edge source handles) of each node type. Agent
@@ -82,6 +86,9 @@ var Outputs = map[NodeType][]string{
 	// changes_requested: the human asked for changes, handed on to the
 	// agent node it leads to.
 	NodeHumanReview: {"approved", "changes_requested"},
+	NodeSetProperty: {"next"},
+	// pending: some dependency lacks the property (never with wait on).
+	NodeCheckProperty: {"satisfied", "pending"},
 }
 
 // GatewayOutputs are the outputs of an agent node with the gateway on.
@@ -187,6 +194,21 @@ type WaitChildrenConfig struct {
 // those collected in the run.
 type HumanReviewConfig struct {
 	Artifacts []string `json:"artifacts,omitempty"`
+}
+
+// SetPropertyConfig sets the property Key of the card to Value.
+type SetPropertyConfig struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+// CheckPropertyConfig checks that every card the card depends on has the
+// property Key set to Value. With Wait on, the node waits until they do
+// instead of leaving by pending.
+type CheckPropertyConfig struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+	Wait  bool   `json:"wait,omitempty"`
 }
 
 // ChildCardSpec is a card a CreateCards node creates. Project is the name
@@ -445,8 +467,31 @@ func (v *validator) configProblems(n Node) []string {
 			return []string{invalidConfig(err)}
 		}
 		return reviewProblems(c.Artifacts)
+	case NodeSetProperty:
+		var c SetPropertyConfig
+		if err := json.Unmarshal(config, &c); err != nil {
+			return []string{invalidConfig(err)}
+		}
+		return propertyProblems(c.Key, c.Value)
+	case NodeCheckProperty:
+		var c CheckPropertyConfig
+		if err := json.Unmarshal(config, &c); err != nil {
+			return []string{invalidConfig(err)}
+		}
+		return propertyProblems(c.Key, c.Value)
 	}
 	return nil
+}
+
+func propertyProblems(key, value string) []string {
+	var out []string
+	if strings.TrimSpace(key) == "" {
+		out = append(out, "informe a chave da propriedade")
+	}
+	if strings.TrimSpace(value) == "" {
+		out = append(out, "informe o valor da propriedade")
+	}
+	return out
 }
 
 func reviewProblems(names []string) []string {

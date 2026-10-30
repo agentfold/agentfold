@@ -375,3 +375,17 @@ func (f *failing) GetCard(ctx context.Context, id uuid.UUID) (sqlcgen.Card, erro
 	}
 	return f.Querier.GetCard(ctx, id)
 }
+
+func (f *failing) ListCardsByID(ctx context.Context, ids []uuid.UUID) ([]sqlcgen.Card, error) {
+	if err := f.hit("ListCardsByID"); err != nil {
+		return nil, err
+	}
+	return f.Querier.ListCardsByID(ctx, ids)
+}
+
+func (f *failing) ListDependentCards(ctx context.Context, id uuid.UUID) ([]sqlcgen.Card, error) {
+	if err := f.hit("ListDependentCards"); err != nil {
+		return nil, err
+	}
+	return f.Querier.ListDependentCards(ctx, id)
+}

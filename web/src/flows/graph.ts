@@ -9,6 +9,8 @@ import type {
   TriggerConfig,
   WaitChildrenConfig,
   HumanReviewConfig,
+  SetPropertyConfig,
+  CheckPropertyConfig,
 } from '../api/client'
 
 export type NodeKind = FlowNode['type']
@@ -19,6 +21,8 @@ export type StepConfig =
   | CreateCardsConfig
   | WaitChildrenConfig
   | HumanReviewConfig
+  | SetPropertyConfig
+  | CheckPropertyConfig
   | Record<string, never>
 
 export interface StepData extends Record<string, unknown> {
@@ -38,6 +42,8 @@ export const kindLabels: Record<NodeKind, string> = {
   create_cards: 'Criar cards',
   wait_children: 'Esperar filhos',
   human_review: 'Revisão humana',
+  set_property: 'Definir propriedade',
+  check_property: 'Conferir propriedade',
   end: 'Fim',
 }
 
@@ -49,6 +55,8 @@ const outputs: Record<NodeKind, string[]> = {
   create_cards: ['next', 'failed'],
   wait_children: ['all_done', 'some_failed'],
   human_review: ['approved', 'changes_requested'],
+  set_property: ['next'],
+  check_property: ['satisfied', 'pending'],
   end: [],
 }
 
@@ -72,6 +80,8 @@ export const outputLabels: Record<string, string> = {
   all_done: 'todos concluídos',
   some_failed: 'algum falhou',
   changes_requested: 'pediu ajustes',
+  satisfied: 'satisfeitas',
+  pending: 'pendentes',
 }
 
 export function defaultConfig(kind: NodeKind): StepConfig {
@@ -227,6 +237,14 @@ export function summary({ kind, config }: StepData): string {
       return names.length > 0
         ? `Revisão de ${names.join(', ')}`
         : 'Revisão dos artefatos do run'
+    }
+    case 'set_property': {
+      const { key = '?', value = '?' } = config as SetPropertyConfig
+      return `Define ${key}=${value} no card`
+    }
+    case 'check_property': {
+      const { key = '?', value = '?', wait } = config as CheckPropertyConfig
+      return `${wait ? 'Espera' : 'Confere'} ${key}=${value} nas dependências`
     }
     case 'end':
       return 'Encerra o fluxo'

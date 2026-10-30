@@ -70,6 +70,8 @@ type Card struct {
 	Position     int32
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	Properties   []byte
+	DependsOn    []uuid.UUID
 }
 
 type CardEvent struct {

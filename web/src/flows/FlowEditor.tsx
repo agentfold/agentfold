@@ -55,6 +55,8 @@ const palette: NodeKind[] = [
   'create_cards',
   'wait_children',
   'human_review',
+  'set_property',
+  'check_property',
   'end',
 ]
 

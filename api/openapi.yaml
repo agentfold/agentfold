@@ -855,7 +855,7 @@ components:
         color: { $ref: "#/components/schemas/Color" }
     Card:
       type: object
-      required: [id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at]
+      required: [id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, properties, depends_on, created_at, updated_at]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
@@ -865,6 +865,14 @@ components:
         parent_card_id: { type: string, format: uuid, nullable: true }
         lane_id: { type: string, format: uuid }
         position: { type: integer }
+        properties:
+          type: object
+          description: Set by set_property nodes; check_property nodes check them on the cards in depends_on.
+          additionalProperties: { type: string }
+        depends_on:
+          type: array
+          description: The cards this card depends on.
+          items: { type: string, format: uuid }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     CardInput:
@@ -943,7 +951,7 @@ components:
         status:
           type: string
           enum: [queued, running, awaiting_input, waiting, awaiting_review, done, failed]
-          description: waiting is a wait_children node; awaiting_review a human_review node.
+          description: waiting is a wait_children or check_property node; awaiting_review a human_review node.
         output_handle:
           type: string
           description: The output the node left through; empty while it runs.
@@ -1131,7 +1139,8 @@ components:
             "rejected", "max_rounds_exceeded" and "failed"; create_cards has
             "next" and "failed"; wait_children has "all_done" and
             "some_failed"; human_review has "approved" and
-            "changes_requested"; end has none.
+            "changes_requested"; set_property has "next"; check_property
+            has "satisfied" and "pending"; end has none.
         target: { type: string }
     Position:
       type: object
@@ -1150,6 +1159,8 @@ components:
         - $ref: "#/components/schemas/CreateCardsNode"
         - $ref: "#/components/schemas/WaitChildrenNode"
         - $ref: "#/components/schemas/HumanReviewNode"
+        - $ref: "#/components/schemas/SetPropertyNode"
+        - $ref: "#/components/schemas/CheckPropertyNode"
         - $ref: "#/components/schemas/EndNode"
       discriminator:
         propertyName: type
@@ -1160,6 +1171,8 @@ components:
           create_cards: "#/components/schemas/CreateCardsNode"
           wait_children: "#/components/schemas/WaitChildrenNode"
           human_review: "#/components/schemas/HumanReviewNode"
+          set_property: "#/components/schemas/SetPropertyNode"
+          check_property: "#/components/schemas/CheckPropertyNode"
           end: "#/components/schemas/EndNode"
     TriggerNode:
       type: object
@@ -1209,6 +1222,22 @@ components:
         type: { type: string, enum: [human_review] }
         position: { $ref: "#/components/schemas/Position" }
         config: { $ref: "#/components/schemas/HumanReviewConfig" }
+    SetPropertyNode:
+      type: object
+      required: [id, type, position, config]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [set_property] }
+        position: { $ref: "#/components/schemas/Position" }
+        config: { $ref: "#/components/schemas/SetPropertyConfig" }
+    CheckPropertyNode:
+      type: object
+      required: [id, type, position, config]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [check_property] }
+        position: { $ref: "#/components/schemas/Position" }
+        config: { $ref: "#/components/schemas/CheckPropertyConfig" }
     EndNode:
       type: object
       required: [id, type, position, config]
@@ -1378,6 +1407,23 @@ components:
           type: string
           format: uuid
           description: Required to publish.
+    SetPropertyConfig:
+      type: object
+      description: Sets a property of the card. key and value are required to publish.
+      properties:
+        key: { type: string }
+        value: { type: string }
+    CheckPropertyConfig:
+      type: object
+      description: >
+        Checks that every card the card depends on has the property key set
+        to value: satisfied if so (or without dependencies), else pending.
+        With wait on, the node waits until they do instead of leaving by
+        pending. key and value are required to publish.
+      properties:
+        key: { type: string }
+        value: { type: string }
+        wait: { type: boolean }
     HumanReviewConfig:
       type: object
       description: >

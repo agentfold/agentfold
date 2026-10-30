@@ -110,12 +110,17 @@ type cardView struct {
 	ProjectID    *uuid.UUID `json:"project_id,omitempty"`
 	ParentCardID *uuid.UUID `json:"parent_card_id,omitempty"`
 	Position     int        `json:"position"`
+	// Properties are set by the flows; DependsOn are the cards this one
+	// depends on.
+	Properties map[string]string `json:"properties,omitempty"`
+	DependsOn  []uuid.UUID       `json:"depends_on,omitempty"`
 }
 
 func toCard(c domain.Card) cardView {
 	return cardView{
 		ID: c.ID, Title: c.Title, Description: c.Description, LaneID: c.LaneID, CardTypeID: c.CardTypeID,
 		ProjectID: c.ProjectID, ParentCardID: c.ParentCardID, Position: c.Position,
+		Properties: c.Properties, DependsOn: c.DependsOn,
 	}
 }
 

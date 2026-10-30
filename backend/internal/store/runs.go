@@ -232,10 +232,10 @@ func (s *Store) WaitNodeRun(ctx context.Context, id uuid.UUID) (domain.NodeRun, 
 	return mapRow(row, err, toNodeRun)
 }
 
-// WaitingChildrenNodeRun returns the WaitChildren node run the flow of a
+// WaitingNodeRun returns the WaitChildren or CheckProperty node run the flow of a
 // card waits at; ErrNotFound when it waits at none.
-func (s *Store) WaitingChildrenNodeRun(ctx context.Context, cardID uuid.UUID) (domain.NodeRun, error) {
-	row, err := s.q.WaitingChildrenNodeRun(ctx, cardID)
+func (s *Store) WaitingNodeRun(ctx context.Context, cardID uuid.UUID) (domain.NodeRun, error) {
+	row, err := s.q.WaitingNodeRun(ctx, cardID)
 	return mapRow(row, err, toNodeRun)
 }
 

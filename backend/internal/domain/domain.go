@@ -82,8 +82,18 @@ type Card struct {
 	ParentCardID *uuid.UUID
 	LaneID       uuid.UUID
 	Position     int
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// Properties are set by SetProperty nodes; CheckProperty nodes check
+	// them on the cards a card depends on (DependsOn).
+	Properties map[string]string
+	DependsOn  []uuid.UUID
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+// HasProperty tells whether the card has the property key set to value.
+func (c Card) HasProperty(key, value string) bool {
+	v, ok := c.Properties[key]
+	return ok && v == value
 }
 
 // CardEventType names an entry of the card timeline.
@@ -107,6 +117,8 @@ const (
 	ArtifactCollected CardEventType = "artifact.collected"
 
 	ChildrenCreated CardEventType = "children.created"
+
+	PropertySet CardEventType = "property.set"
 )
 
 // CardEvent is an entry of the card timeline.
@@ -194,11 +206,54 @@ func (in CardInput) Normalize() (CardInput, error) {
 	return in, nil
 }
 
-// NewCard holds the fields used to create a card.
+// NewCard holds the fields used to create a card. DependsOn are existing
+// cards.
 type NewCard struct {
 	CardInput
 	LaneID       uuid.UUID
 	ParentCardID *uuid.UUID
+	DependsOn    []uuid.UUID
+}
+
+// ChildCard is a card created in a batch: After lists the cards of the
+// same batch (by index) it depends on, besides DependsOn.
+type ChildCard struct {
+	NewCard
+	After []int
+}
+
+// CreationOrder returns the indexes of cards in an order where every card
+// comes after the cards of the batch it depends on. It fails on a cycle.
+func CreationOrder(cards []ChildCard) ([]int, error) {
+	order := make([]int, 0, len(cards))
+	state := make([]int, len(cards)) // 0 new, 1 visiting, 2 placed
+	var visit func(i int) error
+	visit = func(i int) error {
+		switch state[i] {
+		case 1:
+			return fmt.Errorf("os cards formam um ciclo de dependências (passando por %q)", cards[i].Title)
+		case 2:
+			return nil
+		}
+		state[i] = 1
+		for _, j := range cards[i].After {
+			if j < 0 || j >= len(cards) {
+				return fmt.Errorf("o card %q depende de um card que não está na lista", cards[i].Title)
+			}
+			if err := visit(j); err != nil {
+				return err
+			}
+		}
+		state[i] = 2
+		order = append(order, i)
+		return nil
+	}
+	for i := range cards {
+		if err := visit(i); err != nil {
+			return nil, err
+		}
+	}
+	return order, nil
 }
 
 // Normalize trims the fields and validates them.

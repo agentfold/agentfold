@@ -102,9 +102,9 @@ UPDATE node_runs SET status = 'awaiting_review' WHERE id = $1 AND status IN ('qu
 -- name: GetNodeRunByIteration :one
 SELECT * FROM node_runs WHERE flow_run_id = $1 AND node_key = $2 AND iteration = $3;
 
--- WaitingChildrenNodeRun finds the WaitChildren node run a card's flow
--- is waiting at, if any.
--- name: WaitingChildrenNodeRun :one
+-- WaitingNodeRun finds the node run (WaitChildren or CheckProperty) a
+-- card's flow is waiting at, if any.
+-- name: WaitingNodeRun :one
 SELECT n.* FROM node_runs n JOIN flow_runs r ON r.id = n.flow_run_id
 WHERE r.card_id = $1 AND r.status = 'waiting' AND n.status = 'waiting'
 ORDER BY n.created_at DESC LIMIT 1;

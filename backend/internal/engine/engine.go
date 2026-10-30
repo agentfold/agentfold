@@ -39,11 +39,14 @@ type Store interface {
 	EnqueueJob(ctx context.Context, j store.NewJob) (uuid.UUID, error)
 	OpenReview(ctx context.Context, nodeRunID, cardID uuid.UUID, names []string, reply string) (domain.NodeRun, []domain.Artifact, error)
 	ListProjects(ctx context.Context) ([]domain.Project, error)
-	CreateChildCards(ctx context.Context, cards []domain.NewCard) ([]domain.Card, error)
+	CreateChildCards(ctx context.Context, cards []domain.ChildCard) ([]domain.Card, error)
 	ListChildCards(ctx context.Context, parentID uuid.UUID) ([]domain.Card, error)
+	SetCardProperty(ctx context.Context, id uuid.UUID, key, value string) (domain.Card, error)
+	ListCardsByID(ctx context.Context, ids []uuid.UUID) ([]domain.Card, error)
+	ListDependentCards(ctx context.Context, id uuid.UUID) ([]domain.Card, error)
 	ListCardFlowRuns(ctx context.Context, cardID uuid.UUID) ([]domain.FlowRun, error)
 	WaitNodeRun(ctx context.Context, id uuid.UUID) (domain.NodeRun, error)
-	WaitingChildrenNodeRun(ctx context.Context, cardID uuid.UUID) (domain.NodeRun, error)
+	WaitingNodeRun(ctx context.Context, cardID uuid.UUID) (domain.NodeRun, error)
 	SettleWait(ctx context.Context, id uuid.UUID, r domain.NodeResult) (domain.NodeRun, bool, error)
 }
 
@@ -227,7 +230,7 @@ func (e *Engine) advance(ctx context.Context, r *run, key string, input json.Raw
 			return err
 		}
 		if result.Status == domain.NodeWaiting {
-			return e.waitChildren(ctx, r, nr)
+			return e.wait(ctx, r, nr)
 		}
 		if nr, err = e.Store.FinishNodeRun(ctx, nr.ID, result); err != nil {
 			return err
@@ -271,9 +274,10 @@ func (e *Engine) queueAgent(ctx context.Context, nr domain.NodeRun, input json.R
 	return err
 }
 
-// runBoardNode runs a node that does not need an agent. MoveCard and End
-// hand on the output of the node before, so agents after them still get
-// it. A WaitChildren node whose children are on their way waits.
+// runBoardNode runs a node that does not need an agent. MoveCard,
+// SetProperty and End hand on the output of the node before, so agents
+// after them still get it. A WaitChildren node whose children are on their
+// way waits, as does a CheckProperty node that waits for the dependencies.
 func (e *Engine) runBoardNode(ctx context.Context, r *run, node domain.Node, input json.RawMessage) (domain.NodeResult, error) {
 	var result domain.NodeResult
 	var err error
@@ -284,8 +288,10 @@ func (e *Engine) runBoardNode(ctx context.Context, r *run, node domain.Node, inp
 		result = domain.NodeResult{Status: domain.NodeDone}
 	case domain.NodeCreateCards:
 		return e.createCards(ctx, r, node, input)
-	case domain.NodeWaitChildren:
-		settled, err := e.childrenResult(ctx, r.CardID, node)
+	case domain.NodeSetProperty:
+		result, err = e.setProperty(ctx, r, node)
+	case domain.NodeWaitChildren, domain.NodeCheckProperty:
+		settled, err := e.waitResult(ctx, r.CardID, node)
 		if settled == nil {
 			return domain.NodeResult{Status: domain.NodeWaiting}, err
 		}

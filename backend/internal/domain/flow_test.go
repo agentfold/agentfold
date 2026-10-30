@@ -167,6 +167,12 @@ func TestConfigProblems(t *testing.T) {
 		{"human review with blank name", NodeHumanReview, `{"artifacts":[" "]}`, []string{"o nome de um artefato revisado está vazio", "ligue"}},
 		{"human review with repeated name", NodeHumanReview, `{"artifacts":["A","A"]}`, []string{`o artefato "A" aparece mais de uma vez`, "ligue"}},
 		{"human review with bad JSON", NodeHumanReview, `[]`, []string{"configuração inválida", "ligue"}},
+		{"set property", NodeSetProperty, `{"key":"dev","value":"ok"}`, nil},
+		{"set property without key and value", NodeSetProperty, `{"key":" "}`, []string{"informe a chave da propriedade", "informe o valor da propriedade"}},
+		{"set property with bad JSON", NodeSetProperty, `[]`, []string{"configuração inválida"}},
+		{"check property", NodeCheckProperty, `{"key":"dev","value":"ok","wait":true}`, nil},
+		{"check property without value", NodeCheckProperty, `{"key":"dev"}`, []string{"informe o valor da propriedade"}},
+		{"check property with bad JSON", NodeCheckProperty, `[]`, []string{"configuração inválida"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

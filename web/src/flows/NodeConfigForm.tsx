@@ -12,6 +12,8 @@ import type {
   TriggerConfig,
   WaitChildrenConfig,
   HumanReviewConfig,
+  SetPropertyConfig,
+  CheckPropertyConfig,
 } from '../api/client'
 import { agentKindLabels } from '../agents/labels'
 import { Button } from '../components/Button'
@@ -142,6 +144,40 @@ export function NodeConfigForm({
           />
         </div>
       )
+    case 'set_property':
+      return (
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-slate-500">
+            Grava a propriedade no card. Quem espera por ela (o card pai num
+            Esperar filhos, os cards que dependem deste num Conferir
+            propriedade) é reavaliado.
+          </p>
+          <PropertyFields
+            config={data.config as SetPropertyConfig}
+            onChange={onChange}
+          />
+        </div>
+      )
+    case 'check_property': {
+      const config = data.config as CheckPropertyConfig
+      return (
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-slate-500">
+            Confere se todos os cards de que este depende têm a propriedade: sai
+            por satisfeitas (também sem dependências) ou por pendentes.
+          </p>
+          <PropertyFields config={config} onChange={onChange} />
+          <Toggle
+            label="Esperar"
+            hint="Em vez de sair por pendentes, o fluxo espera até as dependências terem a propriedade."
+            checked={config.wait ?? false}
+            onChange={(wait) => {
+              onChange({ ...config, wait: wait || undefined })
+            }}
+          />
+        </div>
+      )
+    }
     case 'end':
       return (
         <p className="text-sm text-slate-500">
@@ -149,6 +185,38 @@ export function NodeConfigForm({
         </p>
       )
   }
+}
+
+interface PropertyFieldsProps<C extends SetPropertyConfig> {
+  config: C
+  onChange: (config: C) => void
+}
+
+/** The key and value of a property node. */
+function PropertyFields<C extends SetPropertyConfig>({
+  config,
+  onChange,
+}: PropertyFieldsProps<C>) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <TextField
+        label="Chave"
+        placeholder="desenvolvimento"
+        value={config.key ?? ''}
+        onChange={(key) => {
+          onChange({ ...config, key: key || undefined })
+        }}
+      />
+      <TextField
+        label="Valor"
+        placeholder="concluido"
+        value={config.value ?? ''}
+        onChange={(value) => {
+          onChange({ ...config, value: value || undefined })
+        }}
+      />
+    </div>
+  )
 }
 
 function laneOptions(lanes: Lane[]) {

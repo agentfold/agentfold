@@ -93,6 +93,8 @@ export function card(
     parent_card_id: null,
     lane_id: laneId,
     position,
+    properties: {},
+    depends_on: [],
     created_at: stamp,
     updated_at: stamp,
     ...extra,

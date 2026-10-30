@@ -14,8 +14,8 @@ SELECT * FROM cards WHERE id = $1 FOR UPDATE;
 SELECT count(*)::integer FROM cards WHERE lane_id = $1;
 
 -- name: InsertCard :one
-INSERT INTO cards (title, description, card_type_id, project_id, parent_card_id, lane_id, position)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO cards (title, description, card_type_id, project_id, parent_card_id, lane_id, position, depends_on)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
 -- name: UpdateCard :one
@@ -31,6 +31,17 @@ UPDATE cards SET lane_id = $2, position = $3, updated_at = now() WHERE id = $1 R
 UPDATE cards SET position = position + sqlc.arg(delta)::integer
 WHERE lane_id = sqlc.arg(lane_id)
   AND position >= sqlc.arg(from_pos)::integer AND position <= sqlc.arg(to_pos)::integer;
+
+-- name: SetCardProperty :one
+UPDATE cards SET properties = properties || jsonb_build_object(sqlc.arg(key)::text, sqlc.arg(value)::text), updated_at = now()
+WHERE id = sqlc.arg(id)
+RETURNING *;
+
+-- name: ListCardsByID :many
+SELECT * FROM cards WHERE id = ANY(sqlc.arg(ids)::uuid[]) ORDER BY created_at, id;
+
+-- name: ListDependentCards :many
+SELECT * FROM cards WHERE sqlc.arg(id)::uuid = ANY(depends_on) ORDER BY created_at, id;
 
 -- name: DeleteCard :execrows
 DELETE FROM cards WHERE id = $1;
