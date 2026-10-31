@@ -226,7 +226,7 @@ func (e *Engine) advance(ctx context.Context, r *run, key string, input json.Raw
 			return err
 		}
 		if node.Type == domain.NodeAgent {
-			return e.queueAgent(ctx, nr, input)
+			return e.queueAgent(ctx, r, node, nr, input)
 		}
 		if node.Type == domain.NodeHumanReview {
 			return e.review(ctx, r, node, nr, input)
@@ -277,9 +277,19 @@ func (e *Engine) enter(ctx context.Context, r *run, node domain.Node, input json
 
 // queueAgent queues the run of an agent node with what the node before
 // handed on as its message: after the node prompt in a new session, alone
-// when the node is re-entered and resumes its session.
-func (e *Engine) queueAgent(ctx context.Context, nr domain.NodeRun, input json.RawMessage) error {
+// when the node is re-entered and resumes its session. The placeholders of
+// the node prompt are filled in now.
+func (e *Engine) queueAgent(ctx context.Context, r *run, node domain.Node, nr domain.NodeRun, input json.RawMessage) error {
 	payload := agent.Payload{NodeRunID: nr.ID, Prompt: domain.MessageFrom(input)}
+	var cfg domain.AgentConfig
+	_ = json.Unmarshal(node.Config, &cfg) // validated when published
+	if domain.HasPlaceholders(cfg.Prompt) {
+		data, err := e.templateData(ctx, r.FlowRun, input)
+		if err != nil {
+			return err
+		}
+		payload.NodePrompt = domain.RenderTemplate(cfg.Prompt, data, domain.EscapeNone)
+	}
 	// No requirements yet: agents run on the single host of the MVP.
 	_, err := e.Store.EnqueueJob(ctx, store.NewJob{Kind: agent.JobKind, Payload: payload, MaxAttempts: 2})
 	return err

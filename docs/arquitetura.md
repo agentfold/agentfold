@@ -172,8 +172,9 @@ satisfeita.
 `{{card.id}}`, `{{card.title}}`, `{{card.description}}`, `{{card.lane_id}}`,
 `{{card.card_type_id}}`, `{{card.project_id}}`, `{{card.parent_card_id}}`,
 `{{card.properties.<chave>}}`, `{{input}}` (o que o nó anterior passou, como o agente o
-recebe) e `{{input.<caminho>}}` (um valor da saída estruturada dele, por chaves e índices
-separados por ponto). Na URL os valores vão codificados; no body vão escapados como string
+recebe), `{{input.<caminho>}}` (um valor da saída estruturada dele, por chaves e índices
+separados por ponto), e `{{nodes.<id>}}` e `{{nodes.<id>.<caminho>}}` (o mesmo para a última
+saída de qualquer nó do run, pelo id do nó). Na URL os valores vão codificados; no body vão escapados como string
 JSON (`"{{card.title}}"` continua válido), e objetos e números entram como JSON. Um body sem
 header `Content-Type` sai como `application/json`. O valor de um header secreto é cifrado
 (AES-GCM, a mesma chave dos segredos de MCP) quando o rascunho é salvo: o banco e a API só
@@ -190,6 +191,15 @@ o erro (`a chamada respondeu 404`). Um run cancelado descarta as tentativas pend
 `fire_and_forget` o nó enfileira uma tentativa e sai por `next` na hora, repassando a entrada;
 o resultado fica só na timeline. Cada tentativa registra um evento `http.requested` na
 timeline (método, URL, status ou erro, duração e quando vem a próxima).
+
+**Referências entre nós.** Os placeholders `{{nodes.<id>…}}` leem a última execução do nó no
+run (o engine carrega as execuções do run antes de renderizar); um nó que ainda não rodou sai
+vazio. O prompt do agente aceita os mesmos placeholders, preenchidos quando o fluxo entra no
+nó; os desconhecidos ficam como estão escritos. O id do nó é editável no editor (letras,
+números, `_` e `-`), e renomear leva as ligações junto, mas não reescreve as referências. Na
+publicação, `nodes.X` de um nó que não existe bloqueia; um X que não roda antes em todo
+caminho a partir do gatilho é só um aviso (`warning` no problema), como um placeholder
+desconhecido no prompt.
 
 O `get_card` do MCP devolve os artefatos do card (última versão e o estado da revisão, `approved` depois da aprovação) e, num
 card filho, o card pai com os artefatos dele: o agente que divide o trabalho e os que

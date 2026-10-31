@@ -22,6 +22,7 @@ import {
 } from '../api/queries'
 import { Button } from '../components/Button'
 import { ErrorMessage } from '../components/ErrorMessage'
+import { TextField } from '../components/Field'
 import { QueryStatus } from '../components/Loading'
 import { pageHref } from '../route'
 import { FlowCanvas } from './FlowCanvas'
@@ -29,10 +30,12 @@ import {
   canConnect,
   edgeFor,
   fromApi,
+  idProblem,
   isEdit,
   kindLabels,
   newStep,
   nodeOutputs,
+  renameStep,
   toApi,
   type NodeKind,
   type StepConfig,
@@ -127,6 +130,12 @@ function DraftEditor({ flow }: { flow: Flow }) {
     )
     edit()
   }
+  const rename = (from: string, to: string) => {
+    const renamed = renameStep(nodes, edges, from, to)
+    setNodes(renamed.nodes)
+    setEdges(renamed.edges)
+    edit()
+  }
   const removeStep = (id: string) => {
     setNodes((current) => current.filter((n) => n.id !== id))
     setEdges((current) =>
@@ -146,10 +155,12 @@ function DraftEditor({ flow }: { flow: Flow }) {
     setPublished(await publish.mutateAsync())
   }
 
-  // Problems come from the last saved draft; show them on the nodes too.
+  // Problems come from the last saved draft; show those that prevent
+  // publishing on the nodes too.
   const problems = dirty ? [] : flow.problems
+  const blocking = problems.filter((p) => !p.warning)
   const byNode = new Map<string, string[]>()
-  for (const p of problems) {
+  for (const p of blocking) {
     if (p.node_id) {
       byNode.set(p.node_id, [...(byNode.get(p.node_id) ?? []), p.message])
     }
@@ -261,8 +272,16 @@ function DraftEditor({ flow }: { flow: Flow }) {
                   </Button>
                 )}
               </div>
-              <NodeConfigForm
+              <NodeIdField
                 key={selected.id}
+                id={selected.id}
+                nodes={nodes}
+                onRename={(to) => {
+                  rename(selected.id, to)
+                }}
+              />
+              <NodeConfigForm
+                key={`config-${selected.id}`}
                 data={selected.data}
                 lanes={lanes.data ?? []}
                 cardTypes={cardTypes.data ?? []}
@@ -288,15 +307,19 @@ function DraftEditor({ flow }: { flow: Flow }) {
                 Salve para verificar o rascunho.
               </p>
             )}
-            {!dirty && problems.length === 0 && (
+            {!dirty && blocking.length === 0 && (
               <p className="text-sm text-green-700">
                 O rascunho pode ser publicado.
               </p>
             )}
             {problems.length > 0 && (
-              <ul className="flex flex-col gap-1 text-sm text-red-700">
+              <ul className="flex flex-col gap-1 text-sm">
                 {problems.map((p, i) => (
-                  <li key={i}>
+                  <li
+                    key={i}
+                    className={p.warning ? 'text-amber-700' : 'text-red-700'}
+                  >
+                    {p.warning && <span className="font-medium">Aviso · </span>}
                     {p.node_id && (
                       <strong className="font-medium">{p.node_id}: </strong>
                     )}
@@ -308,6 +331,49 @@ function DraftEditor({ flow }: { flow: Flow }) {
           </section>
         </aside>
       </div>
+    </div>
+  )
+}
+
+interface NodeIdFieldProps {
+  id: string
+  nodes: StepNode[]
+  onRename: (id: string) => void
+}
+
+/**
+ * Edits the id of a node, which {{nodes.<id>}} placeholders name: the new
+ * id applies when the field loses focus or on Enter, if it is valid.
+ */
+function NodeIdField({ id, nodes, onRename }: NodeIdFieldProps) {
+  const [value, setValue] = useState(id)
+  const problem = value === id ? null : idProblem(value, id, nodes)
+  const commit = () => {
+    if (value !== id && !problem) {
+      onRename(value)
+    }
+  }
+  return (
+    <div
+      className="flex flex-col gap-1"
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          commit()
+        }
+      }}
+    >
+      <TextField
+        label="Id"
+        value={value}
+        onChange={setValue}
+        hint={`Outros nós leem a saída deste com {{nodes.${value}}}.`}
+      />
+      {problem && (
+        <p role="alert" className="text-xs text-red-700">
+          {problem}
+        </p>
+      )}
     </div>
   )
 }

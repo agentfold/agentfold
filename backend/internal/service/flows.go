@@ -67,14 +67,15 @@ func (s *Service) SaveFlowDraft(ctx context.Context, id uuid.UUID, draft domain.
 	return s.detail(ctx)(changed(s, "flow.updated", flow, err))
 }
 
-// PublishFlow freezes the draft into a new version, if it has no problems.
+// PublishFlow freezes the draft into a new version, if it has no problems
+// other than warnings.
 func (s *Service) PublishFlow(ctx context.Context, id uuid.UUID) (domain.FlowVersion, error) {
 	detail, err := s.GetFlow(ctx, id)
 	if err != nil {
 		return domain.FlowVersion{}, err
 	}
-	if len(detail.Problems) > 0 {
-		return domain.FlowVersion{}, &domain.GraphError{Problems: detail.Problems}
+	if blocking := domain.Blocking(detail.Problems); len(blocking) > 0 {
+		return domain.FlowVersion{}, &domain.GraphError{Problems: blocking}
 	}
 	version, err := s.repo.PublishFlow(ctx, id, detail.Draft)
 	if err == nil {

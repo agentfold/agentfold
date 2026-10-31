@@ -23,7 +23,7 @@ const accents: Record<StepData['kind'], string> = {
 }
 
 /** How a step is drawn on the canvas: inputs on the left, outputs on the right. */
-export function StepNodeView({ data, selected }: NodeProps<StepNode>) {
+export function StepNodeView({ id, data, selected }: NodeProps<StepNode>) {
   const outs = nodeOutputs(data)
   const problems = data.problems ?? []
   return (
@@ -39,6 +39,9 @@ export function StepNodeView({ data, selected }: NodeProps<StepNode>) {
         <span className={`size-2 rounded-full ${accents[data.kind]}`} />
         <span className="text-xs font-semibold tracking-wide text-slate-700 uppercase">
           {kindLabels[data.kind]}
+        </span>
+        <span className="ml-auto truncate font-mono text-[10px] text-slate-400">
+          {id}
         </span>
       </div>
       <p className="truncate px-3 py-2 text-xs text-slate-600">

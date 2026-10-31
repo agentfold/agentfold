@@ -181,6 +181,9 @@ type AgentJob struct {
 	// or answers to its questions. A new session starts
 	// with the node prompt and the card, followed by it.
 	Prompt string `json:"prompt,omitempty"`
+	// NodePrompt is the node prompt with its placeholders filled in; the
+	// node config has it when it has none.
+	NodePrompt string `json:"node_prompt,omitempty"`
 }
 
 // MessageFrom is what an output hands to the next agent: the structured

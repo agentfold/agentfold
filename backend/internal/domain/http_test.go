@@ -104,7 +104,8 @@ func TestRenderTemplate(t *testing.T) {
 	}{
 		{"{{card.id}} {{ card.title }} {{card.description}}", nil, card.ID.String() + ` Say "hi" a` + "\nb"},
 		{"{{card.lane_id}}/{{card.card_type_id}}/{{card.project_id}}/{{card.parent_card_id}}", nil, laneID.String() + "/" + typeID.String() + "/" + project.String() + "/"},
-		{"{{card.properties.dev}}{{card.properties.missing}}{{card.nope}}{{other}}", nil, "done"},
+		{"{{card.properties.dev}}{{card.properties.missing}}{{card.nope}}{{other}}", nil, "done{{card.nope}}{{other}}"},
+		{"{{nodes.dev}} {{nodes.dev.n}} [{{nodes.gone}}{{nodes.gone.x}}]", nil, "text 2 []"},
 		{"{{input}}", json.RawMessage(`{"result":"text"}`), "text"},
 		{"{{input.plan}} {{input.plan.steps.1}} {{input.n}} {{input.name}}", structured, `{"steps":["a","b"]} b 2 x`},
 		{"[{{input.none}}{{input.plan.steps.9}}{{input.plan.steps.x}}{{input.n.deep}}]", structured, "[]"},
@@ -112,20 +113,27 @@ func TestRenderTemplate(t *testing.T) {
 		{"[{{input.a}}]", json.RawMessage(`not json`), "[]"},
 	}
 	for _, tt := range tests {
-		if got := RenderTemplate(tt.text, card, tt.input, plain); got != tt.want {
+		data := TemplateData{Card: card, Input: tt.input, Nodes: map[string]json.RawMessage{"dev": json.RawMessage(`{"result":"text","output":null,"n":2}`)}}
+		if got := RenderTemplate(tt.text, data, plain); got != tt.want {
 			t.Errorf("%s = %q, want %q", tt.text, got, tt.want)
 		}
 	}
 
-	body := RenderTemplate(`{"title":"{{card.title}}","plan":{{input.plan}}}`, card, structured, EscapeJSON)
+	body := RenderTemplate(`{"title":"{{card.title}}","plan":{{input.plan}}}`, TemplateData{Card: card, Input: structured}, EscapeJSON)
 	if !json.Valid([]byte(body)) || body != `{"title":"Say \"hi\"","plan":{"steps":["a","b"]}}` {
 		t.Errorf("body %s", body)
 	}
-	if got := RenderTemplate("/q?t={{card.title}}", card, nil, EscapeURL); got != "/q?t=Say%20%22hi%22" {
+	if got := RenderTemplate("/q?t={{card.title}}", TemplateData{Card: card}, EscapeURL); got != "/q?t=Say%20%22hi%22" {
 		t.Errorf("url %s", got)
 	}
-	if got := RenderTemplate("{{card.description}}", card, nil, EscapeHeader); got != "a b" {
+	if got := RenderTemplate("{{card.description}}", TemplateData{Card: card}, EscapeHeader); got != "a b" {
 		t.Errorf("header %q", got)
+	}
+	if !HasPlaceholders("a {{card.id}}") || HasPlaceholders("a {b}") || EscapeNone("a\n", true) != "a\n" {
+		t.Error("HasPlaceholders or EscapeNone")
+	}
+	if got := NodeReferences("{{nodes.a.b}} {{nodes.}} {{ nodes.c }} {{nodes.a}}"); !reflect.DeepEqual(got, []string{"a", "c", "a"}) {
+		t.Errorf("references %q", got)
 	}
 }
 

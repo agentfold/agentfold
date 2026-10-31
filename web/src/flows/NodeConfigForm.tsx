@@ -309,7 +309,8 @@ function HTTPRequestForm({ config, onChange }: HTTPRequestFormProps) {
       <p className="text-xs text-slate-500">
         URL, headers e body aceitam {'{{card.id}}'}, {'{{card.title}}'},{' '}
         {'{{card.properties.chave}}'}, {'{{input}}'} (o que o nó anterior
-        passou) e {'{{input.campo}}'} (um valor da saída estruturada dele).
+        passou), {'{{input.campo}}'} (um valor da saída estruturada dele) e{' '}
+        {'{{nodes.<id>.campo}}'} (o mesmo da última saída de outro nó).
       </p>
       <HeadersField
         headers={config.headers ?? []}
@@ -627,6 +628,7 @@ function AgentForm({
       <TextArea
         label="Prompt inicial"
         rows={6}
+        hint="Aceita {{card.title}}, {{card.properties.chave}}, {{input.campo}} e {{nodes.<id>.campo}}, preenchidos quando o fluxo entra no nó."
         value={config.prompt ?? ''}
         onChange={(prompt) => {
           onChange({ ...config, prompt })

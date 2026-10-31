@@ -48,7 +48,7 @@ func newStub() *stubBoard {
 		},
 		flow: service.FlowDetail{
 			Flow:     domain.Flow{ID: id1, Name: "dev", LatestVersion: 2, Draft: stubGraph(), CreatedAt: stamp, UpdatedAt: stamp},
-			Problems: []domain.GraphProblem{{NodeID: "t", Message: "on node"}, {EdgeID: "e", Message: "on edge"}},
+			Problems: []domain.GraphProblem{{NodeID: "t", Message: "on node"}, {EdgeID: "e", Message: "on edge", Warning: true}},
 		},
 		version: domain.FlowVersion{ID: id2, FlowID: id1, Version: 2, Graph: stubGraph(), PublishedAt: stamp},
 		profile: domain.AgentProfile{ID: id1, Kind: domain.AgentClaude, Name: "dev", CredentialKind: domain.CredentialOAuthToken, CreatedAt: stamp, UpdatedAt: stamp},
@@ -120,7 +120,7 @@ const (
 		`"created_at":"2026-10-25T12:00:00Z","updated_at":"2026-10-25T12:00:00Z"}`
 	flowJSON = `{"id":"00000000-0000-7000-8000-000000000001","name":"dev","enabled":false,"latest_version":2,` +
 		`"created_at":"2026-10-25T12:00:00Z","updated_at":"2026-10-25T12:00:00Z","draft":` + graphJSON + `,` +
-		`"problems":[{"node_id":"t","message":"on node"},{"edge_id":"e","message":"on edge"}]}`
+		`"problems":[{"node_id":"t","message":"on node"},{"edge_id":"e","message":"on edge","warning":true}]}`
 	versionJSON = `{"id":"00000000-0000-7000-8000-000000000002","flow_id":"00000000-0000-7000-8000-000000000001",` +
 		`"version":2,"graph":` + graphJSON + `,"published_at":"2026-10-25T12:00:00Z"}`
 	profileJSON = `{"id":"00000000-0000-7000-8000-000000000001","kind":"claude","name":"dev","ready":true,` +

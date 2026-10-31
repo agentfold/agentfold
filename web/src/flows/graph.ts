@@ -189,6 +189,49 @@ export function newStep(kind: NodeKind, nodes: StepNode[]): StepNode {
   )
 }
 
+/** What node ids are made of, so {{nodes.<id>}} placeholders name them. */
+const nodeIdPattern = /^[A-Za-z0-9_-]+$/
+
+/** Why `id` cannot be the new id of the node `from`; null when it can. */
+export function idProblem(
+  id: string,
+  from: string,
+  nodes: StepNode[],
+): string | null {
+  if (!nodeIdPattern.test(id)) {
+    return 'Use só letras, números, _ e -.'
+  }
+  if (id !== from && nodes.some((n) => n.id === id)) {
+    return 'Outro nó já usa esse id.'
+  }
+  return null
+}
+
+/**
+ * Renames the node `from` to `to`; its edges follow it. Placeholders that
+ * read it keep the old id: the draft problems point them out.
+ */
+export function renameStep(
+  nodes: StepNode[],
+  edges: Edge[],
+  from: string,
+  to: string,
+): { nodes: StepNode[]; edges: Edge[] } {
+  return {
+    nodes: nodes.map((n) => (n.id === from ? { ...n, id: to } : n)),
+    edges: edges.map((e) => {
+      const source = e.source === from ? to : e.source
+      const target = e.target === from ? to : e.target
+      if (source === e.source && target === e.target) {
+        return e
+      }
+      const id =
+        source === e.source ? e.id : `${source}.${e.sourceHandle ?? ''}`
+      return { ...e, id, source, target }
+    }),
+  }
+}
+
 /**
  * Whether a connection follows the flow rules: not into the trigger, not
  * into the same node, and each output used once.

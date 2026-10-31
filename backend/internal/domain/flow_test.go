@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -81,6 +82,9 @@ func TestGraphProblems(t *testing.T) {
 		{"duplicate node id", func(g *Graph) { g.Nodes = append(g.Nodes, node("end", NodeEnd, `{}`)) }, []string{
 			"end: id de nó vazio ou repetido",
 		}},
+		{"unreadable node id", func(g *Graph) { g.Nodes[4].ID = "the end"; g.Edges[4].Target = "the end" }, []string{
+			"the end: o id do nó só aceita letras, números, _ e -",
+		}},
 		{"unknown node type", func(g *Graph) { g.Nodes = append(g.Nodes, node("x", "pr", `{}`)) }, []string{
 			`x: tipo de nó desconhecido: "pr"`,
 		}},
@@ -118,6 +122,29 @@ func TestGraphProblems(t *testing.T) {
 				t.Fatalf("got  %q\nwant %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNodeReferenceProblems(t *testing.T) {
+	g := validGraph()
+	g.Nodes[1].Config = json.RawMessage(`{` + profile + `,"prompt":"redo {{nodes.rev}}"}`)
+	g.Nodes[2].Config = json.RawMessage(`{` + profile + `,"prompt":"check {{nodes.dev}} {{nodes.dev.x}} {{nodes.ghost}} {{nodes.t}} {{nodes.rev}} {{ .Name }}","gateway":true,"max_rounds":1}`)
+	g.Nodes = append(g.Nodes, node("call", NodeHTTPRequest, `{"method":"GET","url":"http://x/{{nodes.rev.status}}","headers":[{"name":"A","value":"{{nodes.ghost}}"}]}`))
+	g.Edges = append(g.Edges, edge("e6", "dev", "failed", "call"))
+	want := []GraphProblem{
+		{NodeID: "call", Message: "o nó rev pode não ter rodado antes deste; {{nodes.rev}} sai vazio nesse caso", Warning: true},
+		{NodeID: "call", Message: "{{nodes.ghost}} lê um nó que não existe"},
+		{NodeID: "dev", Message: "o nó rev pode não ter rodado antes deste; {{nodes.rev}} sai vazio nesse caso", Warning: true},
+		{NodeID: "rev", Message: "placeholder desconhecido: {{ .Name }} (use card.<campo>, card.properties.<chave>, input, input.<caminho>, nodes.<id> ou nodes.<id>.<caminho>); o prompt mantém o texto como está", Warning: true},
+		{NodeID: "rev", Message: "{{nodes.ghost}} lê um nó que não existe"},
+	}
+	got := g.Problems(refs)
+	slices.SortStableFunc(got, func(a, b GraphProblem) int { return strings.Compare(a.NodeID, b.NodeID) })
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got  %+v\nwant %+v", got, want)
+	}
+	if blocking := Blocking(got); len(blocking) != 2 || blocking[0].Warning || blocking[1].Warning {
+		t.Errorf("blocking %v", blocking)
 	}
 }
 

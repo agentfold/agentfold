@@ -6,6 +6,8 @@ import {
   defaultConfig,
   edgeFor,
   fromApi,
+  idProblem,
+  renameStep,
   isEdit,
   newStep,
   nextPosition,
@@ -246,5 +248,41 @@ describe('nodeOutputs', () => {
     [{ kind: 'end', config: {} }, []],
   ] as const)('lists the outputs of %j', (data, want) => {
     expect(nodeOutputs(data)).toEqual(want)
+  })
+
+  it('validates and renames node ids', () => {
+    const nodes = [newStep('agent', []), newStep('end', [])]
+    expect(idProblem('agent-1', 'agent-1', nodes)).toBeNull()
+    expect(idProblem('end-1', 'agent-1', nodes)).toBe(
+      'Outro nó já usa esse id.',
+    )
+    expect(idProblem('a.b', 'agent-1', nodes)).toBe(
+      'Use só letras, números, _ e -.',
+    )
+    const edges = [
+      {
+        id: 'agent-1.done',
+        source: 'agent-1',
+        sourceHandle: 'done',
+        target: 'end-1',
+      },
+      { id: 'x', source: 'end-1', sourceHandle: null, target: 'agent-1' },
+      { id: 'y', source: 'z', target: 'end-1' },
+    ]
+    const renamed = renameStep(nodes, edges, 'agent-1', 'dev')
+    expect(renamed.nodes.map((n) => n.id)).toEqual(['dev', 'end-1'])
+    expect(renamed.edges).toEqual([
+      { id: 'dev.done', source: 'dev', sourceHandle: 'done', target: 'end-1' },
+      { id: 'x', source: 'end-1', sourceHandle: null, target: 'dev' },
+      edges[2],
+    ])
+    expect(
+      renameStep(
+        nodes,
+        [{ id: 'q', source: 'agent-1', target: 'end-1' }],
+        'agent-1',
+        'a',
+      ).edges[0].id,
+    ).toBe('a.')
   })
 })

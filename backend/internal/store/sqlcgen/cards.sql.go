@@ -278,7 +278,7 @@ func (q *Queries) ListCardsByID(ctx context.Context, ids []uuid.UUID) ([]Card, e
 }
 
 const listChildCards = `-- name: ListChildCards :many
-SELECT id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on, canceled_at FROM cards WHERE parent_card_id = $1 ORDER BY created_at
+SELECT id, title, description, card_type_id, project_id, parent_card_id, lane_id, position, created_at, updated_at, properties, depends_on, canceled_at FROM cards WHERE parent_card_id = $1 ORDER BY created_at, id
 `
 
 func (q *Queries) ListChildCards(ctx context.Context, parentCardID *uuid.UUID) ([]Card, error) {

@@ -303,4 +303,75 @@ describe('FlowEditor', () => {
       screen.queryByRole('button', { name: '+ Gatilho' }),
     ).not.toBeInTheDocument()
   })
+
+  it('renames a node, its edges following it', async () => {
+    await setup({
+      draft: {
+        nodes: [
+          {
+            id: 'trigger',
+            type: 'trigger',
+            position: { x: 0, y: 0 },
+            config: { event: 'card_created' },
+          },
+          { id: 'end-1', type: 'end', position: { x: 300, y: 0 }, config: {} },
+        ],
+        edges: [
+          {
+            id: 'trigger.next',
+            source: 'trigger',
+            source_handle: 'next',
+            target: 'end-1',
+          },
+        ],
+      },
+      problems: [],
+    })
+    nodesChange([{ type: 'select', id: 'trigger', selected: true }])
+    const field = screen.getByLabelText('Id')
+    await userEvent.clear(field)
+    await userEvent.type(field, 'end-1')
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Outro nó já usa esse id.',
+    )
+    await userEvent.clear(field)
+    await userEvent.type(field, 'bad id')
+    expect(screen.getByRole('alert')).toHaveTextContent('Use só letras')
+    await userEvent.tab()
+    expect(nodeIds()).toEqual(['trigger', 'end-1'])
+
+    nodesChange([
+      { type: 'select', id: 'trigger', selected: false },
+      { type: 'select', id: 'end-1', selected: true },
+    ])
+    await userEvent.clear(screen.getByLabelText('Id'))
+    await userEvent.type(screen.getByLabelText('Id'), 'fim{Enter}')
+    expect(nodeIds()).toEqual(['trigger', 'fim'])
+    expect(props().edges).toEqual([
+      expect.objectContaining({
+        id: 'trigger.next',
+        source: 'trigger',
+        target: 'fim',
+      }),
+    ])
+    expect(screen.getByText('Alterações não salvas')).toBeInTheDocument()
+    expect(
+      screen.getByText(/leem a saída deste com \{\{nodes.fim\}\}/),
+    ).toBeInTheDocument()
+  })
+
+  it('shows warnings apart from problems that block publishing', async () => {
+    await setup({
+      problems: [
+        { node_id: 'trigger', message: 'pode não ter rodado', warning: true },
+      ],
+    })
+    expect(nodeIds()).toEqual(['trigger'])
+    expect(
+      screen.getByText('O rascunho pode ser publicado.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('pode não ter rodado').closest('li'),
+    ).toHaveTextContent('Aviso · trigger: pode não ter rodado')
+  })
 })

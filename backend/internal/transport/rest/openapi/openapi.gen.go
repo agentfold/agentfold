@@ -708,7 +708,7 @@ type AgentConfig struct {
 	// ProfileId Agent profile the node runs as. Required to publish.
 	ProfileId *openapi_types.UUID `json:"profile_id,omitempty"`
 
-	// Prompt Initial prompt. Required to publish.
+	// Prompt Initial prompt. Required to publish. Takes the placeholders of HTTPRequestConfig, filled in when the run enters the node; unknown ones stay as written.
 	Prompt *string `json:"prompt,omitempty"`
 
 	// ReadOnly Blocks the editing tools, as for a reviewer.
@@ -1104,6 +1104,9 @@ type GraphProblem struct {
 	EdgeId  *string `json:"edge_id,omitempty"`
 	Message string  `json:"message"`
 	NodeId  *string `json:"node_id,omitempty"`
+
+	// Warning Points out something likely wrong without preventing publishing.
+	Warning *bool `json:"warning,omitempty"`
 }
 
 // HTTPHeader A request header. Saving the draft seals the value of a secret header into sealed and clears value; send sealed back unchanged to keep it, or a new value to replace it.
@@ -1116,7 +1119,7 @@ type HTTPHeader struct {
 	Value  *string `json:"value,omitempty"`
 }
 
-// HTTPRequestConfig Calls an HTTP endpoint. url, header values and body take placeholders: {{card.<field>}} (id, title, description, lane_id, card_type_id, project_id, parent_card_id), {{card.properties.<key>}}, {{input}} (what the node before handed on) and {{input.<path>}} (a value in its structured output, by keys and array indexes split by dots). Values are URL-encoded in the url and JSON-escaped in the body, which gets a JSON content type unless a header sets one. In wait mode (the default) the node leaves by success when the status is one of success_statuses (2xx when empty), else by failed, after max_attempts attempts for network errors, timeouts, 429 and 5xx; it hands on {"output": {"status", "body"}}. In fire_and_forget mode it makes one attempt and goes on by next right away, handing on its input. method and url are required to publish.
+// HTTPRequestConfig Calls an HTTP endpoint. url, header values and body take placeholders: {{card.<field>}} (id, title, description, lane_id, card_type_id, project_id, parent_card_id), {{card.properties.<key>}}, {{input}} (what the node before handed on), {{input.<path>}} (a value in its structured output, by keys and array indexes split by dots), and {{nodes.<id>}} and {{nodes.<id>.<path>}} (the same for the last output of the node id in the run). Values are URL-encoded in the url and JSON-escaped in the body, which gets a JSON content type unless a header sets one. In wait mode (the default) the node leaves by success when the status is one of success_statuses (2xx when empty), else by failed, after max_attempts attempts for network errors, timeouts, 429 and 5xx; it hands on {"output": {"status", "body"}}. In fire_and_forget mode it makes one attempt and goes on by next right away, handing on its input. method and url are required to publish.
 type HTTPRequestConfig struct {
 	// Backoff exponential doubles the wait after each attempt, up to an hour.
 	Backoff *HTTPRequestConfigBackoff `json:"backoff,omitempty"`
@@ -1148,7 +1151,7 @@ type HTTPRequestConfigMode string
 
 // HTTPRequestNode defines model for HTTPRequestNode.
 type HTTPRequestNode struct {
-	// Config Calls an HTTP endpoint. url, header values and body take placeholders: {{card.<field>}} (id, title, description, lane_id, card_type_id, project_id, parent_card_id), {{card.properties.<key>}}, {{input}} (what the node before handed on) and {{input.<path>}} (a value in its structured output, by keys and array indexes split by dots). Values are URL-encoded in the url and JSON-escaped in the body, which gets a JSON content type unless a header sets one. In wait mode (the default) the node leaves by success when the status is one of success_statuses (2xx when empty), else by failed, after max_attempts attempts for network errors, timeouts, 429 and 5xx; it hands on {"output": {"status", "body"}}. In fire_and_forget mode it makes one attempt and goes on by next right away, handing on its input. method and url are required to publish.
+	// Config Calls an HTTP endpoint. url, header values and body take placeholders: {{card.<field>}} (id, title, description, lane_id, card_type_id, project_id, parent_card_id), {{card.properties.<key>}}, {{input}} (what the node before handed on), {{input.<path>}} (a value in its structured output, by keys and array indexes split by dots), and {{nodes.<id>}} and {{nodes.<id>.<path>}} (the same for the last output of the node id in the run). Values are URL-encoded in the url and JSON-escaped in the body, which gets a JSON content type unless a header sets one. In wait mode (the default) the node leaves by success when the status is one of success_statuses (2xx when empty), else by failed, after max_attempts attempts for network errors, timeouts, 429 and 5xx; it hands on {"output": {"status", "body"}}. In fire_and_forget mode it makes one attempt and goes on by next right away, handing on its input. method and url are required to publish.
 	Config   HTTPRequestConfig   `json:"config"`
 	Id       string              `json:"id"`
 	Position Position            `json:"position"`

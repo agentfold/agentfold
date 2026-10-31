@@ -2,7 +2,7 @@
 SELECT * FROM cards ORDER BY lane_id, position, created_at;
 
 -- name: ListChildCards :many
-SELECT * FROM cards WHERE parent_card_id = $1 ORDER BY created_at;
+SELECT * FROM cards WHERE parent_card_id = $1 ORDER BY created_at, id;
 
 -- name: GetCard :one
 SELECT * FROM cards WHERE id = $1;

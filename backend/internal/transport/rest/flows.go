@@ -37,6 +37,9 @@ func toProblems(problems []domain.GraphProblem) []openapi.GraphProblem {
 		if p.EdgeID != "" {
 			out.EdgeId = &p.EdgeID
 		}
+		if p.Warning {
+			out.Warning = &p.Warning
+		}
 		return out
 	})
 }

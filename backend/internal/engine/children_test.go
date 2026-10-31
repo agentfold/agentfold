@@ -436,8 +436,19 @@ func TestFinishingTheRunOfADeletedCard(t *testing.T) {
 	}
 }
 
+// ListNodeRuns returns runNodes when the test set them, else the node runs
+// created for the run.
 func (f *fakeStore) ListNodeRuns(_ context.Context, flowRunID uuid.UUID) ([]domain.NodeRun, error) {
-	return f.runNodes[flowRunID], f.err("ListNodeRuns")
+	if runs, ok := f.runNodes[flowRunID]; ok {
+		return runs, f.err("ListNodeRuns")
+	}
+	var out []domain.NodeRun
+	for _, id := range f.order {
+		if nr := f.nodeRuns[id]; nr.FlowRunID == flowRunID {
+			out = append(out, nr)
+		}
+	}
+	return out, f.err("ListNodeRuns")
 }
 
 // childChanged sets the properties of a child and handles the job that

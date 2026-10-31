@@ -76,12 +76,12 @@ func (e *Engine) HandleHTTP(ctx context.Context, payload json.RawMessage) error 
 	if !cfg.FireAndForget() && (!fr.Status.Active() || !pending) {
 		return nil // canceled meanwhile
 	}
-	card, err := e.Store.GetCard(ctx, fr.CardID)
+	data, err := e.templateData(ctx, fr, nr.Input)
 	if err != nil {
 		return err
 	}
 
-	res := e.call(ctx, cfg, card, nr.Input)
+	res := e.call(ctx, cfg, data)
 	attempt := httpAttempt{
 		FlowRunID: fr.ID, NodeKey: nr.NodeKey, Attempt: p.Attempt, MaxAttempts: cfg.Attempts(),
 		Method: cfg.Method, URL: res.url, Status: res.status, Error: res.err, DurationMS: res.duration.Milliseconds(),
@@ -138,10 +138,10 @@ func (r httpResult) failure(attempts int) string {
 	return msg
 }
 
-// call makes the request of cfg for the card, with the input of the node.
-func (e *Engine) call(ctx context.Context, cfg domain.HTTPRequestConfig, card domain.Card, input json.RawMessage) httpResult {
-	res := httpResult{url: domain.RenderTemplate(strings.TrimSpace(cfg.URL), card, input, domain.EscapeURL)}
-	req, err := e.request(ctx, cfg, card, input, res.url)
+// call makes the request of cfg, with what its placeholders read.
+func (e *Engine) call(ctx context.Context, cfg domain.HTTPRequestConfig, data domain.TemplateData) httpResult {
+	res := httpResult{url: domain.RenderTemplate(strings.TrimSpace(cfg.URL), data, domain.EscapeURL)}
+	req, err := e.request(ctx, cfg, data, res.url)
 	if err != nil {
 		res.err = err.Error()
 		return res
@@ -165,10 +165,10 @@ func (e *Engine) call(ctx context.Context, cfg domain.HTTPRequestConfig, card do
 
 // request builds the request of cfg; a JSON content type is the default
 // when it has a body.
-func (e *Engine) request(ctx context.Context, cfg domain.HTTPRequestConfig, card domain.Card, input json.RawMessage, url string) (*http.Request, error) {
+func (e *Engine) request(ctx context.Context, cfg domain.HTTPRequestConfig, data domain.TemplateData, url string) (*http.Request, error) {
 	var body io.Reader
 	if cfg.Body != "" {
-		body = strings.NewReader(domain.RenderTemplate(cfg.Body, card, input, domain.EscapeJSON))
+		body = strings.NewReader(domain.RenderTemplate(cfg.Body, data, domain.EscapeJSON))
 	}
 	req, err := http.NewRequestWithContext(ctx, cfg.Method, url, body)
 	if err != nil {
@@ -183,7 +183,7 @@ func (e *Engine) request(ctx context.Context, cfg domain.HTTPRequestConfig, card
 			}
 			value = string(plain)
 		}
-		req.Header.Set(h.Name, domain.RenderTemplate(value, card, input, domain.EscapeHeader))
+		req.Header.Set(h.Name, domain.RenderTemplate(value, data, domain.EscapeHeader))
 	}
 	if body != nil && req.Header.Get("Content-Type") == "" {
 		req.Header.Set("Content-Type", "application/json")

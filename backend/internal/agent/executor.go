@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -91,7 +92,7 @@ func (e *Executor) Handle(ctx context.Context, payload json.RawMessage) error {
 	if run.Status != domain.NodeQueued && run.Status != domain.NodeRunning {
 		return nil // a retried job whose node already ran
 	}
-	result, err := e.execute(ctx, run, p.Prompt)
+	result, err := e.execute(ctx, run, p)
 	if err != nil {
 		result = domain.NodeResult{Status: domain.NodeFailed, OutputHandle: "failed", Error: err.Error()}
 	}
@@ -110,7 +111,8 @@ type job struct {
 	secret  string
 }
 
-func (e *Executor) execute(ctx context.Context, run domain.NodeRun, prompt string) (domain.NodeResult, error) {
+func (e *Executor) execute(ctx context.Context, run domain.NodeRun, p Payload) (domain.NodeResult, error) {
+	prompt := p.Prompt
 	j, err := e.load(ctx, run)
 	if err != nil {
 		return domain.NodeResult{}, err
@@ -124,7 +126,7 @@ func (e *Executor) execute(ctx context.Context, run domain.NodeRun, prompt strin
 		return domain.NodeResult{}, err
 	}
 	if !resume || prompt == "" {
-		prompt = firstPrompt(j.node.config.Prompt, j.card, prompt)
+		prompt = firstPrompt(cmp.Or(p.NodePrompt, j.node.config.Prompt), j.card, prompt)
 	}
 	token, tokenHash := newToken()
 	inv := Invocation{

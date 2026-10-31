@@ -935,6 +935,8 @@ export interface components {
             node_id?: string;
             edge_id?: string;
             message: string;
+            /** @description Points out something likely wrong without preventing publishing. */
+            warning?: boolean;
         };
         FlowGraph: {
             nodes: components["schemas"]["FlowNode"][];
@@ -1075,7 +1077,7 @@ export interface components {
             profile_id?: string;
             /** @description External MCP servers available to the agent. */
             mcp_server_ids?: string[];
-            /** @description Initial prompt. Required to publish. */
+            /** @description Initial prompt. Required to publish. Takes the placeholders of HTTPRequestConfig, filled in when the run enters the node; unknown ones stay as written. */
             prompt?: string;
             /** @description Tools the agent may use. The board tools create_cards, list_cards, retry_card and cancel_card only exist when listed (mcp__orquestrator__<name>, or mcp__orquestrator for all). */
             allowed_tools?: string[];
@@ -1197,7 +1199,7 @@ export interface components {
             value?: string;
             wait?: boolean;
         };
-        /** @description Calls an HTTP endpoint. url, header values and body take placeholders: {{card.<field>}} (id, title, description, lane_id, card_type_id, project_id, parent_card_id), {{card.properties.<key>}}, {{input}} (what the node before handed on) and {{input.<path>}} (a value in its structured output, by keys and array indexes split by dots). Values are URL-encoded in the url and JSON-escaped in the body, which gets a JSON content type unless a header sets one. In wait mode (the default) the node leaves by success when the status is one of success_statuses (2xx when empty), else by failed, after max_attempts attempts for network errors, timeouts, 429 and 5xx; it hands on {"output": {"status", "body"}}. In fire_and_forget mode it makes one attempt and goes on by next right away, handing on its input. method and url are required to publish. */
+        /** @description Calls an HTTP endpoint. url, header values and body take placeholders: {{card.<field>}} (id, title, description, lane_id, card_type_id, project_id, parent_card_id), {{card.properties.<key>}}, {{input}} (what the node before handed on), {{input.<path>}} (a value in its structured output, by keys and array indexes split by dots), and {{nodes.<id>}} and {{nodes.<id>.<path>}} (the same for the last output of the node id in the run). Values are URL-encoded in the url and JSON-escaped in the body, which gets a JSON content type unless a header sets one. In wait mode (the default) the node leaves by success when the status is one of success_statuses (2xx when empty), else by failed, after max_attempts attempts for network errors, timeouts, 429 and 5xx; it hands on {"output": {"status", "body"}}. In fire_and_forget mode it makes one attempt and goes on by next right away, handing on its input. method and url are required to publish. */
         HTTPRequestConfig: {
             /** @enum {string} */
             method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD";

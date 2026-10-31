@@ -259,6 +259,17 @@ func argsOf(call map[string]any) string {
 	return strings.Join(parts, " ")
 }
 
+func TestRenderedNodePrompt(t *testing.T) {
+	s := newSetup(t)
+	payload, _ := json.Marshal(Payload{NodeRunID: s.store.run.ID, NodePrompt: "Implement Add login"})
+	if err := s.exec.Handle(context.Background(), payload); err != nil {
+		t.Fatal(err)
+	}
+	if args := argsOf(s.call(t)); !strings.Contains(args, "Implement Add login\n\n## Card") {
+		t.Fatalf("args: %s", args)
+	}
+}
+
 func TestFirstRun(t *testing.T) {
 	s := newSetup(t)
 	if err := s.handle(t, "what the node before did"); err != nil {

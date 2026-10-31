@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -390,6 +391,14 @@ type GraphProblem struct {
 	NodeID  string `json:"node_id,omitempty"`
 	EdgeID  string `json:"edge_id,omitempty"`
 	Message string `json:"message"`
+	// Warning problems point out something likely wrong without
+	// preventing publishing.
+	Warning bool `json:"warning,omitempty"`
+}
+
+// Blocking returns the problems that prevent publishing.
+func Blocking(problems []GraphProblem) []GraphProblem {
+	return slices.DeleteFunc(slices.Clone(problems), func(p GraphProblem) bool { return p.Warning })
 }
 
 // GraphError is returned when publishing a graph with problems.
@@ -419,6 +428,7 @@ func (g Graph) Problems(refs References) []GraphProblem {
 	v.checkEdges(g.Edges)
 	v.checkReachable(g.Edges)
 	v.checkReviews(g.Edges)
+	v.checkReferences(g.Edges)
 	return v.problems
 }
 
@@ -433,6 +443,10 @@ func (v *validator) node(id, format string, args ...any) {
 	v.problems = append(v.problems, GraphProblem{NodeID: id, Message: fmt.Sprintf(format, args...)})
 }
 
+func (v *validator) warn(id, format string, args ...any) {
+	v.problems = append(v.problems, GraphProblem{NodeID: id, Message: fmt.Sprintf(format, args...), Warning: true})
+}
+
 func (v *validator) edge(id, format string, args ...any) {
 	v.problems = append(v.problems, GraphProblem{EdgeID: id, Message: fmt.Sprintf(format, args...)})
 }
@@ -443,6 +457,9 @@ func (v *validator) checkNodes(nodes []Node) {
 		if _, dup := v.nodes[n.ID]; dup || n.ID == "" {
 			v.node(n.ID, "id de nó vazio ou repetido")
 			continue
+		}
+		if !nodeID.MatchString(n.ID) {
+			v.node(n.ID, "o id do nó só aceita letras, números, _ e -")
 		}
 		if _, known := Outputs[n.Type]; !known {
 			v.node(n.ID, "tipo de nó desconhecido: %q", n.Type)
@@ -532,6 +549,75 @@ func (v *validator) checkReviews(edges []Edge) {
 			v.node(n.ID, "ligue a saída changes_requested ao nó que refaz o trabalho")
 		}
 	}
+}
+
+// nodeID is what node ids are made of, so {{nodes.<id>.<path>}} reads
+// them.
+var nodeID = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// checkReferences checks the {{nodes.<id>}} placeholders: the node must
+// exist, and should run before, on every path from the trigger. Unknown
+// placeholders in agent prompts are left as written, so they only warn.
+func (v *validator) checkReferences(edges []Edge) {
+	for _, n := range v.sortedNodes() {
+		texts, prompt := templateTexts(n)
+		seen := map[string]bool{}
+		for _, text := range texts {
+			if err := checkPlaceholders(text); err != nil && prompt {
+				v.warn(n.ID, "%s; o prompt mantém o texto como está", err.Error())
+			}
+			for _, id := range NodeReferences(text) {
+				switch _, exists := v.nodes[id]; {
+				case seen[id]:
+				case !exists:
+					v.node(n.ID, "{{nodes.%s}} lê um nó que não existe", id)
+				case v.trigger != "" && id != n.ID && v.reaches(v.trigger, n.ID, edges, id):
+					v.warn(n.ID, "o nó %s pode não ter rodado antes deste; {{nodes.%s}} sai vazio nesse caso", id, id)
+				}
+				seen[id] = true
+			}
+		}
+	}
+}
+
+// templateTexts are the texts of a node that take placeholders, and
+// whether they are an agent prompt.
+func templateTexts(n Node) ([]string, bool) {
+	switch n.Type {
+	case NodeAgent:
+		var c AgentConfig
+		_ = json.Unmarshal(n.Config, &c) // a bad config is reported apart
+		return []string{c.Prompt}, true
+	case NodeHTTPRequest:
+		var c HTTPRequestConfig
+		_ = json.Unmarshal(n.Config, &c)
+		return append([]string{c.URL, c.Body}, headerValues(c.Headers)...), false
+	}
+	return nil, false
+}
+
+// reaches tells whether to can be reached from from without passing
+// through the node skip.
+func (v *validator) reaches(from, to string, edges []Edge, skip string) bool {
+	if from == skip {
+		return false
+	}
+	seen := map[string]bool{from: true, skip: true}
+	queue := []string{from}
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		if id == to {
+			return true
+		}
+		for _, e := range edges {
+			if e.Source == id && !seen[e.Target] {
+				seen[e.Target] = true
+				queue = append(queue, e.Target)
+			}
+		}
+	}
+	return false
 }
 
 // sortedNodes returns the valid nodes in a stable order for messages.

@@ -322,7 +322,7 @@ func TestHTTPRequestErrors(t *testing.T) {
 	}
 	ep := newEndpoint(t, "", http.StatusServiceUnavailable)
 	cfg := map[string]any{"method": "GET", "url": ep.URL, "max_attempts": 2}
-	for _, name := range []string{"GetNodeRun", "GetFlowRun", "GetFlowVersion", "GetCard", "AddCardEvent:http.requested", "EnqueueJob"} {
+	for _, name := range []string{"GetNodeRun", "GetFlowRun", "GetFlowVersion", "GetCard", "ListNodeRuns", "AddCardEvent:http.requested", "EnqueueJob"} {
 		t.Run(name, func(t *testing.T) {
 			e := httpEnv(t, cfg, false)
 			e.trigger(e.created())
