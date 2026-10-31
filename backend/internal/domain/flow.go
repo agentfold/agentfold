@@ -80,6 +80,10 @@ const (
 	// NodeSwitch goes on by the first case whose condition holds
 	// (SwitchConfig).
 	NodeSwitch NodeType = "switch"
+	// NodeSplit opens parallel branches of the run, one per linked output
+	// (SplitConfig); NodeJoin closes them (JoinConfig).
+	NodeSplit NodeType = "split"
+	NodeJoin  NodeType = "join"
 )
 
 // Outputs lists the outputs (edge source handles) of each node type. Agent
@@ -107,6 +111,10 @@ var Outputs = map[NodeType][]string{
 	// The case names come first (see SwitchConfig.Outputs); failed: a
 	// condition failed or was not true or false.
 	NodeSwitch: {SwitchElse, "failed"},
+	// The branch names (see SplitConfig).
+	NodeSplit: {},
+	// some_failed: a branch failed (see JoinConfig.Result).
+	NodeJoin: {"all_done", "some_failed"},
 }
 
 // GatewayOutputs are the outputs of an agent node with the gateway on.
@@ -129,6 +137,11 @@ func NodeOutputs(n Node) []string {
 		var c SwitchConfig
 		if json.Unmarshal(n.Config, &c) == nil {
 			return c.Outputs()
+		}
+	case NodeSplit:
+		var c SplitConfig
+		if json.Unmarshal(n.Config, &c) == nil {
+			return c.Branches
 		}
 	}
 	return Outputs[n.Type]
@@ -445,6 +458,7 @@ func (g Graph) Problems(refs References) []GraphProblem {
 	v.checkReachable(g.Edges)
 	v.checkReviews(g.Edges)
 	v.checkReferences(g.Edges)
+	v.checkSplits(g)
 	return v.problems
 }
 
@@ -746,6 +760,18 @@ func (v *validator) configProblems(n Node) []string {
 			return []string{invalidConfig(err)}
 		}
 		return switchProblems(c)
+	case NodeSplit:
+		var c SplitConfig
+		if err := json.Unmarshal(config, &c); err != nil {
+			return []string{invalidConfig(err)}
+		}
+		return splitProblems(c)
+	case NodeJoin:
+		var c JoinConfig
+		if err := json.Unmarshal(config, &c); err != nil {
+			return []string{invalidConfig(err)}
+		}
+		return joinProblems(c)
 	}
 	return nil
 }

@@ -100,6 +100,21 @@ type Flow struct {
 	UpdatedAt time.Time
 }
 
+type FlowBranch struct {
+	ID             uuid.UUID
+	FlowRunID      uuid.UUID
+	SplitNodeRunID uuid.UUID
+	SplitKey       string
+	ParentBranchID *uuid.UUID
+	Name           string
+	Label          string
+	Status         string
+	Output         []byte
+	Error          *string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
 type FlowRun struct {
 	ID            uuid.UUID
 	FlowVersionID uuid.UUID
@@ -110,6 +125,12 @@ type FlowRun struct {
 	FinishedAt    *time.Time
 	FlowID        uuid.UUID
 	Error         *string
+}
+
+type FlowSplit struct {
+	NodeRunID uuid.UUID
+	FlowRunID uuid.UUID
+	SettledAt *time.Time
 }
 
 type FlowVersion struct {
@@ -181,6 +202,8 @@ type NodeRun struct {
 	StructuredOutput []byte
 	Decision         *string
 	Feedback         *string
+	BranchID         *uuid.UUID
+	Branch           string
 }
 
 type NodeRunOutput struct {

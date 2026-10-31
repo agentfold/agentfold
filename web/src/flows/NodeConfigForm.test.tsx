@@ -429,6 +429,43 @@ describe('NodeConfigForm', () => {
     expect(result.config).toEqual({ cases: [{ name: 'b', expression: '' }] })
   })
 
+  it('edits the branches of a Split', async () => {
+    const result = setup('split', {})
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Adicionar ramo' }),
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Adicionar ramo' }),
+    )
+    await userEvent.type(
+      within(screen.getByRole('group', { name: 'Ramo 1' })).getByLabelText(
+        'Nome',
+      ),
+      'erp',
+    )
+    expect(result.config).toEqual({ branches: ['erp', ''] })
+    await userEvent.click(
+      within(screen.getByRole('group', { name: 'Ramo 2' })).getByRole(
+        'button',
+        { name: 'Remover' },
+      ),
+    )
+    expect(result.config).toEqual({ branches: ['erp'] })
+  })
+
+  it('chooses how a Join closes the branches', async () => {
+    const result = setup('join', {})
+    const mode = screen.getByLabelText('Como juntar')
+    expect(mode).toHaveValue('all')
+    await userEvent.selectOptions(mode, 'fail_fast')
+    expect(result.config).toEqual({ mode: 'all', fail_fast: true })
+    await userEvent.selectOptions(mode, 'first')
+    expect(result.config).toEqual({ mode: 'first', fail_fast: undefined })
+    expect(mode).toHaveValue('first')
+    await userEvent.selectOptions(mode, 'all')
+    expect(result.config).toEqual({ mode: 'all', fail_fast: undefined })
+  })
+
   it('shows an HTTP request without config', () => {
     setup('http_request', {})
     expect(screen.getByLabelText('URL')).toHaveValue('')

@@ -21,6 +21,8 @@ type Querier interface {
 	// CancelRunJobs stops the agent jobs of a run: a worker running one loses
 	// its lease at the next heartbeat and interrupts the agent.
 	CancelRunJobs(ctx context.Context, flowRunID uuid.UUID) error
+	// Cancels the active branches of a split and those nested in them.
+	CancelSplitBranches(ctx context.Context, splitNodeRunID uuid.UUID) ([]uuid.UUID, error)
 	CardHasActiveRun(ctx context.Context, cardID uuid.UUID) (bool, error)
 	// ClaimJob takes the oldest job the worker can run: queued, or running with
 	// an expired lease (its worker died) and attempts left.
@@ -39,7 +41,9 @@ type Querier interface {
 	DeleteMcpServer(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteProject(ctx context.Context, id uuid.UUID) (int64, error)
 	DeliverQuestions(ctx context.Context, nodeRunID uuid.UUID) error
+	EndFlowBranch(ctx context.Context, arg EndFlowBranchParams) (int64, error)
 	ExtendJobLease(ctx context.Context, arg ExtendJobLeaseParams) (int64, error)
+	FailBranchNodeRuns(ctx context.Context, branchIds []uuid.UUID) error
 	FailOpenNodeRuns(ctx context.Context, flowRunID uuid.UUID) error
 	FinishFlowRun(ctx context.Context, arg FinishFlowRunParams) (FlowRun, error)
 	FinishJob(ctx context.Context, arg FinishJobParams) (int64, error)
@@ -55,8 +59,10 @@ type Querier interface {
 	GetCardForUpdate(ctx context.Context, id uuid.UUID) (Card, error)
 	GetCardType(ctx context.Context, id uuid.UUID) (CardType, error)
 	GetFlow(ctx context.Context, id uuid.UUID) (GetFlowRow, error)
+	GetFlowBranch(ctx context.Context, id uuid.UUID) (FlowBranch, error)
 	GetFlowForUpdate(ctx context.Context, id uuid.UUID) (Flow, error)
 	GetFlowRun(ctx context.Context, id uuid.UUID) (GetFlowRunRow, error)
+	GetFlowSplitForUpdate(ctx context.Context, nodeRunID uuid.UUID) (FlowSplit, error)
 	GetFlowVersion(ctx context.Context, id uuid.UUID) (FlowVersion, error)
 	GetLane(ctx context.Context, id uuid.UUID) (Lane, error)
 	GetLaneForUpdate(ctx context.Context, id uuid.UUID) (Lane, error)
@@ -75,8 +81,10 @@ type Querier interface {
 	InsertCardEvent(ctx context.Context, arg InsertCardEventParams) (CardEvent, error)
 	InsertCardType(ctx context.Context, arg InsertCardTypeParams) (CardType, error)
 	InsertFlow(ctx context.Context, arg InsertFlowParams) (Flow, error)
+	InsertFlowBranch(ctx context.Context, arg InsertFlowBranchParams) (FlowBranch, error)
 	// InsertFlowRun starts a run unless the flow is already running for the card.
 	InsertFlowRun(ctx context.Context, arg InsertFlowRunParams) (FlowRun, error)
+	InsertFlowSplit(ctx context.Context, arg InsertFlowSplitParams) error
 	InsertFlowVersion(ctx context.Context, arg InsertFlowVersionParams) (FlowVersion, error)
 	InsertJob(ctx context.Context, arg InsertJobParams) (Job, error)
 	InsertLane(ctx context.Context, arg InsertLaneParams) (Lane, error)
@@ -109,6 +117,7 @@ type Querier interface {
 	ListNodeRuns(ctx context.Context, flowRunID uuid.UUID) ([]NodeRun, error)
 	ListProjects(ctx context.Context) ([]Project, error)
 	ListRunnableFlows(ctx context.Context) ([]ListRunnableFlowsRow, error)
+	ListSplitBranches(ctx context.Context, splitNodeRunID uuid.UUID) ([]FlowBranch, error)
 	ListUndeliveredQuestions(ctx context.Context, nodeRunID uuid.UUID) ([]Question, error)
 	NextFlowVersion(ctx context.Context, flowID uuid.UUID) (int32, error)
 	// NextJobAt is when the next queued job the worker can run is due.
@@ -134,6 +143,7 @@ type Querier interface {
 	SetNodeRunDecision(ctx context.Context, arg SetNodeRunDecisionParams) (NodeRun, error)
 	SetNodeRunOutput(ctx context.Context, arg SetNodeRunOutputParams) (NodeRun, error)
 	SetNodeRunSummary(ctx context.Context, arg SetNodeRunSummaryParams) (NodeRun, error)
+	SettleFlowSplit(ctx context.Context, nodeRunID uuid.UUID) error
 	ShiftCards(ctx context.Context, arg ShiftCardsParams) error
 	ShiftLanes(ctx context.Context, arg ShiftLanesParams) error
 	StartNodeRun(ctx context.Context, arg StartNodeRunParams) (NodeRun, error)

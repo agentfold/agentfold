@@ -17,7 +17,7 @@ Expõe **API REST** e **servidor MCP** para integrações.
 | Workspace/sessão | Diretório persistente por card, montável em qualquer worker |
 | Multiusuário / auth | Fora do escopo por enquanto |
 | Card × Fluxo | Entidades separadas. Um card dispara FlowRuns; o fluxo pode ramificar |
-| Paralelismo | Modelo de dados suporta vários nós ativos por FlowRun; MVP executa caminho linear com desvios condicionais |
+| Paralelismo | Nó `Split` abre ramos paralelos no mesmo FlowRun (um job `flow.branch` por ramo) e o `Join` os fecha; agentes ainda não rodam em ramos |
 | Baias | Dinâmicas (globais ou do fluxo). Nó `MoveCard` escolhe a baia destino |
 | Consumo | Histórico de tokens/turnos/custo por NodeRun, agregado por card |
 | Agentes | Perfis configuráveis de Claude Code ou opencode (o tipo é do perfil; um fluxo mistura os dois). Login via `orquestrator agent login claude\|opencode` |
@@ -97,7 +97,9 @@ interfaces para viabilizar 100% de cobertura com fakes.
 | `flows` | id, name, enabled, draft jsonb (rascunho editável) |
 | `flow_versions` | id, flow_id, version, graph jsonb (nós com config + arestas por saída), published_at |
 | `flow_runs` | id, flow_version_id, card_id, trigger, status, started_at, finished_at |
-| `node_runs` | id, flow_run_id, node_key, status, iteration, input jsonb, output jsonb, session_id?, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, summary?, structured_output?, decision? (`approved`/`rejected`), feedback? |
+| `node_runs` | id, flow_run_id, node_key, status, iteration, input jsonb, output jsonb, session_id?, tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, error, summary?, structured_output?, decision? (`approved`/`rejected`), feedback?, branch_id? e branch (o ramo de um Split, vazio no caminho principal) |
+| `flow_splits` | node_run_id (a execução do Split), flow_run_id, settled_at? (quando o Join seguiu) |
+| `flow_branches` | id, flow_run_id, split_node_run_id, split_key, parent_branch_id? (o ramo onde o Split rodou), name, label (`split.a`, `split.a/inner.b`), status (`active`/`arrived`/`done`/`failed`/`canceled`), output? (o que chegou ao Join), error? |
 | `agent_sessions` | id, flow_run_id, node_key, profile_id, claude_session_id (escolhido pelo board via `--session-id`) |
 | `questions` | id, card_id, node_run_id, text, answer?, answered_at? |
 | `artifacts` | id, card_id, name (único por card), node_run_id (quem coletou a última versão), review_node_run_id? (a última revisão humana que o pôs em revisão) |
@@ -221,7 +223,33 @@ O `get_card` do MCP devolve os artefatos do card (última versão e o estado da 
 card filho, o card pai com os artefatos dele: o agente que divide o trabalho e os que
 implementam leem o plano aprovado.
 
-Futuro: `PR`, `Fork/Join` (paralelo dentro do fluxo), `WaitSignal` (review entre repositórios
+**Paralelo (Split) e Juntar (Join).** O Split tem ramos nomeados, cada um uma saída; ao
+passar por ele, o engine grava um ramo por saída ligada (uma saída sem ligação é um ramo
+descartado) e enfileira um job `flow.branch` por ramo, para que andem em paralelo quando há
+mais de um worker. Cada execução de nó guarda o ramo (`branch`, como `split.a`), mostrado na
+aba Execução e na timeline. Um End dentro de um ramo encerra só o ramo, e um nó que falha sem
+ligação falha o ramo. A chegada ao Join, o fim e a falha de um ramo passam por
+`SettleBranch`, numa transação que trava a linha do split (`SELECT … FOR UPDATE`): quem
+completa o conjunto libera o Join, que roda no caminho onde o Split rodou com a saída
+`{"output": {"branches": {<ramo>: <saída>}, "failed": {<ramo>: <erro>}}}`. Os modos do Join:
+`all` espera todos os ramos e sai por `some_failed` se algum falhou (senão `all_done`); `all`
+com `fail_fast` sai por `some_failed` na primeira falha; `first` segue por `all_done` com o
+primeiro ramo que chegar (por `some_failed` se todos falharem). Os ramos ainda ativos quando o
+Join segue são cancelados, junto com os ramos aninhados neles, e as execuções abertas deles
+falham com "ramo cancelado" (uma chamada HTTP pendente é descartada). Sem Join (todos os ramos
+terminam antes), o caminho do Split termina: falho se algum ramo falhou. Cancelar o run
+encerra tudo, porque as execuções de todos os ramos são do mesmo run.
+
+A publicação exige que todos os ramos de um Split cheguem ao mesmo Join ou terminem antes,
+que nenhuma ligação entre num ramo por fora (nem cruze ramos, nem chegue ao Join fora dos ramos
+do Split) e que todo Join feche um Split. Splits aninhados fecham o Join interno dentro do ramo
+externo, e loops dentro de um ramo são permitidos. Na primeira versão os ramos rodam HTTP
+Request, Transformar, Condição, Definir e Conferir propriedade (sem esperar), Mover card, End e
+outros Split/Join: agentes dividiriam o workspace e a branch git do card (ficam para quando
+houver um workspace por ramo), e os nós que esperam um humano ou outros cards seguram o run
+inteiro.
+
+Futuro: `PR`, agentes em ramos paralelos (worktree por ramo), `WaitSignal` (review entre repositórios
 no fluxo do pai), outros agentes.
 
 Saídas de nós ficam em `node_runs.output` e são acessíveis aos nós seguintes do mesmo FlowRun

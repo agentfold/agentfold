@@ -14,6 +14,8 @@ import type {
   HTTPRequestConfig,
   TransformConfig,
   SwitchConfig,
+  SplitConfig,
+  JoinConfig,
 } from '../api/client'
 
 export type NodeKind = FlowNode['type']
@@ -29,6 +31,8 @@ export type StepConfig =
   | HTTPRequestConfig
   | TransformConfig
   | SwitchConfig
+  | SplitConfig
+  | JoinConfig
   | Record<string, never>
 
 export interface StepData extends Record<string, unknown> {
@@ -53,6 +57,8 @@ export const kindLabels: Record<NodeKind, string> = {
   http_request: 'HTTP Request',
   transform: 'Transformar',
   switch: 'Condição',
+  split: 'Paralelo (split)',
+  join: 'Juntar (join)',
   end: 'Fim',
 }
 
@@ -69,6 +75,8 @@ const outputs: Record<NodeKind, string[]> = {
   http_request: ['success', 'failed'],
   transform: ['next', 'failed'],
   switch: ['else', 'failed'],
+  split: [],
+  join: ['all_done', 'some_failed'],
   end: [],
 }
 
@@ -77,10 +85,13 @@ const gatewayOutputs = ['approved', 'rejected', 'max_rounds_exceeded', 'failed']
 
 /**
  * The outputs of a node: agents with the gateway on decide where to go, an
- * HTTP Request firing and forgetting only goes on, and a Condition has one
- * output per case before else and failed.
+ * HTTP Request firing and forgetting only goes on, a Condition has one
+ * output per case before else and failed, and a Split one per branch.
  */
 export function nodeOutputs({ kind, config }: StepData): string[] {
+  if (kind === 'split') {
+    return (config as SplitConfig).branches ?? []
+  }
   if (kind === 'switch') {
     const cases = (config as SwitchConfig).cases ?? []
     return [...cases.map((c) => c.name), ...outputs.switch]
@@ -125,6 +136,8 @@ export function defaultConfig(kind: NodeKind): StepConfig {
       return { output: { resultado: '= input' } }
     case 'switch':
       return { cases: [{ name: 'sim', expression: '' }] }
+    case 'split':
+      return { branches: ['a', 'b'] }
     default:
       return {}
   }
@@ -349,6 +362,21 @@ export function summary({ kind, config }: StepData): string {
     case 'switch': {
       const names = ((config as SwitchConfig).cases ?? []).map((c) => c.name)
       return names.length > 0 ? `Casos: ${names.join(', ')}` : 'Sem casos'
+    }
+    case 'split': {
+      const names = (config as SplitConfig).branches ?? []
+      return names.length > 0
+        ? `Ramos em paralelo: ${names.join(', ')}`
+        : 'Sem ramos'
+    }
+    case 'join': {
+      const { mode, fail_fast: failFast } = config as JoinConfig
+      if (mode === 'first') {
+        return 'Segue com o primeiro ramo que chegar'
+      }
+      return failFast
+        ? 'Espera todos os ramos; para na primeira falha'
+        : 'Espera todos os ramos'
     }
     case 'end':
       return 'Encerra o fluxo'

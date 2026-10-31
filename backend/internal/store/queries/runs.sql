@@ -34,7 +34,8 @@ WHERE f.enabled
 ORDER BY v.flow_id, v.version DESC;
 
 -- name: InsertNodeRun :one
-INSERT INTO node_runs (flow_run_id, node_key, iteration, status, input) VALUES ($1, $2, $3, $4, $5) RETURNING *;
+INSERT INTO node_runs (flow_run_id, node_key, iteration, status, input, branch_id, branch)
+VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *;
 
 -- name: GetNodeRun :one
 SELECT * FROM node_runs WHERE id = $1;

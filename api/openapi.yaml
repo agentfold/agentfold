@@ -981,7 +981,7 @@ components:
     NodeRun:
       type: object
       description: One execution of a node within a flow run.
-      required: [id, flow_run_id, node_key, node_type, iteration, status, output_handle, error, summary, decision, feedback, output, approval, input_message,
+      required: [id, flow_run_id, node_key, node_type, iteration, branch, status, output_handle, error, summary, decision, feedback, output, approval, input_message,
         tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, created_at, started_at, finished_at]
       properties:
         id: { type: string, format: uuid }
@@ -993,6 +993,11 @@ components:
         iteration:
           type: integer
           description: How many times the run entered the node (gateway rejections re-enter agents).
+        branch:
+          type: string
+          description: >
+            The parallel branch the node ran in, as split.branch (nested:
+            split.a/inner.b); empty on the main path of the run.
         status:
           type: string
           enum: [queued, running, awaiting_input, waiting, awaiting_review, done, failed]
@@ -1220,6 +1225,8 @@ components:
         - $ref: "#/components/schemas/HTTPRequestNode"
         - $ref: "#/components/schemas/TransformNode"
         - $ref: "#/components/schemas/SwitchNode"
+        - $ref: "#/components/schemas/SplitNode"
+        - $ref: "#/components/schemas/JoinNode"
         - $ref: "#/components/schemas/EndNode"
       discriminator:
         propertyName: type
@@ -1235,6 +1242,8 @@ components:
           http_request: "#/components/schemas/HTTPRequestNode"
           transform: "#/components/schemas/TransformNode"
           switch: "#/components/schemas/SwitchNode"
+          split: "#/components/schemas/SplitNode"
+          join: "#/components/schemas/JoinNode"
           end: "#/components/schemas/EndNode"
     TriggerNode:
       type: object
@@ -1324,6 +1333,22 @@ components:
         type: { type: string, enum: [switch] }
         position: { $ref: "#/components/schemas/Position" }
         config: { $ref: "#/components/schemas/SwitchConfig" }
+    SplitNode:
+      type: object
+      required: [id, type, position, config]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [split] }
+        position: { $ref: "#/components/schemas/Position" }
+        config: { $ref: "#/components/schemas/SplitConfig" }
+    JoinNode:
+      type: object
+      required: [id, type, position, config]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [join] }
+        position: { $ref: "#/components/schemas/Position" }
+        config: { $ref: "#/components/schemas/JoinConfig" }
     EndNode:
       type: object
       required: [id, type, position, config]
@@ -1564,6 +1589,35 @@ components:
         cases:
           type: array
           items: { $ref: "#/components/schemas/SwitchCase" }
+    SplitConfig:
+      type: object
+      description: >
+        Opens a parallel branch of the run per linked output; each branch
+        name is an output. An unlinked output is a discarded branch. Every
+        branch reaches the same join or ends before one (an end ends only
+        the branch, a failure leading nowhere fails it); when they all end
+        before a join, the path the split ran in goes on ending, failed if
+        a branch failed. Branches run http_request, transform, switch,
+        set_property, check_property (without wait), move_card, end and
+        nested split/join nodes. Two branch names at least, unique, with
+        letters, digits, _ and -, are required to publish.
+      properties:
+        branches:
+          type: array
+          items: { type: string }
+    JoinConfig:
+      type: object
+      description: >
+        Closes the branches of a split. Mode all (the default) waits for
+        every branch and leaves by some_failed if one failed, else by
+        all_done; with fail_fast it leaves by some_failed at the first
+        failure, canceling the other branches. Mode first goes on by
+        all_done with the first branch to arrive, canceling the others (by
+        some_failed when they all fail). It hands on {"output": {"branches":
+        {<name>: <output>}, "failed": {<name>: <error>}}}.
+      properties:
+        mode: { type: string, enum: [all, first] }
+        fail_fast: { type: boolean }
     SwitchCase:
       type: object
       required: [name, expression]

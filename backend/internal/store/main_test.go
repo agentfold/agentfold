@@ -62,7 +62,7 @@ func run(m *testing.M) (int, error) {
 // newStore returns a Store over an empty database.
 func newStore(t *testing.T) *Store {
 	t.Helper()
-	_, err := pool.Exec(context.Background(), "TRUNCATE jobs, node_run_output, artifact_messages, artifact_versions, artifacts, questions, agent_sessions, node_runs, flow_runs, mcp_servers, agent_profiles, flow_versions, flows, card_events, cards, card_types, projects, lanes")
+	_, err := pool.Exec(context.Background(), "TRUNCATE jobs, flow_branches, flow_splits, node_run_output, artifact_messages, artifact_versions, artifacts, questions, agent_sessions, node_runs, flow_runs, mcp_servers, agent_profiles, flow_versions, flows, card_events, cards, card_types, projects, lanes")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,4 +395,67 @@ func (f *failing) ListDependentCards(ctx context.Context, id uuid.UUID) ([]sqlcg
 		return nil, err
 	}
 	return f.Querier.ListDependentCards(ctx, id)
+}
+
+func (f *failing) InsertFlowSplit(ctx context.Context, arg sqlcgen.InsertFlowSplitParams) error {
+	if err := f.hit("InsertFlowSplit"); err != nil {
+		return err
+	}
+	return f.Querier.InsertFlowSplit(ctx, arg)
+}
+
+func (f *failing) InsertFlowBranch(ctx context.Context, arg sqlcgen.InsertFlowBranchParams) (sqlcgen.FlowBranch, error) {
+	if err := f.hit("InsertFlowBranch"); err != nil {
+		return sqlcgen.FlowBranch{}, err
+	}
+	return f.Querier.InsertFlowBranch(ctx, arg)
+}
+
+func (f *failing) GetFlowBranch(ctx context.Context, id uuid.UUID) (sqlcgen.FlowBranch, error) {
+	if err := f.hit("GetFlowBranch"); err != nil {
+		return sqlcgen.FlowBranch{}, err
+	}
+	return f.Querier.GetFlowBranch(ctx, id)
+}
+
+func (f *failing) GetFlowSplitForUpdate(ctx context.Context, id uuid.UUID) (sqlcgen.FlowSplit, error) {
+	if err := f.hit("GetFlowSplitForUpdate"); err != nil {
+		return sqlcgen.FlowSplit{}, err
+	}
+	return f.Querier.GetFlowSplitForUpdate(ctx, id)
+}
+
+func (f *failing) EndFlowBranch(ctx context.Context, arg sqlcgen.EndFlowBranchParams) (int64, error) {
+	if err := f.hit("EndFlowBranch"); err != nil {
+		return 0, err
+	}
+	return f.Querier.EndFlowBranch(ctx, arg)
+}
+
+func (f *failing) ListSplitBranches(ctx context.Context, id uuid.UUID) ([]sqlcgen.FlowBranch, error) {
+	if err := f.hit("ListSplitBranches"); err != nil {
+		return nil, err
+	}
+	return f.Querier.ListSplitBranches(ctx, id)
+}
+
+func (f *failing) SettleFlowSplit(ctx context.Context, id uuid.UUID) error {
+	if err := f.hit("SettleFlowSplit"); err != nil {
+		return err
+	}
+	return f.Querier.SettleFlowSplit(ctx, id)
+}
+
+func (f *failing) CancelSplitBranches(ctx context.Context, id uuid.UUID) ([]uuid.UUID, error) {
+	if err := f.hit("CancelSplitBranches"); err != nil {
+		return nil, err
+	}
+	return f.Querier.CancelSplitBranches(ctx, id)
+}
+
+func (f *failing) FailBranchNodeRuns(ctx context.Context, ids []uuid.UUID) error {
+	if err := f.hit("FailBranchNodeRuns"); err != nil {
+		return err
+	}
+	return f.Querier.FailBranchNodeRuns(ctx, ids)
 }

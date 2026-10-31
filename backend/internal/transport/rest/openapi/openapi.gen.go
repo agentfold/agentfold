@@ -453,6 +453,39 @@ func (e HumanReviewNodeType) Valid() bool {
 	}
 }
 
+// Defines values for JoinConfigMode.
+const (
+	All   JoinConfigMode = "all"
+	First JoinConfigMode = "first"
+)
+
+// Valid indicates whether the value is a known member of the JoinConfigMode enum.
+func (e JoinConfigMode) Valid() bool {
+	switch e {
+	case All:
+		return true
+	case First:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for JoinNodeType.
+const (
+	Join JoinNodeType = "join"
+)
+
+// Valid indicates whether the value is a known member of the JoinNodeType enum.
+func (e JoinNodeType) Valid() bool {
+	switch e {
+	case Join:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for McpServerTransport.
 const (
 	McpServerTransportHttp  McpServerTransport = "http"
@@ -609,6 +642,21 @@ const (
 func (e SetPropertyNodeType) Valid() bool {
 	switch e {
 	case SetProperty:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SplitNodeType.
+const (
+	Split SplitNodeType = "split"
+)
+
+// Valid indicates whether the value is a known member of the SplitNodeType enum.
+func (e SplitNodeType) Valid() bool {
+	switch e {
+	case Split:
 		return true
 	default:
 		return false
@@ -1213,6 +1261,27 @@ type HumanReviewNode struct {
 // HumanReviewNodeType defines model for HumanReviewNode.Type.
 type HumanReviewNodeType string
 
+// JoinConfig Closes the branches of a split. Mode all (the default) waits for every branch and leaves by some_failed if one failed, else by all_done; with fail_fast it leaves by some_failed at the first failure, canceling the other branches. Mode first goes on by all_done with the first branch to arrive, canceling the others (by some_failed when they all fail). It hands on {"output": {"branches": {<name>: <output>}, "failed": {<name>: <error>}}}.
+type JoinConfig struct {
+	FailFast *bool           `json:"fail_fast,omitempty"`
+	Mode     *JoinConfigMode `json:"mode,omitempty"`
+}
+
+// JoinConfigMode defines model for JoinConfig.Mode.
+type JoinConfigMode string
+
+// JoinNode defines model for JoinNode.
+type JoinNode struct {
+	// Config Closes the branches of a split. Mode all (the default) waits for every branch and leaves by some_failed if one failed, else by all_done; with fail_fast it leaves by some_failed at the first failure, canceling the other branches. Mode first goes on by all_done with the first branch to arrive, canceling the others (by some_failed when they all fail). It hands on {"output": {"branches": {<name>: <output>}, "failed": {<name>: <error>}}}.
+	Config   JoinConfig   `json:"config"`
+	Id       string       `json:"id"`
+	Position Position     `json:"position"`
+	Type     JoinNodeType `json:"type"`
+}
+
+// JoinNodeType defines model for JoinNode.Type.
+type JoinNodeType string
+
 // Lane defines model for Lane.
 type Lane struct {
 	// Color Empty or "#rrggbb".
@@ -1360,9 +1429,12 @@ type NodeOutputKind string
 // NodeRun One execution of a node within a flow run.
 type NodeRun struct {
 	// Approval A human_review node that approves the output of the node before.
-	Approval   bool  `json:"approval"`
-	CacheRead  int64 `json:"cache_read"`
-	CacheWrite int64 `json:"cache_write"`
+	Approval bool `json:"approval"`
+
+	// Branch The parallel branch the node ran in, as split.branch (nested: split.a/inner.b); empty on the main path of the run.
+	Branch     string `json:"branch"`
+	CacheRead  int64  `json:"cache_read"`
+	CacheWrite int64  `json:"cache_write"`
 
 	// CostUsd As reported by Claude Code; an estimate with a subscription token.
 	CostUsd   float64   `json:"cost_usd"`
@@ -1475,6 +1547,23 @@ type SetPropertyNode struct {
 
 // SetPropertyNodeType defines model for SetPropertyNode.Type.
 type SetPropertyNodeType string
+
+// SplitConfig Opens a parallel branch of the run per linked output; each branch name is an output. An unlinked output is a discarded branch. Every branch reaches the same join or ends before one (an end ends only the branch, a failure leading nowhere fails it); when they all end before a join, the path the split ran in goes on ending, failed if a branch failed. Branches run http_request, transform, switch, set_property, check_property (without wait), move_card, end and nested split/join nodes. Two branch names at least, unique, with letters, digits, _ and -, are required to publish.
+type SplitConfig struct {
+	Branches *[]string `json:"branches,omitempty"`
+}
+
+// SplitNode defines model for SplitNode.
+type SplitNode struct {
+	// Config Opens a parallel branch of the run per linked output; each branch name is an output. An unlinked output is a discarded branch. Every branch reaches the same join or ends before one (an end ends only the branch, a failure leading nowhere fails it); when they all end before a join, the path the split ran in goes on ending, failed if a branch failed. Branches run http_request, transform, switch, set_property, check_property (without wait), move_card, end and nested split/join nodes. Two branch names at least, unique, with letters, digits, _ and -, are required to publish.
+	Config   SplitConfig   `json:"config"`
+	Id       string        `json:"id"`
+	Position Position      `json:"position"`
+	Type     SplitNodeType `json:"type"`
+}
+
+// SplitNodeType defines model for SplitNode.Type.
+type SplitNodeType string
 
 // SwitchCase defines model for SwitchCase.
 type SwitchCase struct {
@@ -2005,6 +2094,74 @@ func (t *FlowNode) MergeSwitchNode(v SwitchNode) error {
 	return err
 }
 
+// AsSplitNode returns the union data inside the FlowNode as a SplitNode
+func (t FlowNode) AsSplitNode() (SplitNode, error) {
+	var body SplitNode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSplitNode overwrites any union data inside the FlowNode as the provided SplitNode
+func (t *FlowNode) FromSplitNode(v SplitNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"split"}`))
+	t.union = b
+	return err
+}
+
+// MergeSplitNode performs a merge with any union data inside the FlowNode, using the provided SplitNode
+func (t *FlowNode) MergeSplitNode(v SplitNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"split"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsJoinNode returns the union data inside the FlowNode as a JoinNode
+func (t FlowNode) AsJoinNode() (JoinNode, error) {
+	var body JoinNode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromJoinNode overwrites any union data inside the FlowNode as the provided JoinNode
+func (t *FlowNode) FromJoinNode(v JoinNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"join"}`))
+	t.union = b
+	return err
+}
+
+// MergeJoinNode performs a merge with any union data inside the FlowNode, using the provided JoinNode
+func (t *FlowNode) MergeJoinNode(v JoinNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"join"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 // AsEndNode returns the union data inside the FlowNode as a EndNode
 func (t FlowNode) AsEndNode() (EndNode, error) {
 	var body EndNode
@@ -2065,10 +2222,14 @@ func (t FlowNode) ValueByDiscriminator() (interface{}, error) {
 		return t.AsHTTPRequestNode()
 	case "human_review":
 		return t.AsHumanReviewNode()
+	case "join":
+		return t.AsJoinNode()
 	case "move_card":
 		return t.AsMoveCardNode()
 	case "set_property":
 		return t.AsSetPropertyNode()
+	case "split":
+		return t.AsSplitNode()
 	case "switch":
 		return t.AsSwitchNode()
 	case "transform":

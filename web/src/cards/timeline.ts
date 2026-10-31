@@ -27,7 +27,8 @@ export function describeEvent(
   const p = event.payload
   const flow = `Fluxo ${str(p.flow_name)}`
   const kind = str(p.node_type)
-  const node = `${(kindLabels as Record<string, string | undefined>)[kind] ?? kind} ${str(p.node_key)}`
+  const branch = p.branch ? ` (ramo ${str(p.branch)})` : ''
+  const node = `${(kindLabels as Record<string, string | undefined>)[kind] ?? kind} ${str(p.node_key)}${branch}`
   const round = Number(p.iteration) > 1 ? ` (${String(p.iteration)}ª vez)` : ''
   const error = p.error ? `: ${str(p.error)}` : ''
   switch (event.type) {

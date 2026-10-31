@@ -30,7 +30,7 @@ type Store interface {
 	GetFlowRun(ctx context.Context, id uuid.UUID) (domain.FlowRun, error)
 	FinishFlowRun(ctx context.Context, id uuid.UUID, status domain.RunStatus, msg string) (domain.FlowRun, error)
 	CountNodeRuns(ctx context.Context, flowRunID uuid.UUID, nodeKey string) (int, error)
-	CreateNodeRun(ctx context.Context, flowRunID uuid.UUID, nodeKey string, iteration int, input json.RawMessage) (domain.NodeRun, error)
+	CreateBranchNodeRun(ctx context.Context, flowRunID uuid.UUID, branch *domain.Branch, nodeKey string, iteration int, input json.RawMessage) (domain.NodeRun, error)
 	FinishNodeRun(ctx context.Context, id uuid.UUID, r domain.NodeResult) (domain.NodeRun, error)
 	ContinueNodeRun(ctx context.Context, id uuid.UUID) (domain.NodeRun, bool, error)
 	GetNodeRun(ctx context.Context, id uuid.UUID) (domain.NodeRun, error)
@@ -50,6 +50,9 @@ type Store interface {
 	WaitNodeRun(ctx context.Context, id uuid.UUID) (domain.NodeRun, error)
 	WaitingNodeRun(ctx context.Context, cardID uuid.UUID) (domain.NodeRun, error)
 	SettleWait(ctx context.Context, id uuid.UUID, r domain.NodeResult) (domain.NodeRun, bool, error)
+	StartSplit(ctx context.Context, split domain.NodeRun, parent *domain.Branch, names []string) ([]domain.Branch, error)
+	GetBranch(ctx context.Context, id uuid.UUID) (domain.Branch, error)
+	SettleBranch(ctx context.Context, id uuid.UUID, end domain.BranchEnd, decide func([]domain.Branch) bool) (domain.Settlement, error)
 }
 
 // Publisher announces the changes the engine makes to the board.
@@ -174,18 +177,27 @@ func (e *Engine) start(ctx context.Context, flow domain.RunnableFlow, cardID uui
 	if err != nil {
 		return err
 	}
-	next, err := e.route(ctx, r, triggerNode, "next", "")
+	next, err := e.route(ctx, r, nil, triggerNode, "next", "")
 	if err != nil || next == "" {
 		return err
 	}
-	return e.advance(ctx, r, next, nil)
+	return e.advance(ctx, r, nil, next, nil)
 }
 
-// continueFrom follows the output of a finished agent node run.
+// continueFrom follows the output of a finished node run, in its branch
+// if it ran in one that is still active.
 func (e *Engine) continueFrom(ctx context.Context, nodeRunID uuid.UUID) error {
 	nr, ok, err := e.Store.ContinueNodeRun(ctx, nodeRunID)
 	if err != nil || !ok {
 		return err
+	}
+	var br *domain.Branch
+	if nr.BranchID != nil {
+		b, err := e.Store.GetBranch(ctx, *nr.BranchID)
+		if err != nil || b.Status != domain.BranchActive {
+			return err
+		}
+		br = &b
 	}
 	fr, err := e.Store.GetFlowRun(ctx, nr.FlowRunID)
 	if err != nil {
@@ -203,16 +215,17 @@ func (e *Engine) continueFrom(ctx context.Context, nodeRunID uuid.UUID) error {
 	if !fr.Status.Active() {
 		return nil // the run ended meanwhile
 	}
-	next, err := e.route(ctx, r, nr.NodeKey, nr.OutputHandle, nr.Error)
+	next, err := e.route(ctx, r, br, nr.NodeKey, nr.OutputHandle, nr.Error)
 	if err != nil || next == "" {
 		return err
 	}
-	return e.advance(ctx, r, next, nr.Output)
+	return e.advance(ctx, r, br, next, nr.Output)
 }
 
-// advance enters the node key, then the nodes after it, until the run ends
-// or waits for an agent. input is the output of the node before.
-func (e *Engine) advance(ctx context.Context, r *run, key string, input json.RawMessage) error {
+// advance enters the node key, then the nodes after it, until the run (or
+// the branch br, nil on the main path) ends or waits for an agent. input is
+// the output of the node before.
+func (e *Engine) advance(ctx context.Context, r *run, br *domain.Branch, key string, input json.RawMessage) error {
 	for step := 0; key != ""; step++ {
 		if step == maxSteps {
 			return e.finish(ctx, r, domain.RunFailed, fmt.Sprintf("o fluxo passou por %d nós seguidos sem agente; verifique se há um ciclo", maxSteps))
@@ -221,9 +234,15 @@ func (e *Engine) advance(ctx context.Context, r *run, key string, input json.Raw
 		if !ok {
 			return e.finish(ctx, r, domain.RunFailed, fmt.Sprintf("o nó %s não existe na versão do fluxo", key))
 		}
-		nr, err := e.enter(ctx, r, node, input)
+		if node.Type == domain.NodeJoin {
+			return e.arrive(ctx, r, br, input)
+		}
+		nr, err := e.enter(ctx, r, br, node, input)
 		if err != nil {
 			return err
+		}
+		if node.Type == domain.NodeSplit {
+			return e.split(ctx, r, br, node, nr, input)
 		}
 		if node.Type == domain.NodeAgent {
 			return e.queueAgent(ctx, r, node, nr, input)
@@ -250,9 +269,9 @@ func (e *Engine) advance(ctx context.Context, r *run, key string, input json.Raw
 			return err
 		}
 		if node.Type == domain.NodeEnd {
-			return e.finish(ctx, r, domain.RunDone, "")
+			return e.end(ctx, r, br, domain.BranchEnd{Status: domain.BranchDone})
 		}
-		if key, err = e.route(ctx, r, key, nr.OutputHandle, nr.Error); err != nil {
+		if key, err = e.route(ctx, r, br, key, nr.OutputHandle, nr.Error); err != nil {
 			return err
 		}
 		input = nr.Output
@@ -260,18 +279,19 @@ func (e *Engine) advance(ctx context.Context, r *run, key string, input json.Raw
 	return nil
 }
 
-// enter records that the run entered a node.
-func (e *Engine) enter(ctx context.Context, r *run, node domain.Node, input json.RawMessage) (domain.NodeRun, error) {
+// enter records that the run entered a node, in the branch br (nil on the
+// main path).
+func (e *Engine) enter(ctx context.Context, r *run, br *domain.Branch, node domain.Node, input json.RawMessage) (domain.NodeRun, error) {
 	count, err := e.Store.CountNodeRuns(ctx, r.ID, node.ID)
 	if err != nil {
 		return domain.NodeRun{}, err
 	}
-	nr, err := e.Store.CreateNodeRun(ctx, r.ID, node.ID, count+1, input)
+	nr, err := e.Store.CreateBranchNodeRun(ctx, r.ID, br, node.ID, count+1, input)
 	if err != nil {
 		return domain.NodeRun{}, err
 	}
 	return nr, e.timeline(ctx, r.CardID, domain.NodeStarted, nodeStarted{
-		FlowRunID: r.ID, NodeKey: node.ID, NodeType: node.Type, Iteration: nr.Iteration,
+		FlowRunID: r.ID, NodeKey: node.ID, NodeType: node.Type, Iteration: nr.Iteration, Branch: nr.Branch,
 	})
 }
 
@@ -354,17 +374,18 @@ func failed(msg string) domain.NodeResult {
 }
 
 // route returns the node an output of key leads to. When it leads nowhere
-// the run ends: failed if the node failed, done otherwise.
-func (e *Engine) route(ctx context.Context, r *run, key, handle, nodeErr string) (string, error) {
+// the run, or the branch br, ends: failed if the node failed, done
+// otherwise.
+func (e *Engine) route(ctx context.Context, r *run, br *domain.Branch, key, handle, nodeErr string) (string, error) {
 	for _, edge := range r.graph.Edges {
 		if edge.Source == key && edge.SourceHandle == handle && handle != "" {
 			return edge.Target, nil
 		}
 	}
 	if nodeErr != "" || handle == "failed" {
-		return "", e.finish(ctx, r, domain.RunFailed, nodeErr)
+		return "", e.end(ctx, r, br, domain.BranchEnd{Status: domain.BranchFailed, Error: nodeErr})
 	}
-	return "", e.finish(ctx, r, domain.RunDone, "")
+	return "", e.end(ctx, r, br, domain.BranchEnd{Status: domain.BranchDone})
 }
 
 // finish ends the run.
@@ -398,7 +419,7 @@ func (e *Engine) finish(ctx context.Context, r *run, status domain.RunStatus, ms
 // nodeFinished records the end of a node run in the card timeline.
 func (e *Engine) nodeFinished(ctx context.Context, r *run, nr domain.NodeRun, typ domain.NodeType) error {
 	return e.timeline(ctx, r.CardID, domain.NodeFinished, nodeFinished{
-		FlowRunID: r.ID, NodeKey: nr.NodeKey, NodeType: typ, Iteration: nr.Iteration,
+		FlowRunID: r.ID, NodeKey: nr.NodeKey, NodeType: typ, Iteration: nr.Iteration, Branch: nr.Branch,
 		Status: nr.Status, OutputHandle: nr.OutputHandle, Error: nr.Error,
 	})
 }
@@ -447,12 +468,14 @@ type (
 		NodeKey   string          `json:"node_key"`
 		NodeType  domain.NodeType `json:"node_type"`
 		Iteration int             `json:"iteration"`
+		Branch    string          `json:"branch,omitempty"`
 	}
 	nodeFinished struct {
 		FlowRunID    uuid.UUID         `json:"flow_run_id"`
 		NodeKey      string            `json:"node_key"`
 		NodeType     domain.NodeType   `json:"node_type"`
 		Iteration    int               `json:"iteration"`
+		Branch       string            `json:"branch,omitempty"`
 		Status       domain.NodeStatus `json:"status"`
 		OutputHandle string            `json:"output_handle,omitempty"`
 		Error        string            `json:"error,omitempty"`

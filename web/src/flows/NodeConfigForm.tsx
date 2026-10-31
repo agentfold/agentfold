@@ -18,6 +18,8 @@ import type {
   TransformConfig,
   SwitchConfig,
   SwitchCase,
+  SplitConfig,
+  JoinConfig,
 } from '../api/client'
 import { agentKindLabels } from '../agents/labels'
 import { Button } from '../components/Button'
@@ -256,6 +258,12 @@ export function NodeConfigForm({
       return (
         <SwitchForm config={data.config as SwitchConfig} onChange={onChange} />
       )
+    case 'split':
+      return (
+        <SplitForm config={data.config as SplitConfig} onChange={onChange} />
+      )
+    case 'join':
+      return <JoinForm config={data.config as JoinConfig} onChange={onChange} />
     case 'end':
       return (
         <p className="text-sm text-slate-500">
@@ -1125,5 +1133,109 @@ function SwitchForm({ config, onChange }: SwitchFormProps) {
         Adicionar caso
       </Button>
     </fieldset>
+  )
+}
+
+interface SplitFormProps {
+  config: SplitConfig
+  onChange: (config: SplitConfig) => void
+}
+
+/** Edits the branches of a Split: each one is an output, run in parallel. */
+function SplitForm({ config, onChange }: SplitFormProps) {
+  const branches = config.branches ?? []
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="text-xs font-medium text-slate-600">Ramos</legend>
+      <p className="text-xs text-slate-500">
+        Cada ramo ligado roda em paralelo até o mesmo Juntar, ou até um Fim (que
+        encerra só o ramo); um ramo sem ligação é descartado. Nos ramos rodam
+        HTTP Request, Transformar, Condição, Definir e Conferir propriedade (sem
+        esperar), Mover card e outro Paralelo; agentes ainda não. Renomear um
+        ramo desfaz a ligação dele.
+      </p>
+      {branches.map((name, i) => (
+        <div
+          key={i}
+          role="group"
+          aria-label={`Ramo ${String(i + 1)}`}
+          className="grid grid-cols-[1fr_auto] items-end gap-2"
+        >
+          <TextField
+            label="Nome"
+            value={name}
+            onChange={(next) => {
+              onChange({
+                ...config,
+                branches: branches.map((b, j) => (j === i ? next : b)),
+              })
+            }}
+          />
+          <Button
+            variant="ghost"
+            onClick={() => {
+              onChange({
+                ...config,
+                branches: branches.filter((_, j) => j !== i),
+              })
+            }}
+          >
+            Remover
+          </Button>
+        </div>
+      ))}
+      <Button
+        variant="ghost"
+        className="self-start"
+        onClick={() => {
+          onChange({ ...config, branches: [...branches, ''] })
+        }}
+      >
+        Adicionar ramo
+      </Button>
+    </fieldset>
+  )
+}
+
+interface JoinFormProps {
+  config: JoinConfig
+  onChange: (config: JoinConfig) => void
+}
+
+const joinModes = {
+  all: { mode: 'all', fail_fast: undefined },
+  fail_fast: { mode: 'all', fail_fast: true },
+  first: { mode: 'first', fail_fast: undefined },
+} as const satisfies Record<string, JoinConfig>
+
+/** Chooses how a Join closes the branches of its Split. */
+function JoinForm({ config, onChange }: JoinFormProps) {
+  const current =
+    config.mode === 'first' ? 'first' : config.fail_fast ? 'fail_fast' : 'all'
+  return (
+    <div className="flex flex-col gap-2">
+      <SelectField
+        label="Como juntar"
+        value={current}
+        onChange={(mode) => {
+          onChange({ ...config, ...joinModes[mode as keyof typeof joinModes] })
+        }}
+        options={[
+          { value: 'all', label: 'Esperar todos os ramos' },
+          {
+            value: 'fail_fast',
+            label: 'Esperar todos; parar na primeira falha',
+          },
+          { value: 'first', label: 'Seguir com o primeiro que chegar' },
+        ]}
+      />
+      <p className="text-xs text-slate-500">
+        Sai por &quot;algum falhou&quot; quando um ramo falha (no modo do
+        primeiro, só se nenhum chegar) e por &quot;todos concluídos&quot; nos
+        outros casos. Os ramos que não terminaram são cancelados quando o Juntar
+        segue antes deles. A saída traz {'branches.<ramo>'} com a saída de cada
+        ramo que chegou, e {'failed.<ramo>'} com o erro dos que falharam.
+      </p>
+    </div>
   )
 }

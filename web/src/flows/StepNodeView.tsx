@@ -21,6 +21,8 @@ const accents: Record<StepData['kind'], string> = {
   http_request: 'bg-teal-600',
   transform: 'bg-emerald-600',
   switch: 'bg-orange-500',
+  split: 'bg-fuchsia-500',
+  join: 'bg-fuchsia-700',
   end: 'bg-slate-500',
 }
 

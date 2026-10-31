@@ -81,6 +81,11 @@ describe('describe', () => {
       'Agente dev iniciado (2ª vez)',
     ],
     [
+      'node.started',
+      { node_key: 'calc', node_type: 'transform', iteration: 1, branch: 's.a' },
+      'Transformar calc (ramo s.a) iniciado',
+    ],
+    [
       'node.finished',
       {
         node_key: 'm',

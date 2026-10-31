@@ -80,7 +80,7 @@ func toQuestion(q domain.Question) openapi.Question {
 
 func toNodeRun(n service.RunNode) openapi.NodeRun {
 	out := openapi.NodeRun{
-		Id: n.ID, FlowRunId: n.FlowRunID, NodeKey: n.NodeKey, NodeType: string(n.Type), Iteration: n.Iteration,
+		Id: n.ID, FlowRunId: n.FlowRunID, NodeKey: n.NodeKey, NodeType: string(n.Type), Iteration: n.Iteration, Branch: n.Branch,
 		Status: openapi.NodeRunStatus(n.Status), OutputHandle: n.OutputHandle, Error: n.Error, Summary: n.Summary,
 		Decision: openapi.NodeRunDecision(n.Decision), Feedback: n.Feedback, Approval: n.Approval,
 		TokensIn: n.TokensIn, TokensOut: n.TokensOut, CacheRead: n.CacheRead, CacheWrite: n.CacheWrite,

@@ -46,8 +46,12 @@ type fakeStore struct {
 	cardRuns  map[uuid.UUID][]domain.FlowRun
 	runNodes  map[uuid.UUID][]domain.NodeRun
 	unsettled bool
-	errs      map[string]error
-	failAfter map[string]int
+	// branches (in creation order) and the splits that settled.
+	branches    map[uuid.UUID]domain.Branch
+	branchOrder []uuid.UUID
+	settled     map[uuid.UUID]bool
+	errs        map[string]error
+	failAfter   map[string]int
 }
 
 func newFakeStore() *fakeStore {
@@ -58,6 +62,8 @@ func newFakeStore() *fakeStore {
 		runs:      map[uuid.UUID]domain.FlowRun{},
 		nodeRuns:  map[uuid.UUID]domain.NodeRun{},
 		continued: map[uuid.UUID]bool{},
+		branches:  map[uuid.UUID]domain.Branch{},
+		settled:   map[uuid.UUID]bool{},
 		errs:      map[string]error{},
 		failAfter: map[string]int{},
 	}
@@ -185,11 +191,14 @@ func (f *fakeStore) CountNodeRuns(_ context.Context, flowRunID uuid.UUID, nodeKe
 	return n, f.err("CountNodeRuns")
 }
 
-func (f *fakeStore) CreateNodeRun(_ context.Context, flowRunID uuid.UUID, nodeKey string, iteration int, input json.RawMessage) (domain.NodeRun, error) {
+func (f *fakeStore) CreateBranchNodeRun(_ context.Context, flowRunID uuid.UUID, branch *domain.Branch, nodeKey string, iteration int, input json.RawMessage) (domain.NodeRun, error) {
 	if err := f.err("CreateNodeRun"); err != nil {
 		return domain.NodeRun{}, err
 	}
 	nr := domain.NodeRun{ID: uuid.New(), FlowRunID: flowRunID, NodeKey: nodeKey, Iteration: iteration, Status: domain.NodeQueued, Input: input}
+	if branch != nil {
+		nr.BranchID, nr.Branch = &branch.ID, branch.Label
+	}
 	f.nodeRuns[nr.ID] = nr
 	f.order = append(f.order, nr.ID)
 	return nr, nil

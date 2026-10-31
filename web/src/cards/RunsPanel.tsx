@@ -113,6 +113,11 @@ function NodeRunItem({ node, cardId }: { node: NodeRun; cardId: string }) {
             {String(node.iteration)}ª vez
           </span>
         )}
+        {node.branch && (
+          <span className="rounded-full bg-fuchsia-50 px-2 py-0.5 font-mono text-xs text-fuchsia-800">
+            ramo {node.branch}
+          </span>
+        )}
         <span
           className={`rounded-full px-2 py-0.5 text-xs font-medium ${nodeStatusStyle[node.status]}`}
         >

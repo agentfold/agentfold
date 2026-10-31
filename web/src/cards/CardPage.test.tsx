@@ -50,7 +50,8 @@ describe('CardPage', () => {
 
   it('shows the card, its questions and its run', async () => {
     const dev = nodeRun('dev', 'agent', { summary: 'did it' })
-    setup((id) => [runDetail(id, 'waiting', [dev])])
+    const calc = nodeRun('calc', 'transform', { branch: 's.a' })
+    setup((id) => [runDetail(id, 'waiting', [dev, calc])])
     expect(
       await screen.findByRole('heading', { name: 'Login' }),
     ).toBeInTheDocument()
@@ -62,6 +63,12 @@ describe('CardPage', () => {
     expect(tab('Execução')).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('article', { name: 'dev 1' })).toHaveTextContent(
       'Resumo: did it',
+    )
+    expect(
+      screen.getByRole('article', { name: 'dev 1' }),
+    ).not.toHaveTextContent('ramo')
+    expect(screen.getByRole('article', { name: 'calc 1' })).toHaveTextContent(
+      'ramo s.a',
     )
   })
 

@@ -199,6 +199,7 @@ func runWorker(ctx context.Context, args []string, stdout, stderr io.Writer) err
 			agent.JobKind:          flows.HandleAgent,
 			domain.JobChildChanged: flows.HandleChildChanged,
 			domain.JobFlowContinue: flows.HandleContinue,
+			domain.JobFlowBranch:   flows.HandleBranch,
 			domain.JobFlowRetry:    flows.HandleRetry,
 			domain.JobHTTPRequest:  flows.HandleHTTP,
 		},

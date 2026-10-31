@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -131,7 +132,6 @@ func (s *stack) flow(t *testing.T, nodes []domain.Node, extra ...domain.Edge) {
 // flowOn is flow with its name and the lane that triggers it.
 func (s *stack) flowOn(t *testing.T, name string, lane uuid.UUID, nodes []domain.Node, extra ...domain.Edge) {
 	t.Helper()
-	ctx := context.Background()
 	graph := domain.Graph{Nodes: append([]domain.Node{{
 		ID: "t", Type: domain.NodeTrigger, Config: fmt.Appendf(nil, `{"event":"card_entered_lane","lane_id":%q}`, lane),
 	}}, nodes...)}
@@ -141,6 +141,13 @@ func (s *stack) flowOn(t *testing.T, name string, lane uuid.UUID, nodes []domain
 		graph.Edges = append(graph.Edges, domain.Edge{ID: prev.ID + "." + handle, Source: prev.ID, SourceHandle: handle, Target: graph.Nodes[i].ID})
 	}
 	graph.Edges = append(graph.Edges, extra...)
+	s.publish(t, name, graph)
+}
+
+// publish creates, publishes and enables a flow with graph.
+func (s *stack) publish(t *testing.T, name string, graph domain.Graph) {
+	t.Helper()
+	ctx := context.Background()
 	f, err := s.board.CreateFlow(ctx, name)
 	if err != nil {
 		t.Fatal(err)
@@ -644,6 +651,64 @@ func TestHTTPRequestEndToEnd(t *testing.T) {
 	var output string
 	if err := s.pool.QueryRow(context.Background(), `SELECT output::text FROM node_runs WHERE node_key = 'call'`).Scan(&output); err != nil || output != `{"output": {"body": {"id": 42}, "status": 200}}` {
 		t.Fatalf("output %s, %v", output, err)
+	}
+	s.stop(t)
+}
+
+// TestParallelBranchesEndToEnd: a split runs a Transform and an HTTP
+// request in parallel branches, each walked by its own job; the join
+// hands both outputs on once both arrive.
+func TestParallelBranchesEndToEnd(t *testing.T) {
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"total":5}`)
+	}))
+	defer endpoint.Close()
+	s := newStack(t)
+	node := func(id string, typ domain.NodeType, config string) domain.Node {
+		return domain.Node{ID: id, Type: typ, Config: json.RawMessage(config)}
+	}
+	edge := func(source, handle, target string) domain.Edge {
+		return domain.Edge{ID: source + "." + handle, Source: source, SourceHandle: handle, Target: target}
+	}
+	s.publish(t, "par", domain.Graph{
+		Nodes: []domain.Node{
+			node("t", domain.NodeTrigger, fmt.Sprintf(`{"event":"card_entered_lane","lane_id":%q}`, s.doing)),
+			node("s", domain.NodeSplit, `{"branches":["calc","call"]}`),
+			node("calc", domain.NodeTransform, `{"output":{"n":"=2 * 3"}}`),
+			node("call", domain.NodeHTTPRequest, fmt.Sprintf(`{"method":"GET","url":%q}`, endpoint.URL)),
+			node("j", domain.NodeJoin, `{}`),
+			node("sum", domain.NodeTransform, `{"output":"=nodes.calc.n + nodes.call.body.total + input.branches.call.body.total"}`),
+			s.moveTo(s.done),
+		},
+		Edges: []domain.Edge{
+			edge("t", "next", "s"), edge("s", "calc", "calc"), edge("s", "call", "call"),
+			edge("calc", "next", "j"), edge("call", "success", "j"), edge("j", "all_done", "sum"), edge("sum", "next", "move"),
+		},
+	})
+	card := s.startCard(t)
+	s.waitRun(t, card, domain.RunDone)
+	rows, err := s.pool.Query(context.Background(), `SELECT node_key, branch, coalesce(output_handle, ''), coalesce(output::text, '') FROM node_runs ORDER BY created_at`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs := map[string]string{}
+	for rows.Next() {
+		var key, branch, handle, output string
+		if err := rows.Scan(&key, &branch, &handle, &output); err != nil {
+			t.Fatal(err)
+		}
+		runs[key] = branch + " " + handle + " " + output
+	}
+	want := map[string]string{
+		"s":    "  ",
+		"calc": `s.calc next {"output": {"n": 6}}`,
+		"call": `s.call success {"output": {"body": {"total": 5}, "status": 200}}`,
+		"j":    ` all_done {"output": {"branches": {"calc": {"n": 6}, "call": {"body": {"total": 5}, "status": 200}}}}`,
+		"sum":  ` next {"output": 16}`,
+		"move": ` next {"output": 16}`,
+	}
+	if !maps.Equal(runs, want) {
+		t.Fatalf("node runs %q; worker log: %s", runs, s.workerErr.String())
 	}
 	s.stop(t)
 }

@@ -198,6 +198,7 @@ export function nodeRun(
     id: newId(),
     flow_run_id: newId(),
     node_key: nodeKey,
+    branch: '',
     node_type: nodeType,
     iteration: 1,
     status: 'done',

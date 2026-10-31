@@ -148,8 +148,12 @@ type NodeRun struct {
 	StructuredOutput json.RawMessage
 	// Decision is how a gateway decided, approved or rejected; empty
 	// otherwise. Feedback is the reason or what must change.
-	Decision   string
-	Feedback   string
+	Decision string
+	Feedback string
+	// BranchID is the branch of a Split the node ran in, nil on the main
+	// path of the run; Branch is its label.
+	BranchID   *uuid.UUID
+	Branch     string
 	CreatedAt  time.Time
 	StartedAt  *time.Time
 	FinishedAt *time.Time

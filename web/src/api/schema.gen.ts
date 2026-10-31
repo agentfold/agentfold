@@ -779,6 +779,8 @@ export interface components {
             node_type: string;
             /** @description How many times the run entered the node (gateway rejections re-enter agents). */
             iteration: number;
+            /** @description The parallel branch the node ran in, as split.branch (nested: split.a/inner.b); empty on the main path of the run. */
+            branch: string;
             /**
              * @description waiting is a wait_children or check_property node; awaiting_review a human_review node.
              * @enum {string}
@@ -955,7 +957,7 @@ export interface components {
             y: number;
         };
         /** @description A step of the flow. Configs may be incomplete in drafts; publishing reports what is missing. */
-        FlowNode: components["schemas"]["TriggerNode"] | components["schemas"]["AgentNode"] | components["schemas"]["MoveCardNode"] | components["schemas"]["CreateCardsNode"] | components["schemas"]["WaitChildrenNode"] | components["schemas"]["HumanReviewNode"] | components["schemas"]["SetPropertyNode"] | components["schemas"]["CheckPropertyNode"] | components["schemas"]["HTTPRequestNode"] | components["schemas"]["TransformNode"] | components["schemas"]["SwitchNode"] | components["schemas"]["EndNode"];
+        FlowNode: components["schemas"]["TriggerNode"] | components["schemas"]["AgentNode"] | components["schemas"]["MoveCardNode"] | components["schemas"]["CreateCardsNode"] | components["schemas"]["WaitChildrenNode"] | components["schemas"]["HumanReviewNode"] | components["schemas"]["SetPropertyNode"] | components["schemas"]["CheckPropertyNode"] | components["schemas"]["HTTPRequestNode"] | components["schemas"]["TransformNode"] | components["schemas"]["SwitchNode"] | components["schemas"]["SplitNode"] | components["schemas"]["JoinNode"] | components["schemas"]["EndNode"];
         TriggerNode: {
             id: string;
             /**
@@ -1065,6 +1067,26 @@ export interface components {
             type: "switch";
             position: components["schemas"]["Position"];
             config: components["schemas"]["SwitchConfig"];
+        };
+        SplitNode: {
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "split";
+            position: components["schemas"]["Position"];
+            config: components["schemas"]["SplitConfig"];
+        };
+        JoinNode: {
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "join";
+            position: components["schemas"]["Position"];
+            config: components["schemas"]["JoinConfig"];
         };
         EndNode: {
             id: string;
@@ -1226,6 +1248,16 @@ export interface components {
         /** @description Goes on by the output of the first case whose expression (expr-lang, reading card, input and nodes as in TransformConfig) is true, else by else, handing on the input. A condition that fails or is neither true nor false leaves by failed. Its outputs are the case names, else and failed. One case at least is required to publish; names take letters, digits, _ and -, are unique and not else or failed. */
         SwitchConfig: {
             cases?: components["schemas"]["SwitchCase"][];
+        };
+        /** @description Opens a parallel branch of the run per linked output; each branch name is an output. An unlinked output is a discarded branch. Every branch reaches the same join or ends before one (an end ends only the branch, a failure leading nowhere fails it); when they all end before a join, the path the split ran in goes on ending, failed if a branch failed. Branches run http_request, transform, switch, set_property, check_property (without wait), move_card, end and nested split/join nodes. Two branch names at least, unique, with letters, digits, _ and -, are required to publish. */
+        SplitConfig: {
+            branches?: string[];
+        };
+        /** @description Closes the branches of a split. Mode all (the default) waits for every branch and leaves by some_failed if one failed, else by all_done; with fail_fast it leaves by some_failed at the first failure, canceling the other branches. Mode first goes on by all_done with the first branch to arrive, canceling the others (by some_failed when they all fail). It hands on {"output": {"branches": {<name>: <output>}, "failed": {<name>: <error>}}}. */
+        JoinConfig: {
+            /** @enum {string} */
+            mode?: "all" | "first";
+            fail_fast?: boolean;
         };
         SwitchCase: {
             name: string;

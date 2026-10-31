@@ -84,6 +84,8 @@ describe('newStep', () => {
     ['http_request', { method: 'POST', url: '' }],
     ['transform', { output: { resultado: '= input' } }],
     ['switch', { cases: [{ name: 'sim', expression: '' }] }],
+    ['split', { branches: ['a', 'b'] }],
+    ['join', {}],
     ['end', {}],
   ] as const)('gives %s nodes a default config', (kind, config) => {
     expect(defaultConfig(kind)).toEqual(config)
@@ -241,6 +243,20 @@ describe('summary', () => {
       },
       'Casos: alto, erro',
     ],
+    [{ kind: 'split', config: {} }, 'Sem ramos'],
+    [
+      { kind: 'split', config: { branches: ['a', 'b'] } },
+      'Ramos em paralelo: a, b',
+    ],
+    [{ kind: 'join', config: {} }, 'Espera todos os ramos'],
+    [
+      { kind: 'join', config: { mode: 'all', fail_fast: true } },
+      'Espera todos os ramos; para na primeira falha',
+    ],
+    [
+      { kind: 'join', config: { mode: 'first' } },
+      'Segue com o primeiro ramo que chegar',
+    ],
     [{ kind: 'end', config: {} }, 'Encerra o fluxo'],
   ] as const)('describes %j', (data, want) => {
     expect(summary(data as StepData)).toBe(want)
@@ -268,6 +284,9 @@ describe('nodeOutputs', () => {
     [{ kind: 'http_request', config: {} }, ['success', 'failed']],
     [{ kind: 'transform', config: {} }, ['next', 'failed']],
     [{ kind: 'switch', config: {} }, ['else', 'failed']],
+    [{ kind: 'split', config: {} }, []],
+    [{ kind: 'split', config: { branches: ['a', 'b'] } }, ['a', 'b']],
+    [{ kind: 'join', config: {} }, ['all_done', 'some_failed']],
     [
       { kind: 'switch', config: { cases: [{ name: 'a', expression: '' }] } },
       ['a', 'else', 'failed'],

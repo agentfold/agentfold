@@ -57,6 +57,8 @@ func toNodeRun(r sqlcgen.NodeRun) domain.NodeRun {
 			Turns:      int(r.Turns),
 			DurationMS: r.DurationMs,
 		},
+		BranchID:   r.BranchID,
+		Branch:     r.Branch,
 		CreatedAt:  r.CreatedAt,
 		StartedAt:  r.StartedAt,
 		FinishedAt: r.FinishedAt,
@@ -146,14 +148,7 @@ func (s *Store) GetFlowVersion(ctx context.Context, id uuid.UUID) (domain.FlowVe
 
 // CreateNodeRun queues the execution of a node.
 func (s *Store) CreateNodeRun(ctx context.Context, flowRunID uuid.UUID, nodeKey string, iteration int, input json.RawMessage) (domain.NodeRun, error) {
-	if input == nil {
-		input = json.RawMessage(`{}`)
-	}
-	row, err := s.q.InsertNodeRun(ctx, sqlcgen.InsertNodeRunParams{
-		FlowRunID: flowRunID, NodeKey: nodeKey, Iteration: int32(iteration), //nolint:gosec // small counter
-		Status: string(domain.NodeQueued), Input: input,
-	})
-	return mapRow(row, err, toNodeRun)
+	return s.CreateBranchNodeRun(ctx, flowRunID, nil, nodeKey, iteration, input)
 }
 
 // GetNodeRun returns one node run.

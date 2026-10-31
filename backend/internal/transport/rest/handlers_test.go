@@ -38,7 +38,7 @@ func newStub() *stubBoard {
 			ID: id1, CardID: id2, NodeRunID: id2, Text: "DB?", Answer: &answerText, AnsweredAt: &stamp, DeliveredAt: &stamp, CreatedAt: stamp,
 		},
 		nodeRun: domain.NodeRun{
-			ID: id1, FlowRunID: id2, NodeKey: "dev", Iteration: 2, Status: domain.NodeDone, OutputHandle: "done",
+			ID: id1, FlowRunID: id2, NodeKey: "dev", Iteration: 2, Branch: "s.a", Status: domain.NodeDone, OutputHandle: "done",
 			Summary: "did it", Output: []byte(`{"result":"ok"}`), CreatedAt: stamp, StartedAt: &stamp, FinishedAt: &stamp,
 			Usage: domain.Usage{TokensIn: 1, TokensOut: 2, CacheRead: 3, CacheWrite: 4, CostUSD: 0.5, Turns: 6, DurationMS: 7},
 		},
@@ -132,7 +132,7 @@ const (
 		`"node_run_id":"00000000-0000-7000-8000-000000000002","text":"DB?","answer":"Postgres",` +
 		`"answered_at":"2026-10-25T12:00:00Z","delivered":true,"created_at":"2026-10-25T12:00:00Z"}`
 	nodeRunJSON = `{"id":"00000000-0000-7000-8000-000000000001","flow_run_id":"00000000-0000-7000-8000-000000000002",` +
-		`"node_key":"dev","node_type":"agent","iteration":2,"status":"done","output_handle":"done","error":"","summary":"did it",` +
+		`"node_key":"dev","node_type":"agent","iteration":2,"branch":"s.a","status":"done","output_handle":"done","error":"","summary":"did it",` +
 		`"decision":"","feedback":"","approval":false,"input_message":"",` +
 		`"output":{"result":"ok"},"tokens_in":1,"tokens_out":2,"cache_read":3,"cache_write":4,"cost_usd":0.5,"turns":6,` +
 		`"duration_ms":7,"created_at":"2026-10-25T12:00:00Z","started_at":"2026-10-25T12:00:00Z","finished_at":"2026-10-25T12:00:00Z"}`
