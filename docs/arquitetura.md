@@ -192,6 +192,15 @@ o erro (`a chamada respondeu 404`). Um run cancelado descarta as tentativas pend
 o resultado fica só na timeline. Cada tentativa registra um evento `http.requested` na
 timeline (método, URL, status ou erro, duração e quando vem a próxima).
 
+**Transformar** monta um JSON sem agente e o repassa como `{"output": <valor>}`, saindo por
+`next`. Na configuração `output`, um texto que começa com `=` é uma expressão
+[expr-lang](https://expr-lang.org) (Go puro, sem I/O, com limite de tamanho e de memória) e
+mantém o tipo do resultado (número, lista, objeto); os outros textos aceitam placeholders. As
+expressões leem `card` (campos e `properties`), `input` e `nodes` (`nodes.dev`, ou
+`nodes["agent-1"]` para ids com `-`); uma saída é a estruturada quando há, senão o texto. Elas
+compilam na publicação (sintaxe e nomes) e, na execução, uma que falha (campo ausente, tipo
+errado) sai por `failed` com a mensagem, repassando a entrada. Roda dentro do engine, sem job.
+
 **Referências entre nós.** Os placeholders `{{nodes.<id>…}}` leem a última execução do nó no
 run (o engine carrega as execuções do run antes de renderizar); um nó que ainda não rodou sai
 vazio. O prompt do agente aceita os mesmos placeholders, preenchidos quando o fluxo entra no

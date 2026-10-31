@@ -12,6 +12,7 @@ import type {
   SetPropertyConfig,
   CheckPropertyConfig,
   HTTPRequestConfig,
+  TransformConfig,
 } from '../api/client'
 
 export type NodeKind = FlowNode['type']
@@ -25,6 +26,7 @@ export type StepConfig =
   | SetPropertyConfig
   | CheckPropertyConfig
   | HTTPRequestConfig
+  | TransformConfig
   | Record<string, never>
 
 export interface StepData extends Record<string, unknown> {
@@ -47,6 +49,7 @@ export const kindLabels: Record<NodeKind, string> = {
   set_property: 'Definir propriedade',
   check_property: 'Conferir propriedade',
   http_request: 'HTTP Request',
+  transform: 'Transformar',
   end: 'Fim',
 }
 
@@ -61,6 +64,7 @@ const outputs: Record<NodeKind, string[]> = {
   set_property: ['next'],
   check_property: ['satisfied', 'pending'],
   http_request: ['success', 'failed'],
+  transform: ['next', 'failed'],
   end: [],
 }
 
@@ -107,6 +111,8 @@ export function defaultConfig(kind: NodeKind): StepConfig {
       return { prompt: '' }
     case 'http_request':
       return { method: 'POST', url: '' }
+    case 'transform':
+      return { output: { resultado: '= input' } }
     default:
       return {}
   }
@@ -318,6 +324,15 @@ export function summary({ kind, config }: StepData): string {
       const { method = '?', url = '', mode } = config as HTTPRequestConfig
       const call = `${method} ${url === '' ? 'sem URL' : url}`
       return mode === 'fire_and_forget' ? `Dispara ${call}` : call
+    }
+    case 'transform': {
+      const { output } = config as TransformConfig
+      if (output === undefined || output === null) {
+        return 'Sem saída'
+      }
+      return typeof output === 'object' && !Array.isArray(output)
+        ? `Monta ${Object.keys(output).join(', ') || 'um objeto vazio'}`
+        : 'Monta um valor'
     }
     case 'end':
       return 'Encerra o fluxo'

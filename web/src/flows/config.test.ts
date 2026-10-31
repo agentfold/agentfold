@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatTools, parseCount, parseSchema, parseTools } from './config'
+import {
+  formatTools,
+  parseCount,
+  parseJSON,
+  parseSchema,
+  parseTools,
+} from './config'
 
 describe('tool lists', () => {
   it('parses and formats comma-separated names', () => {
@@ -31,5 +37,13 @@ describe('parseSchema', () => {
     ['{', false],
   ])('parses %j', (text, want) => {
     expect(parseSchema(text)).toEqual(want)
+  })
+})
+
+describe('parseJSON', () => {
+  it('tells JSON values from text that is not JSON', () => {
+    expect(parseJSON('false')).toEqual({ value: false })
+    expect(parseJSON('{"a": 1}')).toEqual({ value: { a: 1 } })
+    expect(parseJSON('{')).toBeNull()
   })
 })

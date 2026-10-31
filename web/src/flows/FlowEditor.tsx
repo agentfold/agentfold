@@ -60,6 +60,7 @@ const palette: NodeKind[] = [
   'set_property',
   'check_property',
   'http_request',
+  'transform',
   'end',
 ]
 

@@ -81,6 +81,7 @@ describe('newStep', () => {
     ['agent', { prompt: '' }],
     ['move_card', {}],
     ['http_request', { method: 'POST', url: '' }],
+    ['transform', { output: { resultado: '= input' } }],
     ['end', {}],
   ] as const)('gives %s nodes a default config', (kind, config) => {
     expect(defaultConfig(kind)).toEqual(config)
@@ -219,6 +220,12 @@ describe('summary', () => {
       },
       'Dispara POST https://x',
     ],
+    [{ kind: 'transform', config: {} }, 'Sem saída'],
+    [{ kind: 'transform', config: { output: null } }, 'Sem saída'],
+    [{ kind: 'transform', config: { output: { a: 1, b: 2 } } }, 'Monta a, b'],
+    [{ kind: 'transform', config: { output: {} } }, 'Monta um objeto vazio'],
+    [{ kind: 'transform', config: { output: [1] } }, 'Monta um valor'],
+    [{ kind: 'transform', config: { output: '=1' } }, 'Monta um valor'],
     [{ kind: 'end', config: {} }, 'Encerra o fluxo'],
   ] as const)('describes %j', (data, want) => {
     expect(summary(data)).toBe(want)
@@ -244,6 +251,7 @@ describe('nodeOutputs', () => {
     ],
     [{ kind: 'check_property', config: {} }, ['satisfied', 'pending']],
     [{ kind: 'http_request', config: {} }, ['success', 'failed']],
+    [{ kind: 'transform', config: {} }, ['next', 'failed']],
     [{ kind: 'http_request', config: { mode: 'fire_and_forget' } }, ['next']],
     [{ kind: 'end', config: {} }, []],
   ] as const)('lists the outputs of %j', (data, want) => {

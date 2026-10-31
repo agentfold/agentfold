@@ -1218,6 +1218,7 @@ components:
         - $ref: "#/components/schemas/SetPropertyNode"
         - $ref: "#/components/schemas/CheckPropertyNode"
         - $ref: "#/components/schemas/HTTPRequestNode"
+        - $ref: "#/components/schemas/TransformNode"
         - $ref: "#/components/schemas/EndNode"
       discriminator:
         propertyName: type
@@ -1231,6 +1232,7 @@ components:
           set_property: "#/components/schemas/SetPropertyNode"
           check_property: "#/components/schemas/CheckPropertyNode"
           http_request: "#/components/schemas/HTTPRequestNode"
+          transform: "#/components/schemas/TransformNode"
           end: "#/components/schemas/EndNode"
     TriggerNode:
       type: object
@@ -1304,6 +1306,14 @@ components:
         type: { type: string, enum: [http_request] }
         position: { $ref: "#/components/schemas/Position" }
         config: { $ref: "#/components/schemas/HTTPRequestConfig" }
+    TransformNode:
+      type: object
+      required: [id, type, position, config]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [transform] }
+        position: { $ref: "#/components/schemas/Position" }
+        config: { $ref: "#/components/schemas/TransformConfig" }
     EndNode:
       type: object
       required: [id, type, position, config]
@@ -1516,6 +1526,21 @@ components:
         key: { type: string }
         value: { type: string }
         wait: { type: boolean }
+    TransformConfig:
+      type: object
+      description: >
+        Builds a JSON value without an agent and hands it on as
+        {"output": <value>}, leaving by next. In output, strings starting
+        with = are expr-lang expressions (https://expr-lang.org) whose
+        values keep their type; other strings are text with the
+        placeholders of HTTPRequestConfig. Expressions read card (its
+        fields and properties), input (what the node before handed on: its
+        structured output, else its text) and nodes (the same for the last
+        output of each node of the run, as nodes.dev or nodes["agent-1"]).
+        An expression that fails (a missing field, a wrong type) leaves by
+        failed, handing on the input. output is required to publish.
+      properties:
+        output: {}
     HTTPRequestConfig:
       type: object
       description: >

@@ -74,6 +74,9 @@ const (
 	NodeCheckProperty NodeType = "check_property"
 	// NodeHTTPRequest calls an HTTP endpoint (HTTPRequestConfig).
 	NodeHTTPRequest NodeType = "http_request"
+	// NodeTransform builds a JSON value with expressions, without an agent
+	// (TransformConfig).
+	NodeTransform NodeType = "transform"
 )
 
 // Outputs lists the outputs (edge source handles) of each node type. Agent
@@ -96,6 +99,8 @@ var Outputs = map[NodeType][]string{
 	NodeCheckProperty: {"satisfied", "pending"},
 	// In wait mode; fire_and_forget has HTTPOutputs.
 	NodeHTTPRequest: {"success", "failed"},
+	// failed: an expression failed (a missing field, a wrong type).
+	NodeTransform: {"next", "failed"},
 }
 
 // GatewayOutputs are the outputs of an agent node with the gateway on.
@@ -555,45 +560,63 @@ func (v *validator) checkReviews(edges []Edge) {
 // them.
 var nodeID = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
-// checkReferences checks the {{nodes.<id>}} placeholders: the node must
-// exist, and should run before, on every path from the trigger. Unknown
-// placeholders in agent prompts are left as written, so they only warn.
+// checkReferences checks the nodes that placeholders and expressions
+// read: the node must exist, and should run before, on every path from the
+// trigger. Unknown placeholders in agent prompts are left as written, so
+// they only warn.
 func (v *validator) checkReferences(edges []Edge) {
 	for _, n := range v.sortedNodes() {
-		texts, prompt := templateTexts(n)
-		seen := map[string]bool{}
+		texts, exprs, prompt := templateTexts(n)
+		var refs []string
 		for _, text := range texts {
 			if err := checkPlaceholders(text); err != nil && prompt {
 				v.warn(n.ID, "%s; o prompt mantém o texto como está", err.Error())
 			}
-			for _, id := range NodeReferences(text) {
-				switch _, exists := v.nodes[id]; {
-				case seen[id]:
-				case !exists:
-					v.node(n.ID, "{{nodes.%s}} lê um nó que não existe", id)
-				case v.trigger != "" && id != n.ID && v.reaches(v.trigger, n.ID, edges, id):
-					v.warn(n.ID, "o nó %s pode não ter rodado antes deste; {{nodes.%s}} sai vazio nesse caso", id, id)
-				}
-				seen[id] = true
+			refs = append(refs, NodeReferences(text)...)
+		}
+		for _, src := range exprs {
+			refs = append(refs, ExpressionReferences(src)...)
+		}
+		seen := map[string]bool{}
+		for _, id := range refs {
+			switch _, exists := v.nodes[id]; {
+			case seen[id]:
+			case !exists:
+				v.node(n.ID, "nodes.%s lê um nó que não existe", id)
+			case v.trigger != "" && id != n.ID && v.reaches(v.trigger, n.ID, edges, id):
+				v.warn(n.ID, "o nó %s pode não ter rodado antes deste; nodes.%s sai vazio nesse caso", id, id)
 			}
+			seen[id] = true
 		}
 	}
 }
 
-// templateTexts are the texts of a node that take placeholders, and
-// whether they are an agent prompt.
-func templateTexts(n Node) ([]string, bool) {
+// templateTexts are the texts of a node that take placeholders, its
+// expressions, and whether the texts are an agent prompt.
+func templateTexts(n Node) (texts, exprs []string, prompt bool) {
 	switch n.Type {
 	case NodeAgent:
 		var c AgentConfig
 		_ = json.Unmarshal(n.Config, &c) // a bad config is reported apart
-		return []string{c.Prompt}, true
+		return []string{c.Prompt}, nil, true
 	case NodeHTTPRequest:
 		var c HTTPRequestConfig
 		_ = json.Unmarshal(n.Config, &c)
-		return append([]string{c.URL, c.Body}, headerValues(c.Headers)...), false
+		return append([]string{c.URL, c.Body}, headerValues(c.Headers)...), nil, false
+	case NodeTransform:
+		var c TransformConfig
+		var template any
+		_ = json.Unmarshal(n.Config, &c)
+		_ = json.Unmarshal(c.Output, &template)
+		templateStrings(template, "", func(_, s string) {
+			if src, ok := strings.CutPrefix(s, "="); ok {
+				exprs = append(exprs, src)
+			} else {
+				texts = append(texts, s)
+			}
+		})
 	}
-	return nil, false
+	return texts, exprs, false
 }
 
 // reaches tells whether to can be reached from from without passing
@@ -694,6 +717,12 @@ func (v *validator) configProblems(n Node) []string {
 			return []string{invalidConfig(err)}
 		}
 		return httpRequestProblems(c)
+	case NodeTransform:
+		var c TransformConfig
+		if err := json.Unmarshal(config, &c); err != nil {
+			return []string{invalidConfig(err)}
+		}
+		return transformProblems(c)
 	}
 	return nil
 }

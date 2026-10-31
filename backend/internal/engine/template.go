@@ -26,3 +26,19 @@ func (e *Engine) templateData(ctx context.Context, fr domain.FlowRun, input json
 	}
 	return domain.TemplateData{Card: card, Input: input, Nodes: nodes}, nil
 }
+
+// transform builds the output of a Transform node; a failed expression
+// leaves by failed, handing on the input.
+func (e *Engine) transform(ctx context.Context, r *run, node domain.Node, input json.RawMessage) (domain.NodeResult, error) {
+	var cfg domain.TransformConfig
+	_ = json.Unmarshal(node.Config, &cfg) // validated when published
+	data, err := e.templateData(ctx, r.FlowRun, input)
+	if err != nil {
+		return domain.NodeResult{}, err
+	}
+	out, err := cfg.Apply(data)
+	if err != nil {
+		return domain.NodeResult{Status: domain.NodeFailed, OutputHandle: "failed", Error: err.Error(), Output: input}, nil
+	}
+	return domain.NodeResult{Status: domain.NodeDone, OutputHandle: "next", Output: out}, nil
+}

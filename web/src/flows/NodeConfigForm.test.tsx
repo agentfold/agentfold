@@ -393,6 +393,19 @@ describe('NodeConfigForm', () => {
     expect(result.config).toMatchObject({ mode: undefined })
   })
 
+  it('edits the output of a Transform as JSON', async () => {
+    const result = setup('transform', {})
+    const field = screen.getByLabelText('Saída (JSON)')
+    expect(field).toHaveValue('{}')
+    await userEvent.clear(field)
+    await userEvent.type(field, '{{"total": "= 1 + 2"')
+    expect(screen.getByText('JSON inválido.')).toBeInTheDocument()
+    expect(result.config).toEqual({})
+    await userEvent.type(field, '}')
+    expect(screen.queryByText('JSON inválido.')).not.toBeInTheDocument()
+    expect(result.config).toEqual({ output: { total: '= 1 + 2' } })
+  })
+
   it('shows an HTTP request without config', () => {
     setup('http_request', {})
     expect(screen.getByLabelText('URL')).toHaveValue('')

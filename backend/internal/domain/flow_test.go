@@ -130,20 +130,22 @@ func TestNodeReferenceProblems(t *testing.T) {
 	g.Nodes[1].Config = json.RawMessage(`{` + profile + `,"prompt":"redo {{nodes.rev}}"}`)
 	g.Nodes[2].Config = json.RawMessage(`{` + profile + `,"prompt":"check {{nodes.dev}} {{nodes.dev.x}} {{nodes.ghost}} {{nodes.t}} {{nodes.rev}} {{ .Name }}","gateway":true,"max_rounds":1}`)
 	g.Nodes = append(g.Nodes, node("call", NodeHTTPRequest, `{"method":"GET","url":"http://x/{{nodes.rev.status}}","headers":[{"name":"A","value":"{{nodes.ghost}}"}]}`))
-	g.Edges = append(g.Edges, edge("e6", "dev", "failed", "call"))
+	g.Nodes = append(g.Nodes, node("calc", NodeTransform, `{"output":["=nodes.call.status + nodes.nope.x","{{nodes.dev}}"]}`))
+	g.Edges = append(g.Edges, edge("e6", "dev", "failed", "call"), edge("e7", "call", "success", "calc"))
 	want := []GraphProblem{
-		{NodeID: "call", Message: "o nó rev pode não ter rodado antes deste; {{nodes.rev}} sai vazio nesse caso", Warning: true},
-		{NodeID: "call", Message: "{{nodes.ghost}} lê um nó que não existe"},
-		{NodeID: "dev", Message: "o nó rev pode não ter rodado antes deste; {{nodes.rev}} sai vazio nesse caso", Warning: true},
+		{NodeID: "calc", Message: "nodes.nope lê um nó que não existe"},
+		{NodeID: "call", Message: "o nó rev pode não ter rodado antes deste; nodes.rev sai vazio nesse caso", Warning: true},
+		{NodeID: "call", Message: "nodes.ghost lê um nó que não existe"},
+		{NodeID: "dev", Message: "o nó rev pode não ter rodado antes deste; nodes.rev sai vazio nesse caso", Warning: true},
 		{NodeID: "rev", Message: "placeholder desconhecido: {{ .Name }} (use card.<campo>, card.properties.<chave>, input, input.<caminho>, nodes.<id> ou nodes.<id>.<caminho>); o prompt mantém o texto como está", Warning: true},
-		{NodeID: "rev", Message: "{{nodes.ghost}} lê um nó que não existe"},
+		{NodeID: "rev", Message: "nodes.ghost lê um nó que não existe"},
 	}
 	got := g.Problems(refs)
 	slices.SortStableFunc(got, func(a, b GraphProblem) int { return strings.Compare(a.NodeID, b.NodeID) })
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got  %+v\nwant %+v", got, want)
 	}
-	if blocking := Blocking(got); len(blocking) != 2 || blocking[0].Warning || blocking[1].Warning {
+	if blocking := Blocking(got); len(blocking) != 3 || blocking[0].Warning || blocking[1].Warning {
 		t.Errorf("blocking %v", blocking)
 	}
 }
@@ -156,6 +158,13 @@ func TestConfigProblems(t *testing.T) {
 		config string
 		want   []string
 	}{
+		{"transform", NodeTransform, `{"output":{"a":"=1 + 2","b":"{{card.title}}"}}`, nil},
+		{"transform without output", NodeTransform, `{}`, []string{"monte a saída do nó em JSON"}},
+		{"transform with null output", NodeTransform, `{"output":null}`, []string{"monte a saída do nó em JSON"}},
+		{"transform with bad parts", NodeTransform, `{"output":{"a":"=1 +","b":["{{nope}}"],"c":"=foo"}}`, []string{
+			"a expressão em a é inválida: ", "a expressão em c é inválida: unknown name foo", "placeholder desconhecido: {{nope}}",
+		}},
+		{"transform with bad JSON", NodeTransform, `[]`, []string{"configuração inválida"}},
 		{"trigger on creation", NodeTrigger, `{"event":"card_created"}`, nil},
 		{"trigger without event", NodeTrigger, `{}`, []string{"escolha o evento do gatilho"}},
 		{"trigger without lane", NodeTrigger, `{"event":"card_entered_lane"}`, []string{"escolha a baia que dispara o fluxo"}},

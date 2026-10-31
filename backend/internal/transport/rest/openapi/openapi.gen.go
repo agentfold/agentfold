@@ -615,6 +615,21 @@ func (e SetPropertyNodeType) Valid() bool {
 	}
 }
 
+// Defines values for TransformNodeType.
+const (
+	Transform TransformNodeType = "transform"
+)
+
+// Valid indicates whether the value is a known member of the TransformNodeType enum.
+func (e TransformNodeType) Valid() bool {
+	switch e {
+	case Transform:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TriggerConfigEvent.
 const (
 	TriggerConfigEventCardCreated     TriggerConfigEvent = "card_created"
@@ -1446,6 +1461,23 @@ type SetPropertyNode struct {
 // SetPropertyNodeType defines model for SetPropertyNode.Type.
 type SetPropertyNodeType string
 
+// TransformConfig Builds a JSON value without an agent and hands it on as {"output": <value>}, leaving by next. In output, strings starting with = are expr-lang expressions (https://expr-lang.org) whose values keep their type; other strings are text with the placeholders of HTTPRequestConfig. Expressions read card (its fields and properties), input (what the node before handed on: its structured output, else its text) and nodes (the same for the last output of each node of the run, as nodes.dev or nodes["agent-1"]). An expression that fails (a missing field, a wrong type) leaves by failed, handing on the input. output is required to publish.
+type TransformConfig struct {
+	Output interface{} `json:"output,omitempty"`
+}
+
+// TransformNode defines model for TransformNode.
+type TransformNode struct {
+	// Config Builds a JSON value without an agent and hands it on as {"output": <value>}, leaving by next. In output, strings starting with = are expr-lang expressions (https://expr-lang.org) whose values keep their type; other strings are text with the placeholders of HTTPRequestConfig. Expressions read card (its fields and properties), input (what the node before handed on: its structured output, else its text) and nodes (the same for the last output of each node of the run, as nodes.dev or nodes["agent-1"]). An expression that fails (a missing field, a wrong type) leaves by failed, handing on the input. output is required to publish.
+	Config   TransformConfig   `json:"config"`
+	Id       string            `json:"id"`
+	Position Position          `json:"position"`
+	Type     TransformNodeType `json:"type"`
+}
+
+// TransformNodeType defines model for TransformNode.Type.
+type TransformNodeType string
+
 // TriggerConfig Starts the flow when a card is created or enters a lane, optionally only for some card types.
 type TriggerConfig struct {
 	// CardTypeIds Card types that start the flow; empty or absent means all.
@@ -1867,6 +1899,40 @@ func (t *FlowNode) MergeHTTPRequestNode(v HTTPRequestNode) error {
 	return err
 }
 
+// AsTransformNode returns the union data inside the FlowNode as a TransformNode
+func (t FlowNode) AsTransformNode() (TransformNode, error) {
+	var body TransformNode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTransformNode overwrites any union data inside the FlowNode as the provided TransformNode
+func (t *FlowNode) FromTransformNode(v TransformNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"transform"}`))
+	t.union = b
+	return err
+}
+
+// MergeTransformNode performs a merge with any union data inside the FlowNode, using the provided TransformNode
+func (t *FlowNode) MergeTransformNode(v TransformNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"transform"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 // AsEndNode returns the union data inside the FlowNode as a EndNode
 func (t FlowNode) AsEndNode() (EndNode, error) {
 	var body EndNode
@@ -1931,6 +1997,8 @@ func (t FlowNode) ValueByDiscriminator() (interface{}, error) {
 		return t.AsMoveCardNode()
 	case "set_property":
 		return t.AsSetPropertyNode()
+	case "transform":
+		return t.AsTransformNode()
 	case "trigger":
 		return t.AsTriggerNode()
 	case "wait_children":

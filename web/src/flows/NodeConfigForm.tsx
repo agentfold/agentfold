@@ -15,11 +15,18 @@ import type {
   CheckPropertyConfig,
   HTTPHeader,
   HTTPRequestConfig,
+  TransformConfig,
 } from '../api/client'
 import { agentKindLabels } from '../agents/labels'
 import { Button } from '../components/Button'
 import { SelectField, TextArea, TextField } from '../components/Field'
-import { formatTools, parseCount, parseSchema, parseTools } from './config'
+import {
+  formatTools,
+  parseCount,
+  parseJSON,
+  parseSchema,
+  parseTools,
+} from './config'
 import type { StepConfig, StepData } from './graph'
 
 interface Props {
@@ -233,6 +240,13 @@ export function NodeConfigForm({
       return (
         <HTTPRequestForm
           config={data.config as HTTPRequestConfig}
+          onChange={onChange}
+        />
+      )
+    case 'transform':
+      return (
+        <TransformForm
+          config={data.config as TransformConfig}
           onChange={onChange}
         />
       )
@@ -991,6 +1005,44 @@ function SchemaField({ schema, onChange }: SchemaFieldProps) {
           JSON inválido: precisa ser um objeto.
         </p>
       )}
+    </div>
+  )
+}
+
+interface TransformFormProps {
+  config: TransformConfig
+  onChange: (config: TransformConfig) => void
+}
+
+/** Edits the output template of a Transform as JSON; only valid JSON is kept. */
+function TransformForm({ config, onChange }: TransformFormProps) {
+  const [text, setText] = useState(JSON.stringify(config.output ?? {}, null, 2))
+  const [invalid, setInvalid] = useState(false)
+  return (
+    <div className="flex flex-col gap-1">
+      <TextArea
+        label="Saída (JSON)"
+        rows={10}
+        mono
+        value={text}
+        onChange={(next) => {
+          setText(next)
+          const parsed = parseJSON(next)
+          setInvalid(parsed === null)
+          if (parsed) {
+            onChange({ ...config, output: parsed.value })
+          }
+        }}
+      />
+      {invalid && <p className="text-xs text-red-600">JSON inválido.</p>}
+      <p className="text-xs text-slate-500">
+        Um texto que começa com = é uma expressão (expr-lang) e mantém o tipo:{' '}
+        {'"= nodes.req_a.body.valor + nodes.req_b.body.valor"'}. As expressões
+        leem card, input e nodes (nodes.dev, ou {'nodes["agent-1"]'} para ids
+        com -), com funções como sum, len, map e filter. Os outros textos
+        aceitam placeholders como {'{{card.title}}'}. Uma expressão que falha
+        sai por &quot;falhou&quot;.
+      </p>
     </div>
   )
 }

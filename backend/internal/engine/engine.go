@@ -313,6 +313,8 @@ func (e *Engine) runBoardNode(ctx context.Context, r *run, node domain.Node, inp
 		result, err = e.setProperty(ctx, r, node)
 	case domain.NodeHTTPRequest:
 		result = domain.NodeResult{Status: domain.NodeDone, OutputHandle: "next"}
+	case domain.NodeTransform:
+		return e.transform(ctx, r, node, input)
 	case domain.NodeWaitChildren, domain.NodeCheckProperty:
 		settled, err := e.waitResult(ctx, r.CardID, node)
 		if settled == nil {

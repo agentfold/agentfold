@@ -30,3 +30,12 @@ export function parseSchema(text: string): Schema | false {
     return false
   }
 }
+
+/** The JSON value in `text`, or null when it is not JSON. */
+export function parseJSON(text: string): { value: unknown } | null {
+  try {
+    return { value: JSON.parse(text) as unknown }
+  } catch {
+    return null
+  }
+}
