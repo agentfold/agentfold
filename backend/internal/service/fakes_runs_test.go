@@ -65,6 +65,12 @@ func (f *fakeRepo) RequestChanges(_ context.Context, id uuid.UUID, text string) 
 	return domain.ArtifactMessage{ArtifactID: id, Version: 1, Role: domain.RoleHuman, Text: text}, f.nodeRun, f.call("RequestChanges", text)
 }
 
+func (f *fakeRepo) DecideApproval(_ context.Context, id uuid.UUID, decision, text string) (domain.NodeRun, error) {
+	nr := f.nodeRun
+	nr.Decision, nr.Feedback = decision, text
+	return nr, f.call("DecideApproval", id)
+}
+
 func (f *fakeRepo) ApproveReview(_ context.Context, id uuid.UUID) (domain.NodeRun, error) {
 	return f.nodeRun, f.call("ApproveReview", id)
 }

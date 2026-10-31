@@ -69,6 +69,7 @@ type Repository interface {
 	ArtifactReview(ctx context.Context, artifactID uuid.UUID) (domain.ReviewState, error)
 	RequestChanges(ctx context.Context, artifactID uuid.UUID, text string) (domain.ArtifactMessage, domain.NodeRun, error)
 	ApproveReview(ctx context.Context, artifactID uuid.UUID) (domain.NodeRun, error)
+	DecideApproval(ctx context.Context, nodeRunID uuid.UUID, decision, text string) (domain.NodeRun, error)
 
 	AddQuestions(ctx context.Context, cardID, nodeRunID uuid.UUID, texts []string) ([]domain.Question, error)
 	ListCardQuestions(ctx context.Context, cardID uuid.UUID) ([]domain.Question, error)

@@ -195,6 +195,15 @@ func (h handlers) RequestArtifactChanges(ctx context.Context, req openapi.Reques
 	return openapi.RequestArtifactChanges201JSONResponse(toArtifactMessage(msg)), err
 }
 
+func (h handlers) DecideApproval(ctx context.Context, req openapi.DecideApprovalRequestObject) (openapi.DecideApprovalResponseObject, error) {
+	var message string
+	if req.Body.Message != nil {
+		message = *req.Body.Message
+	}
+	nr, err := h.board.DecideApproval(ctx, req.Id, string(req.Body.Decision), message)
+	return openapi.DecideApproval200JSONResponse(toNodeRun(nr)), err
+}
+
 func (h handlers) ApproveArtifact(ctx context.Context, req openapi.ApproveArtifactRequestObject) (openapi.ApproveArtifactResponseObject, error) {
 	return openapi.ApproveArtifact204Response{}, h.board.ApproveArtifact(ctx, req.Id)
 }

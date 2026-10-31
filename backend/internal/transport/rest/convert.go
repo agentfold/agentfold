@@ -82,7 +82,7 @@ func toNodeRun(n service.RunNode) openapi.NodeRun {
 	out := openapi.NodeRun{
 		Id: n.ID, FlowRunId: n.FlowRunID, NodeKey: n.NodeKey, NodeType: string(n.Type), Iteration: n.Iteration,
 		Status: openapi.NodeRunStatus(n.Status), OutputHandle: n.OutputHandle, Error: n.Error, Summary: n.Summary,
-		Decision: openapi.NodeRunDecision(n.Decision), Feedback: n.Feedback,
+		Decision: openapi.NodeRunDecision(n.Decision), Feedback: n.Feedback, Approval: n.Approval,
 		TokensIn: n.TokensIn, TokensOut: n.TokensOut, CacheRead: n.CacheRead, CacheWrite: n.CacheWrite,
 		CostUsd: n.CostUSD, Turns: n.Turns, DurationMs: n.DurationMS,
 		CreatedAt: n.CreatedAt, StartedAt: n.StartedAt, FinishedAt: n.FinishedAt,
@@ -90,6 +90,9 @@ func toNodeRun(n service.RunNode) openapi.NodeRun {
 	var output map[string]any
 	if json.Unmarshal(n.Output, &output) == nil && output != nil {
 		out.Output = &output
+	}
+	if n.Approval {
+		out.InputMessage = domain.MessageFrom(n.Input)
 	}
 	return out
 }

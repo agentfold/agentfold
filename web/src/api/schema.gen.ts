@@ -399,6 +399,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/node-runs/{id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Decides the approval of the output a human_review node with subject output awaits: approved leaves by approved, handing on what the node received; changes_requested (message required) leaves by changes_requested with the message for the agent. Fails with review_closed when the node run awaits no decision. */
+        post: operations["decideApproval"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cards/{id}/artifacts": {
         parameters: {
             query?: never;
@@ -743,6 +762,12 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        ApprovalDecision: {
+            /** @enum {string} */
+            decision: "approved" | "changes_requested";
+            /** @description What to change; required with changes_requested. */
+            message?: string;
+        };
         /** @description One execution of a node within a flow run. */
         NodeRun: {
             /** Format: uuid */
@@ -765,12 +790,16 @@ export interface components {
             /** @description What the agent reported with report_done. */
             summary: string;
             /**
-             * @description How a gateway node decided; empty for other nodes and while it runs.
+             * @description How a gateway node decided, or how a human decided an output approval; empty for other nodes and while it runs.
              * @enum {string}
              */
-            decision: "" | "approved" | "rejected";
-            /** @description The reason of approve or the feedback of reject. */
+            decision: "" | "approved" | "rejected" | "changes_requested";
+            /** @description The reason of approve, the feedback of reject or the changes the human asked. */
             feedback: string;
+            /** @description A human_review node that approves the output of the node before. */
+            approval: boolean;
+            /** @description What an approval node has the human approve (the output of the node before, as an agent gets it); empty for other nodes. */
+            input_message: string;
             /** @description The node output handed to the next node: the agent result, summary, structured output and gateway decision. */
             output: {
                 [key: string]: unknown;
@@ -1201,8 +1230,10 @@ export interface components {
              */
             sealed?: string;
         };
-        /** @description Waits for a human to review artifacts of the card: they ask for changes in the review chat or approve. changes_requested must lead to the node that redoes the work. */
+        /** @description Waits for a human to review artifacts of the card (subject artifacts, the default) or to approve the output of the node before (subject output, without artifacts): they ask for changes or approve. changes_requested must lead to the node that redoes the work. */
         HumanReviewConfig: {
+            /** @enum {string} */
+            subject?: "artifacts" | "output";
             /** @description Names of the artifacts reviewed; empty or absent means those collected in the run. */
             artifacts?: string[];
         };
@@ -2194,6 +2225,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NodeOutput"][];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    decideApproval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApprovalDecision"];
+            };
+        };
+        responses: {
+            /** @description Decided; the flow goes on. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeRun"];
                 };
             };
             default: components["responses"]["Error"];

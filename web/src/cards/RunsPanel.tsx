@@ -8,6 +8,7 @@ import { ErrorMessage } from '../components/ErrorMessage'
 import { kindLabels, outputLabels } from '../flows/graph'
 import { outcomes } from './timeline'
 import { formatTime, runLabel } from './format'
+import { ApprovalPanel } from './ApprovalPanel'
 import { NodeTranscript } from './NodeTranscript'
 import { pageHref } from '../route'
 
@@ -37,6 +38,13 @@ const nodeStatusStyle: Record<NodeRun['status'], string> = {
   awaiting_review: 'bg-amber-50 text-amber-800',
   done: 'bg-emerald-50 text-emerald-700',
   failed: 'bg-red-50 text-red-700',
+}
+
+const decisions: Record<NodeRun['decision'], string> = {
+  '': '',
+  approved: 'Aprovou',
+  rejected: 'Rejeitou',
+  changes_requested: 'Pediu ajustes',
 }
 
 /** The runs of a card: pick one to see its nodes and what the agents did. */
@@ -115,7 +123,12 @@ function NodeRunItem({ node, cardId }: { node: NodeRun; cardId: string }) {
         )}
       </header>
       {node.error && <p className="text-sm text-red-700">{node.error}</p>}
-      {node.status === 'awaiting_review' && <ReviewPending cardId={cardId} />}
+      {node.status === 'awaiting_review' &&
+        (node.approval ? (
+          <ApprovalPanel node={node} />
+        ) : (
+          <ReviewPending cardId={cardId} />
+        ))}
       {node.summary && (
         <p className="text-sm text-slate-700">
           <span className="font-medium">Resumo: </span>
@@ -125,7 +138,7 @@ function NodeRunItem({ node, cardId }: { node: NodeRun; cardId: string }) {
       {node.decision && (
         <p className="text-sm text-slate-700">
           <span className="font-medium">
-            {node.decision === 'approved' ? 'Aprovou' : 'Rejeitou'}
+            {decisions[node.decision]}
             {node.feedback ? ': ' : ''}
           </span>
           <span className="whitespace-pre-wrap">{node.feedback}</span>

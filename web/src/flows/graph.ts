@@ -255,6 +255,9 @@ export function summary({ kind, config }: StepData): string {
         : `Espera todos os filhos com ${property}`
     }
     case 'human_review': {
+      if ((config as HumanReviewConfig).subject === 'output') {
+        return 'Aprovação da saída do nó anterior'
+      }
       const names = (config as HumanReviewConfig).artifacts ?? []
       return names.length > 0
         ? `Revisão de ${names.join(', ')}`

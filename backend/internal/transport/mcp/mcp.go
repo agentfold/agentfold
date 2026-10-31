@@ -45,6 +45,7 @@ type Board interface {
 	ListLatestFlowRuns(ctx context.Context) ([]domain.FlowRun, error)
 	GetRunDetail(ctx context.Context, id uuid.UUID) (service.RunDetail, error)
 	ListCardArtifacts(ctx context.Context, cardID uuid.UUID) ([]service.ArtifactDetail, error)
+	DecideApproval(ctx context.Context, nodeRunID uuid.UUID, decision, text string) (service.RunNode, error)
 }
 
 var implementation = &sdk.Implementation{Name: "orquestrator", Version: "0.1.0"}

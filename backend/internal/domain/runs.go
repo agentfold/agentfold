@@ -164,10 +164,11 @@ type NodeResult struct {
 	Usage
 }
 
-// Gateway decisions.
+// Gateway decisions, and how a human decided an output approval.
 const (
-	DecisionApproved = "approved"
-	DecisionRejected = "rejected"
+	DecisionApproved         = "approved"
+	DecisionRejected         = "rejected"
+	DecisionChangesRequested = "changes_requested"
 )
 
 // JobAgentRun is the queue job that runs an agent node.
@@ -327,6 +328,13 @@ type ArtifactMessage struct {
 	// agent answer reached.
 	NodeRunID *uuid.UUID
 	CreatedAt time.Time
+}
+
+// ApprovalPrompt is the message that sends the agent the changes a human
+// asked when approving its output.
+func ApprovalPrompt(text string) string {
+	return fmt.Sprintf("A human reviewed what you delivered and asks for changes:\n\n%s\n\n"+
+		"Address it, then finish; your answer goes back to the human for approval.", text)
 }
 
 // ReviewPrompt is the message that sends the agent of an artifact what

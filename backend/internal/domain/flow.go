@@ -238,10 +238,30 @@ type WaitChildrenConfig struct {
 	DoneLaneID *uuid.UUID `json:"done_lane_id,omitempty"`
 }
 
+// What a HumanReview node has the human review: artifacts of the card
+// (the default) or the output of the node before.
+const (
+	ReviewArtifacts = "artifacts"
+	ReviewOutput    = "output"
+)
+
 // HumanReviewConfig names the artifacts the human reviews; none means
-// those collected in the run.
+// those collected in the run. With Subject output the human approves the
+// output of the node before instead, with no artifacts.
 type HumanReviewConfig struct {
+	Subject   string   `json:"subject,omitempty"`
 	Artifacts []string `json:"artifacts,omitempty"`
+}
+
+// ReviewsOutput tells whether the human approves the output of the node
+// before instead of artifacts.
+func (c HumanReviewConfig) ReviewsOutput() bool { return c.Subject == ReviewOutput }
+
+// ApprovesOutput tells whether n is a HumanReview node that approves the
+// output of the node before.
+func ApprovesOutput(n Node) bool {
+	var c HumanReviewConfig
+	return n.Type == NodeHumanReview && json.Unmarshal(n.Config, &c) == nil && c.ReviewsOutput()
 }
 
 // SetPropertyConfig sets the property Key of the card to Value.
@@ -569,7 +589,7 @@ func (v *validator) configProblems(n Node) []string {
 		if err := json.Unmarshal(config, &c); err != nil {
 			return []string{invalidConfig(err)}
 		}
-		return reviewProblems(c.Artifacts)
+		return reviewProblems(c)
 	case NodeSetProperty:
 		var c SetPropertyConfig
 		if err := json.Unmarshal(config, &c); err != nil {
@@ -603,9 +623,19 @@ func propertyProblems(key, value string) []string {
 	return out
 }
 
-func reviewProblems(names []string) []string {
+func reviewProblems(c HumanReviewConfig) []string {
+	switch c.Subject {
+	case "", ReviewArtifacts:
+	case ReviewOutput:
+		if len(c.Artifacts) > 0 {
+			return []string{"a aprovação da saída não revisa artefatos: tire os nomes ou revise os artefatos"}
+		}
+		return nil
+	default:
+		return []string{fmt.Sprintf("o que revisar é desconhecido: %q", c.Subject)}
+	}
 	seen := map[string]bool{}
-	for _, name := range names {
+	for _, name := range c.Artifacts {
 		name = strings.TrimSpace(name)
 		if name == "" {
 			return []string{"o nome de um artefato revisado está vazio"}

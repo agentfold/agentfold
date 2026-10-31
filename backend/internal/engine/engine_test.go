@@ -253,6 +253,19 @@ func (f *fakeStore) ResumeIfAnswered(_ context.Context, id uuid.UUID) (domain.Fl
 	return r, true, nil
 }
 
+func (f *fakeStore) AwaitApproval(_ context.Context, id uuid.UUID) (domain.NodeRun, error) {
+	if err := f.err("AwaitApproval"); err != nil {
+		return domain.NodeRun{}, err
+	}
+	nr := f.nodeRuns[id]
+	nr.Status = domain.NodeAwaitingReview
+	f.nodeRuns[id] = nr
+	r := f.runs[nr.FlowRunID]
+	r.Status = domain.RunWaiting
+	f.runs[r.ID] = r
+	return nr, nil
+}
+
 func (f *fakeStore) OpenReview(_ context.Context, nodeRunID, _ uuid.UUID, names []string, reply string) (domain.NodeRun, []domain.Artifact, error) {
 	nr := f.nodeRuns[nodeRunID]
 	if err := f.err("OpenReview"); err != nil || len(f.reviewing) == 0 {
@@ -762,6 +775,53 @@ func TestHumanReviewLoop(t *testing.T) {
 	e.wantTimeline("flow.started", "node.started dev", "node.finished dev done", "node.started review",
 		"node.finished review done", "node.started dev", "node.finished dev done", "node.started review",
 		"node.finished review done", "node.started move", "node.finished move done", "flow.finished done")
+}
+
+func TestOutputApproval(t *testing.T) {
+	e := newEnv(t)
+	e.addFlow("plan", graph{
+		nodes: []string{"t:trigger", "dev:agent", "approve:human_review", "move:move_card"},
+		configs: map[string]any{
+			"t": triggerCfg(domain.EventCardCreated, nil), "move": map[string]any{"lane_id": e.doing},
+			"approve": map[string]any{"subject": "output"},
+		},
+		edges: []string{"t.next>dev", "dev.done>approve", "approve.changes_requested>dev", "approve.approved>move"},
+	})
+	e.trigger(e.created())
+	e.agents.result = func(domain.NodeRun) domain.NodeResult { return done("planned") }
+	if err := e.runAgent(); err != nil {
+		t.Fatal(err)
+	}
+	nr := e.store.lastNodeRun()
+	if nr.NodeKey != "approve" || nr.Status != domain.NodeAwaitingReview || domain.MessageFrom(nr.Input) != "planned" || e.onlyRun().Status != domain.RunWaiting {
+		t.Fatalf("approval %+v", nr)
+	}
+	if got := e.pub.types(); !slices.Equal(got, []string{"flow_run.created", "node_run.updated", "flow_run.updated"}) {
+		t.Fatalf("published %q", got)
+	}
+	if err := e.decide("approved", nr.Input); err != nil {
+		t.Fatal(err)
+	}
+	if run := e.onlyRun(); run.Status != domain.RunDone || e.store.cards[e.card.ID].LaneID != e.doing {
+		t.Fatalf("approval did not go on: %+v", run)
+	}
+}
+
+func TestOutputApprovalErrors(t *testing.T) {
+	for _, tc := range []struct {
+		err, want error
+	}{{domain.ErrNotFound, nil}, {errBoom, errBoom}} {
+		e := newEnv(t)
+		e.addFlow("plan", graph{
+			nodes:   []string{"t:trigger", "approve:human_review"},
+			configs: map[string]any{"t": triggerCfg(domain.EventCardCreated, nil), "approve": map[string]any{"subject": "output"}},
+			edges:   []string{"t.next>approve"},
+		})
+		e.store.errs["AwaitApproval"] = tc.err
+		if err := e.engine.HandleTrigger(context.Background(), e.created()); !errors.Is(err, tc.want) || (tc.want == nil && err != nil) {
+			t.Fatalf("%v: got %v", tc.err, err)
+		}
+	}
 }
 
 func TestHumanReviewWithoutArtifacts(t *testing.T) {

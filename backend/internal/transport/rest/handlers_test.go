@@ -133,7 +133,7 @@ const (
 		`"answered_at":"2026-10-25T12:00:00Z","delivered":true,"created_at":"2026-10-25T12:00:00Z"}`
 	nodeRunJSON = `{"id":"00000000-0000-7000-8000-000000000001","flow_run_id":"00000000-0000-7000-8000-000000000002",` +
 		`"node_key":"dev","node_type":"agent","iteration":2,"status":"done","output_handle":"done","error":"","summary":"did it",` +
-		`"decision":"","feedback":"",` +
+		`"decision":"","feedback":"","approval":false,"input_message":"",` +
 		`"output":{"result":"ok"},"tokens_in":1,"tokens_out":2,"cache_read":3,"cache_write":4,"cost_usd":0.5,"turns":6,` +
 		`"duration_ms":7,"created_at":"2026-10-25T12:00:00Z","started_at":"2026-10-25T12:00:00Z","finished_at":"2026-10-25T12:00:00Z"}`
 	messageJSON = `{"id":"00000000-0000-7000-8000-000000000001","artifact_id":"00000000-0000-7000-8000-000000000001","version":1,` +
@@ -213,6 +213,10 @@ func TestRoutes(t *testing.T) {
 		{"GET", "/api/artifacts" + p1, "", 200, "GetArtifact", []any{id1}, artifactJSON},
 		{"POST", "/api/artifacts" + p1 + "/messages", `{"text":"more"}`, 201, "RequestArtifactChanges", []any{id1, "more"}, messageJSON},
 		{"POST", "/api/artifacts" + p1 + "/approve", "", 204, "ApproveArtifact", []any{id1}, ""},
+		{"POST", "/api/node-runs" + p1 + "/review", `{"decision":"changes_requested","message":"split"}`, 200, "DecideApproval",
+			[]any{id1, "changes_requested", "split"}, nodeRunJSON},
+		{"POST", "/api/node-runs" + p1 + "/review", `{"decision":"approved"}`, 200, "DecideApproval",
+			[]any{id1, "approved", ""}, nodeRunJSON},
 
 		{"GET", "/api/flows", "", 200, "ListFlows", nil, "[" + flowSummaryJSON + "]"},
 		{"POST", "/api/flows", `{"name":"dev"}`, 201, "CreateFlow", []any{"dev"}, flowJSON},
@@ -353,6 +357,16 @@ func TestConversionsOfEmptyValues(t *testing.T) {
 	stdio := toMcpServer(domain.McpServer{Transport: domain.McpStdio, McpConfig: domain.McpConfig{Command: "srv", Env: map[string]string{"A": "1"}}})
 	if *stdio.Command != "srv" || stdio.Url != nil || stdio.Args == nil || stdio.Env["A"] != "1" || stdio.Headers == nil || stdio.SecretNames == nil {
 		t.Errorf("mcp %+v", stdio)
+	}
+}
+
+func TestApprovalNodeRun(t *testing.T) {
+	nr := toNodeRun(service.RunNode{NodeRun: domain.NodeRun{Input: json.RawMessage(`{"result":"the plan"}`)}, Approval: true})
+	if !nr.Approval || nr.InputMessage != "the plan" {
+		t.Errorf("approval %+v", nr)
+	}
+	if other := toNodeRun(service.RunNode{NodeRun: domain.NodeRun{Input: json.RawMessage(`{"result":"x"}`)}}); other.InputMessage != "" {
+		t.Errorf("other nodes leave their input out: %+v", other)
 	}
 }
 

@@ -42,10 +42,12 @@ func (s *Service) Entity(ctx context.Context, typ string, id uuid.UUID) (any, er
 	return nil, fmt.Errorf("no entity for event %q", typ)
 }
 
-// RunNode is a node run with the type of its node.
+// RunNode is a node run with the type of its node. Approval tells a
+// HumanReview node that approves the output of the node before.
 type RunNode struct {
 	domain.NodeRun
-	Type domain.NodeType
+	Type     domain.NodeType
+	Approval bool
 }
 
 // RunDetail is a flow run with its node runs, in order.
@@ -72,13 +74,9 @@ func (s *Service) runDetail(ctx context.Context, run domain.FlowRun) (RunDetail,
 	if err != nil {
 		return RunDetail{}, err
 	}
-	types := map[string]domain.NodeType{}
-	for _, n := range version.Graph.Nodes {
-		types[n.ID] = n.Type
-	}
 	detail := RunDetail{FlowRun: run, Nodes: make([]RunNode, len(nodes))}
 	for i, n := range nodes {
-		detail.Nodes[i] = RunNode{NodeRun: n, Type: types[n.NodeKey]}
+		detail.Nodes[i] = runNode(version.Graph, n)
 	}
 	return detail, nil
 }

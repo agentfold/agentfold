@@ -32,6 +32,8 @@ type fakeBoard struct {
 	latest    []domain.FlowRun
 	artifacts []service.ArtifactDetail
 	types     []domain.CardType
+	// approval adds a node run awaiting an output approval to run details.
+	approval bool
 }
 
 func newBoard() *fakeBoard {
@@ -120,13 +122,25 @@ func (b *fakeBoard) ListLatestFlowRuns(context.Context) ([]domain.FlowRun, error
 }
 
 func (b *fakeBoard) GetRunDetail(_ context.Context, id uuid.UUID) (service.RunDetail, error) {
-	return service.RunDetail{
-		FlowRun: domain.FlowRun{ID: id, FlowName: "dev", Status: domain.RunWaiting},
-		Nodes: []service.RunNode{{
-			NodeRun: domain.NodeRun{NodeKey: "dev", Iteration: 1, Status: domain.NodeAwaitingInput, Usage: domain.Usage{Turns: 3}},
-			Type:    domain.NodeAgent,
-		}},
-	}, b.call("GetRunDetail", id)
+	nodes := []service.RunNode{{
+		NodeRun: domain.NodeRun{NodeKey: "dev", Iteration: 1, Status: domain.NodeAwaitingInput, Usage: domain.Usage{Turns: 3}},
+		Type:    domain.NodeAgent,
+	}}
+	if b.approval {
+		nodes = append(nodes, service.RunNode{
+			NodeRun:  domain.NodeRun{ID: approvalID, NodeKey: "approve", Iteration: 1, Status: domain.NodeAwaitingReview, Input: []byte(`{"result":"the plan"}`)},
+			Type:     domain.NodeHumanReview,
+			Approval: true,
+		})
+	}
+	return service.RunDetail{FlowRun: domain.FlowRun{ID: id, FlowName: "dev", Status: domain.RunWaiting}, Nodes: nodes}, b.call("GetRunDetail", id)
+}
+
+var approvalID = uuid.New()
+
+func (b *fakeBoard) DecideApproval(_ context.Context, id uuid.UUID, decision, text string) (service.RunNode, error) {
+	nr := domain.NodeRun{ID: id, NodeKey: "approve", Status: domain.NodeDone, OutputHandle: decision}
+	return service.RunNode{NodeRun: nr, Type: domain.NodeHumanReview, Approval: true}, b.call("DecideApproval", []string{id.String(), decision, text})
 }
 
 func (b *fakeBoard) CardTypesOf(context.Context, service.AgentRun) ([]domain.CardType, error) {
@@ -411,6 +425,33 @@ func TestGetRun(t *testing.T) {
 	}
 	board.errs["ListLatestFlowRuns"] = errBoard
 	if _, isErr := call(t, cs, "get_run", map[string]any{"card_id": card.String()}); !isErr {
+		t.Fatal("expected a tool error")
+	}
+}
+
+func TestReviewOutput(t *testing.T) {
+	board := newBoard()
+	cs := session(t, board, "")
+	card := uuid.New()
+	args := map[string]any{"card_id": card.String(), "decision": "changes_requested", "message": "split it"}
+	if out, isErr := call(t, cs, "review_output", args); !isErr || !strings.Contains(out, "no flow ran") {
+		t.Fatalf("no run: %s", out)
+	}
+	board.latest = []domain.FlowRun{{ID: uuid.New(), CardID: card}}
+	if out, isErr := call(t, cs, "review_output", args); !isErr || !strings.Contains(out, "awaits no approval") {
+		t.Fatalf("no approval: %s", out)
+	}
+	board.approval = true
+	if out, isErr := call(t, cs, "get_run", map[string]any{"card_id": card.String()}); isErr || !strings.Contains(out, `"approval_text":"the plan"`) {
+		t.Fatalf("get_run: %s", out)
+	}
+	out, isErr := call(t, cs, "review_output", args)
+	if isErr || !strings.Contains(out, `"output_handle":"changes_requested"`) || strings.Contains(out, "approval_text") ||
+		!slices.Equal(board.args["DecideApproval"].([]string), []string{approvalID.String(), "changes_requested", "split it"}) {
+		t.Fatalf("review_output: %s, %v", out, board.args["DecideApproval"])
+	}
+	board.errs["DecideApproval"] = errBoard
+	if _, isErr := call(t, cs, "review_output", args); !isErr {
 		t.Fatal("expected a tool error")
 	}
 }

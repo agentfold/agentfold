@@ -436,4 +436,23 @@ describe('NodeConfigForm', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Remover' }))
     expect(result.config).toMatchObject({ headers: undefined })
   })
+
+  it('switches a human review to approving the output', async () => {
+    const result = setup('human_review', { artifacts: ['Plano'] })
+    expect(screen.getByLabelText('O que revisar')).toHaveValue('artifacts')
+    await userEvent.selectOptions(
+      screen.getByLabelText('O que revisar'),
+      'output',
+    )
+    expect(result.config).toEqual({ subject: 'output' })
+    expect(
+      screen.queryByLabelText('Artefatos revisados'),
+    ).not.toBeInTheDocument()
+    expect(screen.getByText(/aprovar o que o nó anterior/)).toBeInTheDocument()
+    await userEvent.selectOptions(
+      screen.getByLabelText('O que revisar'),
+      'artifacts',
+    )
+    expect(result.config).toEqual({})
+  })
 })

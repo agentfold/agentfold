@@ -18,6 +18,9 @@ import (
 func (e *Engine) review(ctx context.Context, r *run, node domain.Node, nr domain.NodeRun, input json.RawMessage) error {
 	var cfg domain.HumanReviewConfig
 	_ = json.Unmarshal(node.Config, &cfg) // validated when published
+	if cfg.ReviewsOutput() {
+		return e.awaitApproval(ctx, r, nr)
+	}
 	names := make([]string, len(cfg.Artifacts))
 	for i, name := range cfg.Artifacts {
 		names[i] = strings.TrimSpace(name)
@@ -49,6 +52,24 @@ func (e *Engine) review(ctx context.Context, r *run, node domain.Node, nr domain
 	for _, a := range artifacts {
 		e.Pub.Publish(events.Event{Type: "artifact.updated", ID: a.ID})
 	}
+	return nil
+}
+
+// awaitApproval holds the run at a HumanReview node until the human
+// approves the output of the node before, what the node received, or asks
+// for changes.
+func (e *Engine) awaitApproval(ctx context.Context, r *run, nr domain.NodeRun) error {
+	held, err := e.Store.AwaitApproval(ctx, nr.ID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil // the run ended meanwhile
+	}
+	if err != nil {
+		return err
+	}
+	e.Pub.Publish(events.Event{Type: "node_run.updated", ID: held.ID, Data: held})
+	fr := r.FlowRun
+	fr.Status = domain.RunWaiting
+	e.Pub.Publish(events.Event{Type: "flow_run.updated", ID: fr.ID, Data: fr})
 	return nil
 }
 

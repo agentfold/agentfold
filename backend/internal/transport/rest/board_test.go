@@ -160,6 +160,10 @@ func (b *stubBoard) RequestArtifactChanges(_ context.Context, id uuid.UUID, text
 	return b.artifact.Messages[0], b.record("RequestArtifactChanges", id, text)
 }
 
+func (b *stubBoard) DecideApproval(_ context.Context, id uuid.UUID, decision, text string) (service.RunNode, error) {
+	return service.RunNode{NodeRun: b.nodeRun, Type: domain.NodeAgent}, b.record("DecideApproval", id, decision, text)
+}
+
 func (b *stubBoard) ApproveArtifact(_ context.Context, id uuid.UUID) error {
 	return b.record("ApproveArtifact", id)
 }

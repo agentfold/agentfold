@@ -188,6 +188,10 @@ describe('summary', () => {
       'Espera todos os filhos terminarem (dev=ok)',
     ],
     [{ kind: 'human_review', config: {} }, 'Revisão dos artefatos do run'],
+    [
+      { kind: 'human_review', config: { subject: 'output' } },
+      'Aprovação da saída do nó anterior',
+    ],
     [{ kind: 'set_property', config: {} }, 'Define ?=? no card'],
     [
       { kind: 'set_property', config: { key: 'dev', value: 'ok' } },

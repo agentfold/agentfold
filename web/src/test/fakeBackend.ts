@@ -206,6 +206,8 @@ export function nodeRun(
     summary: '',
     decision: '',
     feedback: '',
+    approval: false,
+    input_message: '',
     output: null,
     tokens_in: 10,
     tokens_out: 20,
@@ -520,6 +522,27 @@ export function createFakeBackend(initial: Partial<State> = {}): FakeBackend {
         }
         a.review = 'approved'
         return [204, undefined]
+      }
+      case 'POST /node-runs/:id/review': {
+        const node = state.cardRuns
+          .flatMap((r) => r.nodes)
+          .find((n) => n.id === id)
+        if (!node) return notFound
+        if (node.status !== 'awaiting_review') {
+          return [409, { code: 'review_closed', message: 'closed' }]
+        }
+        const decision =
+          body.decision === 'approved' ? 'approved' : 'changes_requested'
+        if (decision === 'changes_requested' && !str(body.message).trim()) {
+          return invalid('message')
+        }
+        Object.assign(node, {
+          status: 'done',
+          decision,
+          output_handle: decision,
+          feedback: str(body.message),
+        })
+        return [200, node]
       }
       case 'GET /node-runs/:id/output':
         return [200, state.outputs.filter((o) => o.node_run_id === id)]

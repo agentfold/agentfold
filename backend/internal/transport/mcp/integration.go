@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"slices"
 
 	"github.com/google/uuid"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -42,6 +43,8 @@ type (
 		Error        string  `json:"error,omitempty"`
 		Turns        int     `json:"turns"`
 		CostUSD      float64 `json:"cost_usd"`
+		// ApprovalText is the output a human_review node awaits approval of.
+		ApprovalText string `json:"approval_text,omitempty"`
 	}
 	runView struct {
 		ID       uuid.UUID     `json:"id"`
@@ -96,7 +99,15 @@ type (
 	answersInput struct {
 		Answers []answer `json:"answers"`
 	}
+	reviewOutputInput struct {
+		CardID   uuid.UUID `json:"card_id"`
+		Decision string    `json:"decision" jsonschema:"approved, or changes_requested to send the message to the agent"`
+		Message  string    `json:"message,omitempty" jsonschema:"what to change; required with changes_requested"`
+	}
 )
+
+// ErrNoApproval means the latest run of the card awaits no output approval.
+var ErrNoApproval = errors.New("the card awaits no approval of an output")
 
 // ErrNoRun means the card never ran a flow.
 var ErrNoRun = errors.New("no flow ran for this card")
@@ -177,33 +188,55 @@ func integrationServer(board Board) *sdk.Server {
 			}
 			return nil, questionsOutput{toQuestions(answered)}, nil
 		})
-	addTool(s, "get_run", "The latest flow run of a card and its nodes.",
+	addTool(s, "get_run", "The latest flow run of a card and its nodes; a node awaiting approval of an output shows it in approval_text.",
 		func(ctx context.Context, _ *sdk.CallToolRequest, in cardInput) (*sdk.CallToolResult, runView, error) {
-			run, err := latestRun(ctx, board, in.CardID)
-			return nil, run, err
+			detail, err := latestRun(ctx, board, in.CardID)
+			return nil, runView{
+				ID: detail.ID, FlowName: detail.FlowName, Status: string(detail.Status), Error: detail.Error,
+				Nodes: mapAll(detail.Nodes, toNodeRunView),
+			}, err
+		})
+	addTool(s, "review_output", "Decides the approval of an output the latest run of a card awaits (see get_run): approved goes on, changes_requested sends the message to the agent.",
+		func(ctx context.Context, _ *sdk.CallToolRequest, in reviewOutputInput) (*sdk.CallToolResult, nodeRunView, error) {
+			detail, err := latestRun(ctx, board, in.CardID)
+			if err != nil {
+				return nil, nodeRunView{}, err
+			}
+			i := slices.IndexFunc(detail.Nodes, awaitsApproval)
+			if i < 0 {
+				return nil, nodeRunView{}, ErrNoApproval
+			}
+			nr, err := board.DecideApproval(ctx, detail.Nodes[i].ID, in.Decision, in.Message)
+			return nil, toNodeRunView(nr), err
 		})
 	return s
 }
 
-func latestRun(ctx context.Context, board Board, cardID uuid.UUID) (runView, error) {
+func awaitsApproval(n service.RunNode) bool {
+	return n.Approval && n.Status == domain.NodeAwaitingReview
+}
+
+func toNodeRunView(n service.RunNode) nodeRunView {
+	view := nodeRunView{
+		NodeKey: n.NodeKey, NodeType: string(n.Type), Iteration: n.Iteration, Status: string(n.Status),
+		OutputHandle: n.OutputHandle, Error: n.Error, Turns: n.Turns, CostUSD: n.CostUSD,
+	}
+	if awaitsApproval(n) {
+		view.ApprovalText = domain.MessageFrom(n.Input)
+	}
+	return view
+}
+
+// latestRun is the latest flow run of a card with its node runs.
+func latestRun(ctx context.Context, board Board, cardID uuid.UUID) (service.RunDetail, error) {
 	runs, err := board.ListLatestFlowRuns(ctx)
 	if err != nil {
-		return runView{}, err
+		return service.RunDetail{}, err
 	}
 	for _, r := range runs {
-		if r.CardID != cardID {
-			continue
+		if r.CardID == cardID {
+			return board.GetRunDetail(ctx, r.ID)
 		}
-		detail, err := board.GetRunDetail(ctx, r.ID)
-		return runView{
-			ID: detail.ID, FlowName: detail.FlowName, Status: string(detail.Status), Error: detail.Error,
-			Nodes: mapAll(detail.Nodes, func(n service.RunNode) nodeRunView {
-				return nodeRunView{
-					NodeKey: n.NodeKey, NodeType: string(n.Type), Iteration: n.Iteration, Status: string(n.Status),
-					OutputHandle: n.OutputHandle, Error: n.Error, Turns: n.Turns, CostUSD: n.CostUSD,
-				}
-			}),
-		}, err
 	}
-	return runView{}, ErrNoRun
+	return service.RunDetail{}, ErrNoRun
 }

@@ -38,6 +38,7 @@ type Store interface {
 	ResumeIfAnswered(ctx context.Context, nodeRunID uuid.UUID) (domain.FlowRun, bool, error)
 	EnqueueJob(ctx context.Context, j store.NewJob) (uuid.UUID, error)
 	OpenReview(ctx context.Context, nodeRunID, cardID uuid.UUID, names []string, reply string) (domain.NodeRun, []domain.Artifact, error)
+	AwaitApproval(ctx context.Context, nodeRunID uuid.UUID) (domain.NodeRun, error)
 	ListProjects(ctx context.Context) ([]domain.Project, error)
 	CreateChildCards(ctx context.Context, cards []domain.ChildCard) ([]domain.Card, error)
 	ListChildCards(ctx context.Context, parentID uuid.UUID) ([]domain.Card, error)

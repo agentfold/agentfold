@@ -124,7 +124,7 @@ Fluxos são **versionados**: um FlowRun em andamento continua na versão em que 
 |---|---|---|
 | **CreateCards** (aposentado) | baia e tipo dos cards criados; os itens vêm da lista `cards` que o nó anterior entrega | `next`, `failed` |
 | **WaitChildren** | modo (`all_succeed`: sai na primeira falha; `all_finished`: espera todos terminarem) e a propriedade que conta como sucesso | `all_done`, `some_failed` |
-| **HumanReview** | nomes dos artefatos revisados (vazio: os coletados no run) | `approved`, `changes_requested` |
+| **HumanReview** | o que revisar: artefatos (nomes; vazio: os coletados no run) ou a saída do nó anterior | `approved`, `changes_requested` |
 | **SetProperty** | chave e valor | `next` |
 | **CheckProperty** | chave e valor; esperar (sim/não) | `satisfied`, `pending` |
 | **HTTP Request** (`http_request`) | método, URL, headers (alguns secretos), body, modo (`wait` ou `fire_and_forget`), timeout, status de sucesso, tentativas, intervalo e backoff (`fixed` ou `exponential`) | `success`, `failed`; em `fire_and_forget`: `next` |
@@ -248,6 +248,22 @@ aceita mensagens enquanto um nó de revisão espera pelo artefato: o estado da r
 e do run dele. Quem decide termina o NodeRun numa transação e enfileira o job `flow.continue`,
 que a engine trata seguindo a saída do nó. Mover o card não muda a revisão; cancelar o run a
 encerra (`closed`).
+
+**Aprovação da saída.** Com "o que revisar" = saída do nó anterior (`subject: output`), o
+HumanReview não usa artefatos: o humano aprova o que o nó anterior entregou (a resposta ou a
+saída estruturada do agente, o relatório do WaitChildren, a resposta de um HTTP Request). O
+NodeRun fica `awaiting_review` e o FlowRun `waiting`, como na revisão de artefatos. O botão
+"Revisar" abre a tela de revisão, que mostra a saída (Markdown) e o campo de ajustes; o nó também
+aparece na aba Execução do card. A API expõe, para esse nó, `approval` e `input_message`.
+A decisão vai por `POST /node-runs/{id}/review` (`approved` ou `changes_requested` com a
+mensagem) ou pela tool `review_output` do MCP de integração:
+
+- `approved` repassa o que o nó recebeu;
+- `changes_requested` leva a mensagem ao agente ligado (`ApprovalPrompt`), que retoma a própria
+  sessão; quando ele termina, o fluxo volta à aprovação com a nova resposta.
+
+A decisão e a mensagem ficam no próprio NodeRun (`decision` = `approved` ou
+`changes_requested`, `feedback`), uma execução por rodada.
 
 ### 4.2 Perguntas do agente
 
@@ -432,7 +448,7 @@ em dólar é estimativa.
 - **REST** — boards/lanes/cards/flows/runs/questions/agent-profiles. Contrato OpenAPI.
 - **SSE** — eventos em tempo real (card movido, saída do agente, perguntas, status de nós).
 - **MCP** — tools para integrações (`list_cards`, `create_card`, `move_card`,
-  `answer_questions`, `list_flows`, `get_run`…) e as tools de agente da seção 5.
+  `answer_questions`, `list_flows`, `get_run`, `review_output`…) e as tools de agente da seção 5.
 - **Disparar um fluxo de fora** — criar um card (`POST /api/cards`) dispara os gatilhos
   `card_created` e o `card_entered_lane` da baia dele; mover (`POST /api/cards/{id}/move`)
   dispara o `card_entered_lane`. O MCP de integração faz o mesmo. A API ainda não tem

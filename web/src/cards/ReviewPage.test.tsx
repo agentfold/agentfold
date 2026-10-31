@@ -7,11 +7,13 @@ import {
   cardType,
   createFakeBackend,
   lane,
+  nodeRun,
+  runDetail,
 } from '../test/fakeBackend'
 import { renderWithApi } from '../test/render'
 import { ReviewPage } from './ReviewPage'
 
-function setup() {
+function setup(approval = false) {
   const review = lane('Revisar plano', 0)
   const task = cardType('task')
   const c = card('Chat', review.id, task.id, 0)
@@ -20,6 +22,17 @@ function setup() {
     cardTypes: [task],
     cards: [c],
     artifacts: [artifact(c.id, 'Plano', ['# Plano'])],
+    cardRuns: approval
+      ? [
+          runDetail(c.id, 'waiting', [
+            nodeRun('approve', 'human_review', {
+              status: 'awaiting_review',
+              approval: true,
+              input_message: 'Três cards',
+            }),
+          ]),
+        ]
+      : [],
   })
   renderWithApi(<ReviewPage cardId={c.id} />, backend)
   return { backend, card: c }
@@ -28,6 +41,15 @@ function setup() {
 describe('ReviewPage', () => {
   afterEach(() => {
     window.location.hash = ''
+  })
+
+  it('shows the output awaiting approval instead', async () => {
+    setup(true)
+    expect(
+      await screen.findByRole('heading', { name: 'Aprovação · Chat' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Três cards')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Aprovar' })).toBeInTheDocument()
   })
 
   it('shows the artifacts of the card next to their review', async () => {

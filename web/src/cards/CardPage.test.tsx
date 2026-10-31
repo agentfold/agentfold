@@ -303,6 +303,56 @@ describe('RunsPanel', () => {
     )
   })
 
+  it('approves the output of the node before', async () => {
+    const approval = nodeRun('approve', 'human_review', {
+      status: 'awaiting_review',
+      output_handle: '',
+      approval: true,
+      input_message: '## Cards\n\n- API',
+    })
+    const { backend } = setup((id) => [
+      runDetail(id, 'waiting', [approval], { awaiting_review: true }),
+    ])
+    const node = await screen.findByRole('article', { name: 'approve 1' })
+    expect(
+      await within(node).findByRole('heading', { name: 'Cards' }),
+    ).toBeInTheDocument()
+    const ask = within(node).getByRole('button', { name: 'Pedir ajustes' })
+    expect(ask).toBeDisabled()
+
+    backend.failNext('POST /node-runs', 500)
+    await userEvent.type(within(node).getByLabelText('Ajustes'), 'split it')
+    await userEvent.click(ask)
+    expect(await within(node).findByRole('alert')).toBeInTheDocument()
+    expect(within(node).getByLabelText('Ajustes')).toHaveValue('split it')
+
+    await userEvent.click(ask)
+    await waitFor(() => {
+      expect(within(node).getByText('Pediu ajustes:')).toBeInTheDocument()
+    })
+    expect(within(node).getByText('split it')).toBeInTheDocument()
+    expect(approval.decision).toBe('changes_requested')
+  })
+
+  it('approves an output as it is', async () => {
+    const approval = nodeRun('approve', 'human_review', {
+      status: 'awaiting_review',
+      output_handle: '',
+      approval: true,
+    })
+    setup((id) => [
+      runDetail(id, 'waiting', [approval], { awaiting_review: true }),
+    ])
+    const node = await screen.findByRole('article', { name: 'approve 1' })
+    expect(
+      within(node).getByText('O nó anterior não entregou texto.'),
+    ).toBeInTheDocument()
+    await userEvent.click(within(node).getByRole('button', { name: 'Aprovar' }))
+    await waitFor(() => {
+      expect(within(node).getByText('Aprovou')).toBeInTheDocument()
+    })
+  })
+
   it('approves a human review from the run', async () => {
     const review = nodeRun('review', 'human_review', {
       status: 'awaiting_review',

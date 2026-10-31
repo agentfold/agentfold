@@ -173,6 +173,10 @@ func TestConfigProblems(t *testing.T) {
 		{"human review", NodeHumanReview, `{"artifacts":["Plano"]}`, []string{"ligue a saída changes_requested"}},
 		{"human review with blank name", NodeHumanReview, `{"artifacts":[" "]}`, []string{"o nome de um artefato revisado está vazio", "ligue"}},
 		{"human review with repeated name", NodeHumanReview, `{"artifacts":["A","A"]}`, []string{`o artefato "A" aparece mais de uma vez`, "ligue"}},
+		{"output approval", NodeHumanReview, `{"subject":"output"}`, []string{"ligue"}},
+		{"artifact review by subject", NodeHumanReview, `{"subject":"artifacts","artifacts":["Plano"]}`, []string{"ligue"}},
+		{"output approval with artifacts", NodeHumanReview, `{"subject":"output","artifacts":["Plano"]}`, []string{"a aprovação da saída não revisa artefatos", "ligue"}},
+		{"review of something else", NodeHumanReview, `{"subject":"card"}`, []string{`o que revisar é desconhecido: "card"`, "ligue"}},
 		{"human review with bad JSON", NodeHumanReview, `[]`, []string{"configuração inválida", "ligue"}},
 		{"set property", NodeSetProperty, `{"key":"dev","value":"ok"}`, nil},
 		{"set property without key and value", NodeSetProperty, `{"key":" "}`, []string{"informe a chave da propriedade", "informe o valor da propriedade"}},
@@ -359,5 +363,24 @@ func TestAllowsBoardTool(t *testing.T) {
 	}
 	if c.CardTypeIDs = []uuid.UUID{uuid.New()}; !c.CreatesCards() {
 		t.Fatal("create_cards with card types")
+	}
+}
+
+func TestApprovesOutput(t *testing.T) {
+	for _, tt := range []struct {
+		n    Node
+		want bool
+	}{
+		{node("r", NodeHumanReview, `{"subject":"output"}`), true},
+		{node("r", NodeHumanReview, `{}`), false},
+		{node("r", NodeHumanReview, `[]`), false},
+		{node("a", NodeAgent, `{"subject":"output"}`), false},
+	} {
+		if got := ApprovesOutput(tt.n); got != tt.want {
+			t.Errorf("%s %s: got %v", tt.n.Type, tt.n.Config, got)
+		}
+	}
+	if !strings.Contains(ApprovalPrompt("fix it"), "fix it") {
+		t.Error("the prompt lacks the request")
 	}
 }

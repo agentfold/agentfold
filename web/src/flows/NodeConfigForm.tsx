@@ -148,26 +148,53 @@ export function NodeConfigForm({
         </div>
       )
     }
-    case 'human_review':
+    case 'human_review': {
+      const config = data.config as HumanReviewConfig
+      const output = config.subject === 'output'
       return (
         <div className="flex flex-col gap-3">
-          <p className="text-sm text-slate-500">
-            O fluxo espera um humano revisar os artefatos na aba Artefatos do
-            card. Cada mensagem dele sai por pediu ajustes, que deve levar ao
-            agente que refaz o trabalho; o fluxo volta a esta revisão quando o
-            agente termina. Aprovar sai por aprovado.
-          </p>
-          <ListField
-            label="Artefatos revisados"
-            placeholder="Plano"
-            hint="Nomes separados por vírgula. Vazio: os artefatos coletados neste run."
-            items={(data.config as HumanReviewConfig).artifacts}
-            onChange={(artifacts) => {
-              onChange(artifacts.length > 0 ? { artifacts } : {})
+          <SelectField
+            label="O que revisar"
+            value={config.subject ?? 'artifacts'}
+            onChange={(subject) => {
+              onChange(subject === 'output' ? { subject } : {})
             }}
+            options={[
+              { value: 'artifacts', label: 'Artefatos do card' },
+              { value: 'output', label: 'Saída do nó anterior' },
+            ]}
           />
+          {output ? (
+            <p className="text-sm text-slate-500">
+              O fluxo espera um humano aprovar o que o nó anterior entregou (a
+              resposta do agente, o relatório dos filhos, a resposta de uma
+              chamada HTTP), no card ou na tela de revisão. Pedir ajustes sai
+              por pediu ajustes, que deve levar ao agente que refaz o trabalho;
+              o fluxo volta a esta aprovação com a nova resposta. Aprovar sai
+              por aprovado, repassando a saída aprovada.
+            </p>
+          ) : (
+            <>
+              <p className="text-sm text-slate-500">
+                O fluxo espera um humano revisar os artefatos na aba Artefatos
+                do card. Cada mensagem dele sai por pediu ajustes, que deve
+                levar ao agente que refaz o trabalho; o fluxo volta a esta
+                revisão quando o agente termina. Aprovar sai por aprovado.
+              </p>
+              <ListField
+                label="Artefatos revisados"
+                placeholder="Plano"
+                hint="Nomes separados por vírgula. Vazio: os artefatos coletados neste run."
+                items={config.artifacts}
+                onChange={(artifacts) => {
+                  onChange(artifacts.length > 0 ? { artifacts } : {})
+                }}
+              />
+            </>
+          )}
         </div>
       )
+    }
     case 'set_property':
       return (
         <div className="flex flex-col gap-3">

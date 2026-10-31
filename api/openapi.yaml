@@ -522,6 +522,30 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/NodeOutput" }
         default: { $ref: "#/components/responses/Error" }
+  /node-runs/{id}/review:
+    parameters:
+      - $ref: "#/components/parameters/ID"
+    post:
+      operationId: decideApproval
+      tags: [runs]
+      description: >
+        Decides the approval of the output a human_review node with subject
+        output awaits: approved leaves by approved, handing on what the node
+        received; changes_requested (message required) leaves by
+        changes_requested with the message for the agent. Fails with
+        review_closed when the node run awaits no decision.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalDecision" }
+      responses:
+        "200":
+          description: Decided; the flow goes on.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NodeRun" }
+        default: { $ref: "#/components/responses/Error" }
   /cards/{id}/artifacts:
     parameters:
       - $ref: "#/components/parameters/ID"
@@ -944,10 +968,20 @@ components:
           type: object
           additionalProperties: true
           description: The entity after the change; absent when it was deleted.
+    ApprovalDecision:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [approved, changes_requested]
+        message:
+          type: string
+          description: What to change; required with changes_requested.
     NodeRun:
       type: object
       description: One execution of a node within a flow run.
-      required: [id, flow_run_id, node_key, node_type, iteration, status, output_handle, error, summary, decision, feedback, output,
+      required: [id, flow_run_id, node_key, node_type, iteration, status, output_handle, error, summary, decision, feedback, output, approval, input_message,
         tokens_in, tokens_out, cache_read, cache_write, cost_usd, turns, duration_ms, created_at, started_at, finished_at]
       properties:
         id: { type: string, format: uuid }
@@ -972,11 +1006,19 @@ components:
           description: What the agent reported with report_done.
         decision:
           type: string
-          enum: ["", approved, rejected]
-          description: How a gateway node decided; empty for other nodes and while it runs.
+          enum: ["", approved, rejected, changes_requested]
+          description: >
+            How a gateway node decided, or how a human decided an output
+            approval; empty for other nodes and while it runs.
         feedback:
           type: string
-          description: The reason of approve or the feedback of reject.
+          description: The reason of approve, the feedback of reject or the changes the human asked.
+        approval:
+          type: boolean
+          description: A human_review node that approves the output of the node before.
+        input_message:
+          type: string
+          description: What an approval node has the human approve (the output of the node before, as an agent gets it); empty for other nodes.
         output:
           type: object
           nullable: true
@@ -1537,10 +1579,15 @@ components:
     HumanReviewConfig:
       type: object
       description: >
-        Waits for a human to review artifacts of the card: they ask for
-        changes in the review chat or approve. changes_requested must lead to
-        the node that redoes the work.
+        Waits for a human to review artifacts of the card (subject
+        artifacts, the default) or to approve the output of the node before
+        (subject output, without artifacts): they ask for changes or
+        approve. changes_requested must lead to the node that redoes the
+        work.
       properties:
+        subject:
+          type: string
+          enum: [artifacts, output]
         artifacts:
           type: array
           description: Names of the artifacts reviewed; empty or absent means those collected in the run.

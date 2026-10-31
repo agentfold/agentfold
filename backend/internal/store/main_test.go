@@ -215,6 +215,13 @@ func (f *failing) SetFlowRunStatus(ctx context.Context, arg sqlcgen.SetFlowRunSt
 	return f.Querier.SetFlowRunStatus(ctx, arg)
 }
 
+func (f *failing) SetNodeRunDecision(ctx context.Context, arg sqlcgen.SetNodeRunDecisionParams) (sqlcgen.NodeRun, error) {
+	if err := f.hit("SetNodeRunDecision"); err != nil {
+		return sqlcgen.NodeRun{}, err
+	}
+	return f.Querier.SetNodeRunDecision(ctx, arg)
+}
+
 func (f *failing) DeliverQuestions(ctx context.Context, nodeRunID uuid.UUID) error {
 	if err := f.hit("DeliverQuestions"); err != nil {
 		return err

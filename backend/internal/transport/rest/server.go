@@ -59,6 +59,7 @@ type Board interface {
 	GetArtifact(ctx context.Context, id uuid.UUID) (service.ArtifactDetail, error)
 	RequestArtifactChanges(ctx context.Context, id uuid.UUID, text string) (domain.ArtifactMessage, error)
 	ApproveArtifact(ctx context.Context, id uuid.UUID) error
+	DecideApproval(ctx context.Context, nodeRunID uuid.UUID, decision, text string) (service.RunNode, error)
 
 	ListFlows(ctx context.Context) ([]domain.Flow, error)
 	GetFlow(ctx context.Context, id uuid.UUID) (service.FlowDetail, error)

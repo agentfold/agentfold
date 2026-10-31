@@ -8,6 +8,7 @@ import {
 import {
   unwrap,
   type AgentProfileInput,
+  type ApprovalDecision,
   type Card,
   type CardInput,
   type CardTypeInput,
@@ -426,6 +427,19 @@ export function useApproveArtifact() {
   const { client } = useApi()
   return useChange(keys.artifacts, (id: string) =>
     unwrap(client.POST('/artifacts/{id}/approve', byId(id))),
+  )
+}
+
+/**
+ * Decides the approval of an output a human_review node awaits: approved
+ * goes on, changes_requested sends the message to the agent.
+ */
+export function useDecideApproval() {
+  const { client } = useApi()
+  return useChange(
+    keys.cardRuns,
+    ({ id, ...body }: ApprovalDecision & { id: string }) =>
+      unwrap(client.POST('/node-runs/{id}/review', { ...byId(id), body })),
   )
 }
 

@@ -90,6 +90,24 @@ func (e AgentProfileInputKind) Valid() bool {
 	}
 }
 
+// Defines values for ApprovalDecisionDecision.
+const (
+	ApprovalDecisionDecisionApproved         ApprovalDecisionDecision = "approved"
+	ApprovalDecisionDecisionChangesRequested ApprovalDecisionDecision = "changes_requested"
+)
+
+// Valid indicates whether the value is a known member of the ApprovalDecisionDecision enum.
+func (e ApprovalDecisionDecision) Valid() bool {
+	switch e {
+	case ApprovalDecisionDecisionApproved:
+		return true
+	case ApprovalDecisionDecisionChangesRequested:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ArtifactReview.
 const (
 	ArtifactReviewApproved ArtifactReview = "approved"
@@ -402,6 +420,24 @@ func (e HTTPRequestNodeType) Valid() bool {
 	}
 }
 
+// Defines values for HumanReviewConfigSubject.
+const (
+	Artifacts HumanReviewConfigSubject = "artifacts"
+	Output    HumanReviewConfigSubject = "output"
+)
+
+// Valid indicates whether the value is a known member of the HumanReviewConfigSubject enum.
+func (e HumanReviewConfigSubject) Valid() bool {
+	switch e {
+	case Artifacts:
+		return true
+	case Output:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HumanReviewNodeType.
 const (
 	HumanReview HumanReviewNodeType = "human_review"
@@ -494,15 +530,18 @@ func (e NodeOutputKind) Valid() bool {
 
 // Defines values for NodeRunDecision.
 const (
-	NodeRunDecisionApproved NodeRunDecision = "approved"
-	NodeRunDecisionEmpty    NodeRunDecision = ""
-	NodeRunDecisionRejected NodeRunDecision = "rejected"
+	NodeRunDecisionApproved         NodeRunDecision = "approved"
+	NodeRunDecisionChangesRequested NodeRunDecision = "changes_requested"
+	NodeRunDecisionEmpty            NodeRunDecision = ""
+	NodeRunDecisionRejected         NodeRunDecision = "rejected"
 )
 
 // Valid indicates whether the value is a known member of the NodeRunDecision enum.
 func (e NodeRunDecision) Valid() bool {
 	switch e {
 	case NodeRunDecisionApproved:
+		return true
+	case NodeRunDecisionChangesRequested:
 		return true
 	case NodeRunDecisionEmpty:
 		return true
@@ -720,6 +759,17 @@ type AgentProfileInput struct {
 
 // AgentProfileInputKind Read on creation only; claude when absent.
 type AgentProfileInputKind string
+
+// ApprovalDecision defines model for ApprovalDecision.
+type ApprovalDecision struct {
+	Decision ApprovalDecisionDecision `json:"decision"`
+
+	// Message What to change; required with changes_requested.
+	Message *string `json:"message,omitempty"`
+}
+
+// ApprovalDecisionDecision defines model for ApprovalDecision.Decision.
+type ApprovalDecisionDecision string
 
 // Artifact A file an agent node collected on the card, with its versions and review chat. A human_review node puts it under review.
 type Artifact struct {
@@ -1108,15 +1158,19 @@ type HTTPRequestNode struct {
 // HTTPRequestNodeType defines model for HTTPRequestNode.Type.
 type HTTPRequestNodeType string
 
-// HumanReviewConfig Waits for a human to review artifacts of the card: they ask for changes in the review chat or approve. changes_requested must lead to the node that redoes the work.
+// HumanReviewConfig Waits for a human to review artifacts of the card (subject artifacts, the default) or to approve the output of the node before (subject output, without artifacts): they ask for changes or approve. changes_requested must lead to the node that redoes the work.
 type HumanReviewConfig struct {
 	// Artifacts Names of the artifacts reviewed; empty or absent means those collected in the run.
-	Artifacts *[]string `json:"artifacts,omitempty"`
+	Artifacts *[]string                 `json:"artifacts,omitempty"`
+	Subject   *HumanReviewConfigSubject `json:"subject,omitempty"`
 }
+
+// HumanReviewConfigSubject defines model for HumanReviewConfig.Subject.
+type HumanReviewConfigSubject string
 
 // HumanReviewNode defines model for HumanReviewNode.
 type HumanReviewNode struct {
-	// Config Waits for a human to review artifacts of the card: they ask for changes in the review chat or approve. changes_requested must lead to the node that redoes the work.
+	// Config Waits for a human to review artifacts of the card (subject artifacts, the default) or to approve the output of the node before (subject output, without artifacts): they ask for changes or approve. changes_requested must lead to the node that redoes the work.
 	Config   HumanReviewConfig   `json:"config"`
 	Id       string              `json:"id"`
 	Position Position            `json:"position"`
@@ -1272,6 +1326,8 @@ type NodeOutputKind string
 
 // NodeRun One execution of a node within a flow run.
 type NodeRun struct {
+	// Approval A human_review node that approves the output of the node before.
+	Approval   bool  `json:"approval"`
 	CacheRead  int64 `json:"cache_read"`
 	CacheWrite int64 `json:"cache_write"`
 
@@ -1279,16 +1335,19 @@ type NodeRun struct {
 	CostUsd   float64   `json:"cost_usd"`
 	CreatedAt time.Time `json:"created_at"`
 
-	// Decision How a gateway node decided; empty for other nodes and while it runs.
+	// Decision How a gateway node decided, or how a human decided an output approval; empty for other nodes and while it runs.
 	Decision   NodeRunDecision `json:"decision"`
 	DurationMs int64           `json:"duration_ms"`
 	Error      string          `json:"error"`
 
-	// Feedback The reason of approve or the feedback of reject.
+	// Feedback The reason of approve, the feedback of reject or the changes the human asked.
 	Feedback   string             `json:"feedback"`
 	FinishedAt *time.Time         `json:"finished_at"`
 	FlowRunId  openapi_types.UUID `json:"flow_run_id"`
 	Id         openapi_types.UUID `json:"id"`
+
+	// InputMessage What an approval node has the human approve (the output of the node before, as an agent gets it); empty for other nodes.
+	InputMessage string `json:"input_message"`
 
 	// Iteration How many times the run entered the node (gateway rejections re-enter agents).
 	Iteration int    `json:"iteration"`
@@ -1314,7 +1373,7 @@ type NodeRun struct {
 	Turns     int    `json:"turns"`
 }
 
-// NodeRunDecision How a gateway node decided; empty for other nodes and while it runs.
+// NodeRunDecision How a gateway node decided, or how a human decided an output approval; empty for other nodes and while it runs.
 type NodeRunDecision string
 
 // NodeRunStatus waiting is a wait_children or check_property node; awaiting_review a human_review node.
@@ -1486,6 +1545,9 @@ type TestMcpServerJSONRequestBody = McpServerTest
 
 // UpdateMcpServerJSONRequestBody defines body for UpdateMcpServer for application/json ContentType.
 type UpdateMcpServerJSONRequestBody = McpServerInput
+
+// DecideApprovalJSONRequestBody defines body for DecideApproval for application/json ContentType.
+type DecideApprovalJSONRequestBody = ApprovalDecision
 
 // CreateProjectJSONRequestBody defines body for CreateProject for application/json ContentType.
 type CreateProjectJSONRequestBody = ProjectInput
@@ -2028,6 +2090,9 @@ type ServerInterface interface {
 
 	// (GET /node-runs/{id}/output)
 	ListNodeOutput(w http.ResponseWriter, r *http.Request, id ID)
+
+	// (POST /node-runs/{id}/review)
+	DecideApproval(w http.ResponseWriter, r *http.Request, id ID)
 
 	// (GET /projects)
 	ListProjects(w http.ResponseWriter, r *http.Request)
@@ -3111,6 +3176,32 @@ func (siw *ServerInterfaceWrapper) ListNodeOutput(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// DecideApproval operation middleware
+func (siw *ServerInterfaceWrapper) DecideApproval(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DecideApproval(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListProjects operation middleware
 func (siw *ServerInterfaceWrapper) ListProjects(w http.ResponseWriter, r *http.Request) {
 
@@ -3400,6 +3491,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/cards/{id}/runs", wrapper.ListCardRuns)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/flow-runs/{id}/cancel", wrapper.CancelFlowRun)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/node-runs/{id}/output", wrapper.ListNodeOutput)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/node-runs/{id}/review", wrapper.DecideApproval)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/cards/{id}/artifacts", wrapper.ListCardArtifacts)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/artifacts/{id}", wrapper.GetArtifact)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/artifacts/{id}/messages", wrapper.RequestArtifactChanges)
@@ -5216,6 +5308,46 @@ func (response ListNodeOutputdefaultJSONResponse) VisitListNodeOutputResponse(w 
 	return err
 }
 
+type DecideApprovalRequestObject struct {
+	Id   ID `json:"id"`
+	Body *DecideApprovalJSONRequestBody
+}
+
+type DecideApprovalResponseObject interface {
+	VisitDecideApprovalResponse(w http.ResponseWriter) error
+}
+
+type DecideApproval200JSONResponse NodeRun
+
+func (response DecideApproval200JSONResponse) VisitDecideApprovalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DecideApprovaldefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DecideApprovaldefaultJSONResponse) VisitDecideApprovalResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListProjectsRequestObject struct {
 }
 
@@ -5588,6 +5720,9 @@ type StrictServerInterface interface {
 
 	// (GET /node-runs/{id}/output)
 	ListNodeOutput(ctx context.Context, request ListNodeOutputRequestObject) (ListNodeOutputResponseObject, error)
+
+	// (POST /node-runs/{id}/review)
+	DecideApproval(ctx context.Context, request DecideApprovalRequestObject) (DecideApprovalResponseObject, error)
 
 	// (GET /projects)
 	ListProjects(ctx context.Context, request ListProjectsRequestObject) (ListProjectsResponseObject, error)
@@ -6953,6 +7088,39 @@ func (sh *strictHandler) ListNodeOutput(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListNodeOutputResponseObject); ok {
 		if err := validResponse.VisitListNodeOutputResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DecideApproval operation middleware
+func (sh *strictHandler) DecideApproval(w http.ResponseWriter, r *http.Request, id ID) {
+	var request DecideApprovalRequestObject
+
+	request.Id = id
+
+	var body DecideApprovalJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DecideApproval(ctx, request.(DecideApprovalRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DecideApproval")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DecideApprovalResponseObject); ok {
+		if err := validResponse.VisitDecideApprovalResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
