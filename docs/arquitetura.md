@@ -201,6 +201,13 @@ expressões leem `card` (campos e `properties`), `input` e `nodes` (`nodes.dev`,
 compilam na publicação (sintaxe e nomes) e, na execução, uma que falha (campo ausente, tipo
 errado) sai por `failed` com a mensagem, repassando a entrada. Roda dentro do engine, sem job.
 
+**Condição** (`switch`) tem uma lista ordenada de casos `{nome, condição}`: cada caso é uma
+saída, e o run segue pela do primeiro cuja condição (uma expressão como as do Transformar) dá
+verdadeiro, ou por `else` quando nenhuma dá. A entrada passa adiante sem mudar. Uma condição
+que falha ou não dá verdadeiro/falso sai por `failed`. Os nomes aceitam letras, números, `_` e
+`-`, são únicos e não podem ser `else` nem `failed`; mudar os casos no editor remove as
+ligações das saídas que deixaram de existir.
+
 **Referências entre nós.** Os placeholders `{{nodes.<id>…}}` leem a última execução do nó no
 run (o engine carrega as execuções do run antes de renderizar); um nó que ainda não rodou sai
 vazio. O prompt do agente aceita os mesmos placeholders, preenchidos quando o fluxo entra no

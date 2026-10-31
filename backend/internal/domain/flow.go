@@ -77,6 +77,9 @@ const (
 	// NodeTransform builds a JSON value with expressions, without an agent
 	// (TransformConfig).
 	NodeTransform NodeType = "transform"
+	// NodeSwitch goes on by the first case whose condition holds
+	// (SwitchConfig).
+	NodeSwitch NodeType = "switch"
 )
 
 // Outputs lists the outputs (edge source handles) of each node type. Agent
@@ -101,6 +104,9 @@ var Outputs = map[NodeType][]string{
 	NodeHTTPRequest: {"success", "failed"},
 	// failed: an expression failed (a missing field, a wrong type).
 	NodeTransform: {"next", "failed"},
+	// The case names come first (see SwitchConfig.Outputs); failed: a
+	// condition failed or was not true or false.
+	NodeSwitch: {SwitchElse, "failed"},
 }
 
 // GatewayOutputs are the outputs of an agent node with the gateway on.
@@ -118,6 +124,11 @@ func NodeOutputs(n Node) []string {
 		var c HTTPRequestConfig
 		if json.Unmarshal(n.Config, &c) == nil && c.FireAndForget() {
 			return HTTPOutputs
+		}
+	case NodeSwitch:
+		var c SwitchConfig
+		if json.Unmarshal(n.Config, &c) == nil {
+			return c.Outputs()
 		}
 	}
 	return Outputs[n.Type]
@@ -615,6 +626,12 @@ func templateTexts(n Node) (texts, exprs []string, prompt bool) {
 				texts = append(texts, s)
 			}
 		})
+	case NodeSwitch:
+		var c SwitchConfig
+		_ = json.Unmarshal(n.Config, &c)
+		for _, sc := range c.Cases {
+			exprs = append(exprs, sc.Expression)
+		}
 	}
 	return texts, exprs, false
 }
@@ -723,6 +740,12 @@ func (v *validator) configProblems(n Node) []string {
 			return []string{invalidConfig(err)}
 		}
 		return transformProblems(c)
+	case NodeSwitch:
+		var c SwitchConfig
+		if err := json.Unmarshal(config, &c); err != nil {
+			return []string{invalidConfig(err)}
+		}
+		return switchProblems(c)
 	}
 	return nil
 }

@@ -61,6 +61,7 @@ const palette: NodeKind[] = [
   'check_property',
   'http_request',
   'transform',
+  'switch',
   'end',
 ]
 
@@ -114,9 +115,9 @@ function DraftEditor({ flow }: { flow: Flow }) {
     edit()
   }
   const selected = nodes.find((n) => n.selected)
-  // Turning the gateway on or off, or changing the mode of an HTTP
-  // Request, changes the outputs: edges leaving from outputs the node no
-  // longer has go away.
+  // Turning the gateway on or off, changing the mode of an HTTP Request or
+  // the cases of a Condition changes the outputs: edges leaving from
+  // outputs the node no longer has go away.
   const setConfig = (node: StepNode, config: StepConfig) => {
     const outs = nodeOutputs({ ...node.data, config })
     setEdges((current) =>

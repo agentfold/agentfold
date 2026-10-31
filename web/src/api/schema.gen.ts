@@ -955,7 +955,7 @@ export interface components {
             y: number;
         };
         /** @description A step of the flow. Configs may be incomplete in drafts; publishing reports what is missing. */
-        FlowNode: components["schemas"]["TriggerNode"] | components["schemas"]["AgentNode"] | components["schemas"]["MoveCardNode"] | components["schemas"]["CreateCardsNode"] | components["schemas"]["WaitChildrenNode"] | components["schemas"]["HumanReviewNode"] | components["schemas"]["SetPropertyNode"] | components["schemas"]["CheckPropertyNode"] | components["schemas"]["HTTPRequestNode"] | components["schemas"]["TransformNode"] | components["schemas"]["EndNode"];
+        FlowNode: components["schemas"]["TriggerNode"] | components["schemas"]["AgentNode"] | components["schemas"]["MoveCardNode"] | components["schemas"]["CreateCardsNode"] | components["schemas"]["WaitChildrenNode"] | components["schemas"]["HumanReviewNode"] | components["schemas"]["SetPropertyNode"] | components["schemas"]["CheckPropertyNode"] | components["schemas"]["HTTPRequestNode"] | components["schemas"]["TransformNode"] | components["schemas"]["SwitchNode"] | components["schemas"]["EndNode"];
         TriggerNode: {
             id: string;
             /**
@@ -1055,6 +1055,16 @@ export interface components {
             type: "transform";
             position: components["schemas"]["Position"];
             config: components["schemas"]["TransformConfig"];
+        };
+        SwitchNode: {
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "switch";
+            position: components["schemas"]["Position"];
+            config: components["schemas"]["SwitchConfig"];
         };
         EndNode: {
             id: string;
@@ -1212,6 +1222,14 @@ export interface components {
         /** @description Builds a JSON value without an agent and hands it on as {"output": <value>}, leaving by next. In output, strings starting with = are expr-lang expressions (https://expr-lang.org) whose values keep their type; other strings are text with the placeholders of HTTPRequestConfig. Expressions read card (its fields and properties), input (what the node before handed on: its structured output, else its text) and nodes (the same for the last output of each node of the run, as nodes.dev or nodes["agent-1"]). An expression that fails (a missing field, a wrong type) leaves by failed, handing on the input. output is required to publish. */
         TransformConfig: {
             output?: unknown;
+        };
+        /** @description Goes on by the output of the first case whose expression (expr-lang, reading card, input and nodes as in TransformConfig) is true, else by else, handing on the input. A condition that fails or is neither true nor false leaves by failed. Its outputs are the case names, else and failed. One case at least is required to publish; names take letters, digits, _ and -, are unique and not else or failed. */
+        SwitchConfig: {
+            cases?: components["schemas"]["SwitchCase"][];
+        };
+        SwitchCase: {
+            name: string;
+            expression: string;
         };
         /** @description Calls an HTTP endpoint. url, header values and body take placeholders: {{card.<field>}} (id, title, description, lane_id, card_type_id, project_id, parent_card_id), {{card.properties.<key>}}, {{input}} (what the node before handed on), {{input.<path>}} (a value in its structured output, by keys and array indexes split by dots), and {{nodes.<id>}} and {{nodes.<id>.<path>}} (the same for the last output of the node id in the run). Values are URL-encoded in the url and JSON-escaped in the body, which gets a JSON content type unless a header sets one. In wait mode (the default) the node leaves by success when the status is one of success_statuses (2xx when empty), else by failed, after max_attempts attempts for network errors, timeouts, 429 and 5xx; it hands on {"output": {"status", "body"}}. In fire_and_forget mode it makes one attempt and goes on by next right away, handing on its input. method and url are required to publish. */
         HTTPRequestConfig: {

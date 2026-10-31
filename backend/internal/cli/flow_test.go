@@ -420,7 +420,10 @@ func TestChildCardsEndToEnd(t *testing.T) {
 		t.Fatalf("children %+v, %v", children, err)
 	}
 	for _, c := range children {
-		if c.LaneID != s.done || !c.HasProperty("dev", "ok") {
+		// The parent goes on once the children have the property; their own
+		// runs still move them to done.
+		s.waitRun(t, c.ID, domain.RunDone)
+		if c, _ = s.store.GetCard(ctx, c.ID); c.LaneID != s.done || !c.HasProperty("dev", "ok") {
 			t.Fatalf("child %s is not done: %+v", c.Title, c)
 		}
 	}

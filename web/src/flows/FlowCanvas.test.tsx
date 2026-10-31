@@ -19,6 +19,12 @@ const { nodes, edges } = fromApi({
       config: { prompt: 'Revise', gateway: true, max_rounds: 2 },
     },
     { id: 'e', type: 'end', position: { x: 600, y: 0 }, config: {} },
+    {
+      id: 'pick',
+      type: 'switch',
+      position: { x: 900, y: 0 },
+      config: { cases: [{ name: 'alto', expression: 'true' }] },
+    },
   ],
   edges: [{ id: 'x', source: 't', source_handle: 'next', target: 'r' }],
 })
@@ -48,6 +54,9 @@ describe('FlowCanvas', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('rejeitado')).toBeInTheDocument()
     expect(screen.getByText('Encerra o fluxo')).toBeInTheDocument()
+    // A case of a Condition is named as written.
+    expect(screen.getByText('alto')).toBeInTheDocument()
+    expect(screen.getByText('senão')).toBeInTheDocument()
   })
 
   it('flags steps with problems', () => {

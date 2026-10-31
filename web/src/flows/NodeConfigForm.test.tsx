@@ -406,6 +406,29 @@ describe('NodeConfigForm', () => {
     expect(result.config).toEqual({ output: { total: '= 1 + 2' } })
   })
 
+  it('edits the cases of a Condition', async () => {
+    const result = setup('switch', {})
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Adicionar caso' }),
+    )
+    const first = within(screen.getByRole('group', { name: 'Caso 1' }))
+    await userEvent.type(first.getByLabelText('Nome'), 'alto')
+    await userEvent.type(first.getByLabelText('Condição'), 'input > 1')
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Adicionar caso' }),
+    )
+    expect(result.config).toEqual({
+      cases: [
+        { name: 'alto', expression: 'input > 1' },
+        { name: '', expression: '' },
+      ],
+    })
+    const second = within(screen.getByRole('group', { name: 'Caso 2' }))
+    await userEvent.type(second.getByLabelText('Nome'), 'b')
+    await userEvent.click(first.getByRole('button', { name: 'Remover' }))
+    expect(result.config).toEqual({ cases: [{ name: 'b', expression: '' }] })
+  })
+
   it('shows an HTTP request without config', () => {
     setup('http_request', {})
     expect(screen.getByLabelText('URL')).toHaveValue('')

@@ -29,11 +29,16 @@ import (
 // maxExpressionNodes bounds the size of an expression.
 const maxExpressionNodes = 1000
 
-// exprEnv declares the variables, so unknown names fail to compile.
-var exprEnv = map[string]any{"card": map[string]any{}, "input": nil, "nodes": map[string]any{}}
+// exprVars are the variables of expressions; declaring them makes unknown
+// names fail to compile.
+type exprVars struct {
+	Card  map[string]any `expr:"card"`
+	Input any            `expr:"input"`
+	Nodes map[string]any `expr:"nodes"`
+}
 
 func compileExpression(src string) (*vm.Program, error) {
-	program, err := expr.Compile(src, expr.Env(exprEnv), expr.MaxNodes(maxExpressionNodes))
+	program, err := expr.Compile(src, expr.Env(exprVars{}), expr.MaxNodes(maxExpressionNodes))
 	return program, exprError(err)
 }
 
@@ -91,7 +96,7 @@ func (r *nodeRefs) Visit(node *ast.Node) {
 }
 
 // env is what expressions read.
-func (d TemplateData) env() map[string]any {
+func (d TemplateData) env() exprVars {
 	card := map[string]any{}
 	for name, field := range cardFields {
 		card[name] = field(d.Card)
@@ -101,7 +106,7 @@ func (d TemplateData) env() map[string]any {
 	for id, output := range d.Nodes {
 		nodes[id] = outputData(output)
 	}
-	return map[string]any{"card": card, "input": outputData(d.Input), "nodes": nodes}
+	return exprVars{Card: card, Input: outputData(d.Input), Nodes: nodes}
 }
 
 // outputData decodes an output: its structured output, else its result
@@ -228,5 +233,74 @@ func transformProblems(c TransformConfig) []string {
 		}
 	})
 	slices.Sort(out)
+	return out
+}
+
+// SwitchElse is the output of a Switch node when no case holds.
+const SwitchElse = "else"
+
+// SwitchConfig sends the run to the output of the first case whose
+// expression is true, else to SwitchElse.
+type SwitchConfig struct {
+	Cases []SwitchCase `json:"cases,omitempty"`
+}
+
+// SwitchCase is a case of a Switch node: Name is its output.
+type SwitchCase struct {
+	Name       string `json:"name"`
+	Expression string `json:"expression"`
+}
+
+// Choose returns the output for data: the name of the first case whose
+// expression is true, else SwitchElse. An expression that fails or is not
+// true or false is an error.
+func (c SwitchConfig) Choose(data TemplateData) (string, error) {
+	for _, sc := range c.Cases {
+		v, err := Evaluate(sc.Expression, data)
+		if err != nil {
+			return "", fmt.Errorf("o caso %s: %w", sc.Name, err)
+		}
+		holds, ok := v.(bool)
+		if !ok {
+			return "", fmt.Errorf("o caso %s deu %v em vez de verdadeiro ou falso", sc.Name, v)
+		}
+		if holds {
+			return sc.Name, nil
+		}
+	}
+	return SwitchElse, nil
+}
+
+// Outputs are the case names, SwitchElse and failed.
+func (c SwitchConfig) Outputs() []string {
+	out := make([]string, 0, len(c.Cases)+2)
+	for _, sc := range c.Cases {
+		out = append(out, sc.Name)
+	}
+	return append(out, SwitchElse, "failed")
+}
+
+func switchProblems(c SwitchConfig) []string {
+	if len(c.Cases) == 0 {
+		return []string{"adicione pelo menos um caso"}
+	}
+	var out []string
+	seen := map[string]bool{}
+	for i, sc := range c.Cases {
+		switch {
+		case !nodeID.MatchString(sc.Name):
+			out = append(out, fmt.Sprintf("o nome do caso %d só aceita letras, números, _ e -", i+1))
+		case sc.Name == SwitchElse || sc.Name == "failed":
+			out = append(out, fmt.Sprintf("o nome %q é reservado", sc.Name))
+		case seen[sc.Name]:
+			out = append(out, fmt.Sprintf("o caso %s aparece mais de uma vez", sc.Name))
+		}
+		seen[sc.Name] = true
+		if strings.TrimSpace(sc.Expression) == "" {
+			out = append(out, fmt.Sprintf("informe a condição do caso %d", i+1))
+		} else if err := CheckExpression(sc.Expression); err != nil {
+			out = append(out, fmt.Sprintf("a condição do caso %d é inválida: %s", i+1, err))
+		}
+	}
 	return out
 }

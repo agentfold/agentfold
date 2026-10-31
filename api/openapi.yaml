@@ -1219,6 +1219,7 @@ components:
         - $ref: "#/components/schemas/CheckPropertyNode"
         - $ref: "#/components/schemas/HTTPRequestNode"
         - $ref: "#/components/schemas/TransformNode"
+        - $ref: "#/components/schemas/SwitchNode"
         - $ref: "#/components/schemas/EndNode"
       discriminator:
         propertyName: type
@@ -1233,6 +1234,7 @@ components:
           check_property: "#/components/schemas/CheckPropertyNode"
           http_request: "#/components/schemas/HTTPRequestNode"
           transform: "#/components/schemas/TransformNode"
+          switch: "#/components/schemas/SwitchNode"
           end: "#/components/schemas/EndNode"
     TriggerNode:
       type: object
@@ -1314,6 +1316,14 @@ components:
         type: { type: string, enum: [transform] }
         position: { $ref: "#/components/schemas/Position" }
         config: { $ref: "#/components/schemas/TransformConfig" }
+    SwitchNode:
+      type: object
+      required: [id, type, position, config]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [switch] }
+        position: { $ref: "#/components/schemas/Position" }
+        config: { $ref: "#/components/schemas/SwitchConfig" }
     EndNode:
       type: object
       required: [id, type, position, config]
@@ -1541,6 +1551,25 @@ components:
         failed, handing on the input. output is required to publish.
       properties:
         output: {}
+    SwitchConfig:
+      type: object
+      description: >
+        Goes on by the output of the first case whose expression (expr-lang,
+        reading card, input and nodes as in TransformConfig) is true, else
+        by else, handing on the input. A condition that fails or is neither
+        true nor false leaves by failed. Its outputs are the case names,
+        else and failed. One case at least is required to publish; names
+        take letters, digits, _ and -, are unique and not else or failed.
+      properties:
+        cases:
+          type: array
+          items: { $ref: "#/components/schemas/SwitchCase" }
+    SwitchCase:
+      type: object
+      required: [name, expression]
+      properties:
+        name: { type: string }
+        expression: { type: string }
     HTTPRequestConfig:
       type: object
       description: >

@@ -20,6 +20,7 @@ const accents: Record<StepData['kind'], string> = {
   check_property: 'bg-violet-700',
   http_request: 'bg-teal-600',
   transform: 'bg-emerald-600',
+  switch: 'bg-orange-500',
   end: 'bg-slate-500',
 }
 
@@ -65,7 +66,7 @@ export function StepNodeView({ id, data, selected }: NodeProps<StepNode>) {
               key={out}
               className="relative pr-4 text-right text-[11px] text-slate-500"
             >
-              {outputLabels[out]}
+              {outputLabels[out] ?? out}
               <Handle
                 type="source"
                 id={out}

@@ -615,6 +615,21 @@ func (e SetPropertyNodeType) Valid() bool {
 	}
 }
 
+// Defines values for SwitchNodeType.
+const (
+	Switch SwitchNodeType = "switch"
+)
+
+// Valid indicates whether the value is a known member of the SwitchNodeType enum.
+func (e SwitchNodeType) Valid() bool {
+	switch e {
+	case Switch:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TransformNodeType.
 const (
 	Transform TransformNodeType = "transform"
@@ -1461,6 +1476,29 @@ type SetPropertyNode struct {
 // SetPropertyNodeType defines model for SetPropertyNode.Type.
 type SetPropertyNodeType string
 
+// SwitchCase defines model for SwitchCase.
+type SwitchCase struct {
+	Expression string `json:"expression"`
+	Name       string `json:"name"`
+}
+
+// SwitchConfig Goes on by the output of the first case whose expression (expr-lang, reading card, input and nodes as in TransformConfig) is true, else by else, handing on the input. A condition that fails or is neither true nor false leaves by failed. Its outputs are the case names, else and failed. One case at least is required to publish; names take letters, digits, _ and -, are unique and not else or failed.
+type SwitchConfig struct {
+	Cases *[]SwitchCase `json:"cases,omitempty"`
+}
+
+// SwitchNode defines model for SwitchNode.
+type SwitchNode struct {
+	// Config Goes on by the output of the first case whose expression (expr-lang, reading card, input and nodes as in TransformConfig) is true, else by else, handing on the input. A condition that fails or is neither true nor false leaves by failed. Its outputs are the case names, else and failed. One case at least is required to publish; names take letters, digits, _ and -, are unique and not else or failed.
+	Config   SwitchConfig   `json:"config"`
+	Id       string         `json:"id"`
+	Position Position       `json:"position"`
+	Type     SwitchNodeType `json:"type"`
+}
+
+// SwitchNodeType defines model for SwitchNode.Type.
+type SwitchNodeType string
+
 // TransformConfig Builds a JSON value without an agent and hands it on as {"output": <value>}, leaving by next. In output, strings starting with = are expr-lang expressions (https://expr-lang.org) whose values keep their type; other strings are text with the placeholders of HTTPRequestConfig. Expressions read card (its fields and properties), input (what the node before handed on: its structured output, else its text) and nodes (the same for the last output of each node of the run, as nodes.dev or nodes["agent-1"]). An expression that fails (a missing field, a wrong type) leaves by failed, handing on the input. output is required to publish.
 type TransformConfig struct {
 	Output interface{} `json:"output,omitempty"`
@@ -1933,6 +1971,40 @@ func (t *FlowNode) MergeTransformNode(v TransformNode) error {
 	return err
 }
 
+// AsSwitchNode returns the union data inside the FlowNode as a SwitchNode
+func (t FlowNode) AsSwitchNode() (SwitchNode, error) {
+	var body SwitchNode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSwitchNode overwrites any union data inside the FlowNode as the provided SwitchNode
+func (t *FlowNode) FromSwitchNode(v SwitchNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"switch"}`))
+	t.union = b
+	return err
+}
+
+// MergeSwitchNode performs a merge with any union data inside the FlowNode, using the provided SwitchNode
+func (t *FlowNode) MergeSwitchNode(v SwitchNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"switch"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 // AsEndNode returns the union data inside the FlowNode as a EndNode
 func (t FlowNode) AsEndNode() (EndNode, error) {
 	var body EndNode
@@ -1997,6 +2069,8 @@ func (t FlowNode) ValueByDiscriminator() (interface{}, error) {
 		return t.AsMoveCardNode()
 	case "set_property":
 		return t.AsSetPropertyNode()
+	case "switch":
+		return t.AsSwitchNode()
 	case "transform":
 		return t.AsTransformNode()
 	case "trigger":

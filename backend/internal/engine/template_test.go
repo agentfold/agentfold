@@ -113,3 +113,42 @@ func TestTransformNode(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestSwitchNode(t *testing.T) {
+	run := func(t *testing.T, size string) *env {
+		e := newEnv(t)
+		e.card.Properties = map[string]string{"size": size}
+		e.store.cards[e.card.ID] = e.card
+		e.addFlow("pick", graph{
+			nodes: []string{"t:trigger", "pick:switch", "big:move_card", "small:end", "broken:end"},
+			configs: map[string]any{
+				"t": triggerCfg(domain.EventCardCreated, nil),
+				"pick": map[string]any{"cases": []map[string]any{
+					{"name": "big", "expression": `int(card.properties.size) > 10`},
+				}},
+				"big": map[string]any{"lane_id": e.doing},
+			},
+			edges: []string{"t.next>pick", "pick.big>big", "pick.else>small", "pick.failed>broken"},
+		})
+		e.trigger(e.created())
+		return e
+	}
+	run(t, "20").wantTimeline("flow.started", "node.started pick", "node.finished pick done", "node.started big", "node.finished big done", "flow.finished done")
+	run(t, "2").wantTimeline("flow.started", "node.started pick", "node.finished pick done", "node.started small", "node.finished small done", "flow.finished done")
+	e := run(t, "x")
+	e.wantTimeline("flow.started", "node.started pick", "node.finished pick failed", "node.started broken", "node.finished broken done", "flow.finished done")
+	if nr := e.store.nodeRuns[e.store.order[0]]; nr.OutputHandle != "failed" || nr.Error == "" {
+		t.Fatalf("pick %+v", nr)
+	}
+
+	e2 := newEnv(t)
+	e2.addFlow("pick", graph{
+		nodes:   []string{"t:trigger", "pick:switch"},
+		configs: map[string]any{"t": triggerCfg(domain.EventCardCreated, nil), "pick": map[string]any{"cases": []map[string]any{{"name": "a", "expression": "true"}}}},
+		edges:   []string{"t.next>pick"},
+	})
+	e2.store.errs["ListNodeRuns"] = errBoom
+	if err := e2.engine.HandleTrigger(context.Background(), e2.created()); !errors.Is(err, errBoom) {
+		t.Fatalf("got %v", err)
+	}
+}

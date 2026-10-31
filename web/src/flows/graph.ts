@@ -13,6 +13,7 @@ import type {
   CheckPropertyConfig,
   HTTPRequestConfig,
   TransformConfig,
+  SwitchConfig,
 } from '../api/client'
 
 export type NodeKind = FlowNode['type']
@@ -27,6 +28,7 @@ export type StepConfig =
   | CheckPropertyConfig
   | HTTPRequestConfig
   | TransformConfig
+  | SwitchConfig
   | Record<string, never>
 
 export interface StepData extends Record<string, unknown> {
@@ -50,6 +52,7 @@ export const kindLabels: Record<NodeKind, string> = {
   check_property: 'Conferir propriedade',
   http_request: 'HTTP Request',
   transform: 'Transformar',
+  switch: 'Condição',
   end: 'Fim',
 }
 
@@ -65,6 +68,7 @@ const outputs: Record<NodeKind, string[]> = {
   check_property: ['satisfied', 'pending'],
   http_request: ['success', 'failed'],
   transform: ['next', 'failed'],
+  switch: ['else', 'failed'],
   end: [],
 }
 
@@ -72,10 +76,15 @@ const outputs: Record<NodeKind, string[]> = {
 const gatewayOutputs = ['approved', 'rejected', 'max_rounds_exceeded', 'failed']
 
 /**
- * The outputs of a node: agents with the gateway on decide where to go, and
- * an HTTP Request firing and forgetting only goes on.
+ * The outputs of a node: agents with the gateway on decide where to go, an
+ * HTTP Request firing and forgetting only goes on, and a Condition has one
+ * output per case before else and failed.
  */
 export function nodeOutputs({ kind, config }: StepData): string[] {
+  if (kind === 'switch') {
+    const cases = (config as SwitchConfig).cases ?? []
+    return [...cases.map((c) => c.name), ...outputs.switch]
+  }
   if (kind === 'agent' && (config as AgentConfig).gateway) {
     return gatewayOutputs
   }
@@ -101,6 +110,7 @@ export const outputLabels: Record<string, string> = {
   satisfied: 'satisfeitas',
   pending: 'pendentes',
   success: 'sucesso',
+  else: 'senão',
 }
 
 export function defaultConfig(kind: NodeKind): StepConfig {
@@ -113,6 +123,8 @@ export function defaultConfig(kind: NodeKind): StepConfig {
       return { method: 'POST', url: '' }
     case 'transform':
       return { output: { resultado: '= input' } }
+    case 'switch':
+      return { cases: [{ name: 'sim', expression: '' }] }
     default:
       return {}
   }
@@ -333,6 +345,10 @@ export function summary({ kind, config }: StepData): string {
       return typeof output === 'object' && !Array.isArray(output)
         ? `Monta ${Object.keys(output).join(', ') || 'um objeto vazio'}`
         : 'Monta um valor'
+    }
+    case 'switch': {
+      const names = ((config as SwitchConfig).cases ?? []).map((c) => c.name)
+      return names.length > 0 ? `Casos: ${names.join(', ')}` : 'Sem casos'
     }
     case 'end':
       return 'Encerra o fluxo'

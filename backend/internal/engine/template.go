@@ -42,3 +42,19 @@ func (e *Engine) transform(ctx context.Context, r *run, node domain.Node, input 
 	}
 	return domain.NodeResult{Status: domain.NodeDone, OutputHandle: "next", Output: out}, nil
 }
+
+// choose sends the run on by the case of a Switch node that holds,
+// handing on the input; a condition that fails leaves by failed.
+func (e *Engine) choose(ctx context.Context, r *run, node domain.Node, input json.RawMessage) (domain.NodeResult, error) {
+	var cfg domain.SwitchConfig
+	_ = json.Unmarshal(node.Config, &cfg) // validated when published
+	data, err := e.templateData(ctx, r.FlowRun, input)
+	if err != nil {
+		return domain.NodeResult{}, err
+	}
+	handle, err := cfg.Choose(data)
+	if err != nil {
+		return domain.NodeResult{Status: domain.NodeFailed, OutputHandle: "failed", Error: err.Error(), Output: input}, nil
+	}
+	return domain.NodeResult{Status: domain.NodeDone, OutputHandle: handle, Output: input}, nil
+}

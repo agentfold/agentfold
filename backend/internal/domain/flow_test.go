@@ -130,6 +130,8 @@ func TestNodeReferenceProblems(t *testing.T) {
 	g.Nodes[1].Config = json.RawMessage(`{` + profile + `,"prompt":"redo {{nodes.rev}}"}`)
 	g.Nodes[2].Config = json.RawMessage(`{` + profile + `,"prompt":"check {{nodes.dev}} {{nodes.dev.x}} {{nodes.ghost}} {{nodes.t}} {{nodes.rev}} {{ .Name }}","gateway":true,"max_rounds":1}`)
 	g.Nodes = append(g.Nodes, node("call", NodeHTTPRequest, `{"method":"GET","url":"http://x/{{nodes.rev.status}}","headers":[{"name":"A","value":"{{nodes.ghost}}"}]}`))
+	g.Nodes = append(g.Nodes, node("pick", NodeSwitch, `{"cases":[{"name":"ok","expression":"nodes.calc != nil"}]}`))
+	g.Edges = append(g.Edges, edge("e8", "calc", "next", "pick"))
 	g.Nodes = append(g.Nodes, node("calc", NodeTransform, `{"output":["=nodes.call.status + nodes.nope.x","{{nodes.dev}}"]}`))
 	g.Edges = append(g.Edges, edge("e6", "dev", "failed", "call"), edge("e7", "call", "success", "calc"))
 	want := []GraphProblem{
@@ -165,6 +167,13 @@ func TestConfigProblems(t *testing.T) {
 			"a expressão em a é inválida: ", "a expressão em c é inválida: unknown name foo", "placeholder desconhecido: {{nope}}",
 		}},
 		{"transform with bad JSON", NodeTransform, `[]`, []string{"configuração inválida"}},
+		{"switch", NodeSwitch, `{"cases":[{"name":"alto","expression":"input > 1"}]}`, nil},
+		{"switch without cases", NodeSwitch, `{}`, []string{"adicione pelo menos um caso"}},
+		{"switch with bad cases", NodeSwitch, `{"cases":[{"name":"a b","expression":"1 +"},{"name":"else","expression":" "},{"name":"x","expression":"true"},{"name":"x","expression":"foo"}]}`, []string{
+			"o nome do caso 1 só aceita letras, números, _ e -", "a condição do caso 1 é inválida: ", `o nome "else" é reservado`, "informe a condição do caso 2",
+			"o caso x aparece mais de uma vez", "a condição do caso 4 é inválida: unknown name foo",
+		}},
+		{"switch with bad JSON", NodeSwitch, `[]`, []string{"configuração inválida"}},
 		{"trigger on creation", NodeTrigger, `{"event":"card_created"}`, nil},
 		{"trigger without event", NodeTrigger, `{}`, []string{"escolha o evento do gatilho"}},
 		{"trigger without lane", NodeTrigger, `{"event":"card_entered_lane"}`, []string{"escolha a baia que dispara o fluxo"}},

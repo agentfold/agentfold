@@ -84,3 +84,36 @@ func TestTransformApply(t *testing.T) {
 		t.Errorf("an infinite result: %v", err)
 	}
 }
+
+func TestSwitchChoose(t *testing.T) {
+	cfg := SwitchConfig{Cases: []SwitchCase{
+		{Name: "alto", Expression: "nodes.a.body.total > 100"},
+		{Name: "medio", Expression: `nodes["b-1"].body.total >= 5`},
+	}}
+	if got, err := cfg.Choose(exprData()); got != "medio" || err != nil {
+		t.Errorf("choose %q, %v", got, err)
+	}
+	cfg.Cases[1].Expression = "false"
+	if got, err := cfg.Choose(exprData()); got != SwitchElse || err != nil {
+		t.Errorf("choose %q, %v", got, err)
+	}
+	cfg.Cases[1].Expression = "nodes.a.body.total"
+	if _, err := cfg.Choose(exprData()); err == nil || err.Error() != "o caso medio deu 10 em vez de verdadeiro ou falso" {
+		t.Errorf("not a bool: %v", err)
+	}
+	cfg.Cases[0].Expression = "nodes.gone.x > 1"
+	if _, err := cfg.Choose(exprData()); err == nil || !strings.HasPrefix(err.Error(), "o caso alto: ") {
+		t.Errorf("failing case: %v", err)
+	}
+	if got := cfg.Outputs(); !reflect.DeepEqual(got, []string{"alto", "medio", "else", "failed"}) {
+		t.Errorf("outputs %q", got)
+	}
+	n := Node{Type: NodeSwitch, Config: json.RawMessage(`{"cases":[{"name":"x","expression":"true"}]}`)}
+	if got := NodeOutputs(n); !reflect.DeepEqual(got, []string{"x", "else", "failed"}) {
+		t.Errorf("node outputs %q", got)
+	}
+	n.Config = json.RawMessage(`[`)
+	if got := NodeOutputs(n); !reflect.DeepEqual(got, []string{"else", "failed"}) {
+		t.Errorf("node outputs of a bad config %q", got)
+	}
+}

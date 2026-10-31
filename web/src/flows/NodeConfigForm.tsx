@@ -16,6 +16,8 @@ import type {
   HTTPHeader,
   HTTPRequestConfig,
   TransformConfig,
+  SwitchConfig,
+  SwitchCase,
 } from '../api/client'
 import { agentKindLabels } from '../agents/labels'
 import { Button } from '../components/Button'
@@ -249,6 +251,10 @@ export function NodeConfigForm({
           config={data.config as TransformConfig}
           onChange={onChange}
         />
+      )
+    case 'switch':
+      return (
+        <SwitchForm config={data.config as SwitchConfig} onChange={onChange} />
       )
     case 'end':
       return (
@@ -1044,5 +1050,80 @@ function TransformForm({ config, onChange }: TransformFormProps) {
         sai por &quot;falhou&quot;.
       </p>
     </div>
+  )
+}
+
+interface SwitchFormProps {
+  config: SwitchConfig
+  onChange: (config: SwitchConfig) => void
+}
+
+/** Edits the cases of a Condition: each one is an output, tried in order. */
+function SwitchForm({ config, onChange }: SwitchFormProps) {
+  const cases = config.cases ?? []
+  const set = (i: number, change: Partial<SwitchCase>) => {
+    onChange({
+      ...config,
+      cases: cases.map((c, j) => (j === i ? { ...c, ...change } : c)),
+    })
+  }
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="text-xs font-medium text-slate-600">Casos</legend>
+      <p className="text-xs text-slate-500">
+        O primeiro caso cuja condição é verdadeira vence; sem nenhum, o fluxo
+        segue por &quot;senão&quot;. As condições são expressões (expr-lang)
+        sobre card, input e nodes, como {'nodes.req_a.status >= 400'}. Uma
+        condição que falha ou não dá verdadeiro ou falso sai por
+        &quot;falhou&quot;. Renomear um caso desfaz a ligação dele.
+      </p>
+      {cases.map((c, i) => (
+        <div
+          key={i}
+          role="group"
+          aria-label={`Caso ${String(i + 1)}`}
+          className="flex flex-col gap-2 rounded-md border border-slate-200 p-2"
+        >
+          <div className="grid grid-cols-[1fr_auto] items-end gap-2">
+            <TextField
+              label="Nome"
+              placeholder="alto"
+              value={c.name}
+              onChange={(name) => {
+                set(i, { name })
+              }}
+            />
+            <Button
+              variant="ghost"
+              onClick={() => {
+                onChange({ ...config, cases: cases.filter((_, j) => j !== i) })
+              }}
+            >
+              Remover
+            </Button>
+          </div>
+          <TextField
+            label="Condição"
+            placeholder="nodes.calc.total > 1000"
+            value={c.expression}
+            onChange={(expression) => {
+              set(i, { expression })
+            }}
+          />
+        </div>
+      ))}
+      <Button
+        variant="ghost"
+        className="self-start"
+        onClick={() => {
+          onChange({
+            ...config,
+            cases: [...cases, { name: '', expression: '' }],
+          })
+        }}
+      >
+        Adicionar caso
+      </Button>
+    </fieldset>
   )
 }

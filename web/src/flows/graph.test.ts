@@ -14,6 +14,7 @@ import {
   nodeOutputs,
   summary,
   toApi,
+  type StepData,
 } from './graph'
 
 const graph: FlowGraph = {
@@ -82,6 +83,7 @@ describe('newStep', () => {
     ['move_card', {}],
     ['http_request', { method: 'POST', url: '' }],
     ['transform', { output: { resultado: '= input' } }],
+    ['switch', { cases: [{ name: 'sim', expression: '' }] }],
     ['end', {}],
   ] as const)('gives %s nodes a default config', (kind, config) => {
     expect(defaultConfig(kind)).toEqual(config)
@@ -226,9 +228,22 @@ describe('summary', () => {
     [{ kind: 'transform', config: { output: {} } }, 'Monta um objeto vazio'],
     [{ kind: 'transform', config: { output: [1] } }, 'Monta um valor'],
     [{ kind: 'transform', config: { output: '=1' } }, 'Monta um valor'],
+    [{ kind: 'switch', config: {} }, 'Sem casos'],
+    [
+      {
+        kind: 'switch',
+        config: {
+          cases: [
+            { name: 'alto', expression: 'true' },
+            { name: 'erro', expression: 'false' },
+          ],
+        },
+      },
+      'Casos: alto, erro',
+    ],
     [{ kind: 'end', config: {} }, 'Encerra o fluxo'],
   ] as const)('describes %j', (data, want) => {
-    expect(summary(data)).toBe(want)
+    expect(summary(data as StepData)).toBe(want)
   })
 
   it('names the artifacts a review covers', () => {
@@ -252,10 +267,15 @@ describe('nodeOutputs', () => {
     [{ kind: 'check_property', config: {} }, ['satisfied', 'pending']],
     [{ kind: 'http_request', config: {} }, ['success', 'failed']],
     [{ kind: 'transform', config: {} }, ['next', 'failed']],
+    [{ kind: 'switch', config: {} }, ['else', 'failed']],
+    [
+      { kind: 'switch', config: { cases: [{ name: 'a', expression: '' }] } },
+      ['a', 'else', 'failed'],
+    ],
     [{ kind: 'http_request', config: { mode: 'fire_and_forget' } }, ['next']],
     [{ kind: 'end', config: {} }, []],
   ] as const)('lists the outputs of %j', (data, want) => {
-    expect(nodeOutputs(data)).toEqual(want)
+    expect(nodeOutputs(data as StepData)).toEqual(want)
   })
 
   it('validates and renames node ids', () => {
